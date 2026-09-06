@@ -6,7 +6,7 @@ Kein SaaS, keine Cloud-Pflicht. Python-Backend, SQLite, React-PWA, nginx.
 
 Opentakt Zeit ist das erste Produkt unter dem Namen Opentakt. Weitere Anwendungen (zum Beispiel Vereinsverwaltung) sollen folgen.
 
-[![Lizenz](https://img.shields.io/badge/Lizenz-AGPL--3.0--or-later-blue.svg)](LICENSE)
+[![Lizenz](https://img.shields.io/static/v1?label=Lizenz&message=AGPL-3.0-or-later&color=blue)](LICENSE)
 [![CI](https://github.com/christiankohrn/opentakt-zeit/actions/workflows/ci.yml/badge.svg)](https://github.com/christiankohrn/opentakt-zeit/actions/workflows/ci.yml)
 
 ![Login mit konfigurierbarem Organisationsnamen](docs/screenshots/login.webp)
