@@ -1,0 +1,28 @@
+name: Idee
+description: Funktion oder Verbesserung vorschlagen
+title: "[Idee] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Welches Problem soll das lösen?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Vorschlag
+      placeholder: Wie könnte es in der App aussehen?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Bereich
+      options:
+        - Stempeln / PWA
+        - Personal / Prüfung
+        - Terminal / Datafox
+        - Deploy / Backup
+        - Anderes

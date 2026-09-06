@@ -1,0 +1,15 @@
+{
+  "name": "Opentakt Zeit",
+  "install": "bash .cursor/install.sh",
+  "terminals": [
+    {
+      "name": "backend",
+      "command": "cd backend && ZEITERFASSUNG_CONFIG=$PWD/../config.toml ../.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload"
+    },
+    {
+      "name": "frontend",
+      "command": "cd frontend && npm run dev -- --host 127.0.0.1 --port 5173"
+    }
+  ],
+  "ports": [8000, 5173]
+}

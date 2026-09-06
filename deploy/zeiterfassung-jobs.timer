@@ -1,0 +1,9 @@
+[Unit]
+Description=Evening checkout reminder
+
+[Timer]
+OnCalendar=Mon..Fri 18:15
+Persistent=true
+
+[Install]
+WantedBy=timers.target

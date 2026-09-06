@@ -1,0 +1,12 @@
+[Unit]
+Description=Opentakt Zeit SQLite backup
+After=network.target
+
+[Service]
+Type=oneshot
+User=zeiterfassung
+Group=zeiterfassung
+WorkingDirectory=/opt/zeiterfassung/backend
+Environment=ZEITERFASSUNG_CONFIG=/etc/zeiterfassung/config.toml
+Environment=PYTHONPATH=/opt/zeiterfassung/backend
+ExecStart=/opt/zeiterfassung/venv/bin/python -m app.jobs.backup

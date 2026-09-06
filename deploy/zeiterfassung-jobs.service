@@ -1,0 +1,12 @@
+[Unit]
+Description=Opentakt Zeit jobs (checkout reminder)
+After=network.target zeiterfassung.service
+
+[Service]
+Type=oneshot
+User=zeiterfassung
+Group=zeiterfassung
+WorkingDirectory=/opt/zeiterfassung/backend
+Environment=ZEITERFASSUNG_CONFIG=/etc/zeiterfassung/config.toml
+Environment=PYTHONPATH=/opt/zeiterfassung/backend
+ExecStart=/opt/zeiterfassung/venv/bin/python -m app.jobs.checkout_reminder

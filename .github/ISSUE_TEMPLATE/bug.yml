@@ -1,0 +1,45 @@
+name: Fehler
+description: Etwas funktioniert nicht wie erwartet
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Danke für den Hinweis. Keine Passwörter, keine echten Personaldaten, keine `config.toml`.
+  - type: textarea
+    id: expected
+    attributes:
+      label: Erwartetes Verhalten
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Tatsächliches Verhalten
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Schritte zur Reproduktion
+      placeholder: |
+        1. Anmelden als …
+        2. …
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Bereich
+      options:
+        - Stempeln / PWA
+        - Personal / Prüfung
+        - Terminal / Datafox
+        - Deploy / Backup
+        - Anderes
+  - type: input
+    id: version
+    attributes:
+      label: Version oder Commit
+      placeholder: z. B. 0.1.0 oder git SHA

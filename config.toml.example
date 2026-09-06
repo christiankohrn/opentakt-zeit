@@ -1,0 +1,46 @@
+# Lokale Entwicklung. Kopie nach config.toml im Repo-Root.
+# Produktion: /etc/zeiterfassung/config.toml (siehe deploy/config.toml.example).
+
+environment = "development"
+secret_key = "dev-only-change-me"
+timezone = "Europe/Berlin"
+org_name = "Muster GmbH"
+public_url = "http://127.0.0.1:5173"
+bundesland = "NW"
+database_path = "data/app.db"
+listen_host = "127.0.0.1"
+listen_port = 8000
+
+[seed]
+admin_username = "admin"
+admin_password = "change-me"
+hr_username = "personal"
+hr_password = "change-me"
+employee_username = "mitarbeiter"
+employee_password = "change-me"
+shift_username = "erika"
+shift_password = "change-me"
+
+[smtp]
+enabled = false
+host = ""
+port = 587
+username = ""
+password = ""
+from_addr = ""
+use_tls = true
+use_ssl = false
+
+[ldap]
+enabled = false
+url = "ldap://dc.example.local"
+bind_dn = ""
+bind_password = ""
+user_base = "OU=Users,DC=example,DC=local"
+user_filter = "(sAMAccountName={username})"
+group_hr = ""
+group_admin = ""
+
+# Shared secret für Datafox MasterIV HTTP. Leer = Terminal-API aus.
+# In der Send-URL als ?k=... eintragen, niemals committen.
+datafox_secret = ""
