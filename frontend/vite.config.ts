@@ -2,7 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
-import { PRODUCT_NAME } from "./src/brand";
+import { PRODUCT_NAME } from "./src/brand.ts";
 
 export default defineConfig({
   plugins: [

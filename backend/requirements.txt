@@ -1,9 +1,9 @@
-fastapi>=0.115.0
+fastapi>=0.141.1
 uvicorn[standard]>=0.32.0
-sqlalchemy>=2.0.36
-alembic>=1.14.0
-pydantic>=2.10.0
-python-multipart>=0.0.17
+sqlalchemy>=2.0.52
+alembic>=1.19.1
+pydantic>=2.13.5
+python-multipart>=0.0.32
 bcrypt>=4.2.0
 itsdangerous>=2.2.0
 httpx>=0.28.0
