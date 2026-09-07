@@ -13,6 +13,9 @@ node_modules/
 frontend/dist/
 frontend/dev-dist/
 
+# Optional locally built Datafox DFCom (vendor SDK, not in this repo)
+/lib/
+
 # Data / secrets
 data/
 *.db

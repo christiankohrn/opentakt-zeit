@@ -111,4 +111,4 @@ Copyright © 2026 Christian Kohrn.
 
 Die AGPL passt zu einer App, die als Netz-Dienst läuft: selbst hosten, anpassen und kommerziell betreiben ist erlaubt. Wer eine veränderte Version **als Dienst für andere** anbietet, muss den zugehörigen Quellcode ebenfalls unter AGPL bereitstellen. Das verhindert geschlossene SaaS-Forks, ohne Selbst-Hosting einzuschränken.
 
-Abhängigkeiten (FastAPI, React, …) behalten ihre eigenen Lizenzen.
+Abhängigkeiten (FastAPI, React, …) behalten ihre eigenen Lizenzen. Die optionale Datafox-Kommunikationsbibliothek DFCom ist Software der Datafox GmbH, nicht Teil von Opentakt Zeit; siehe [docs/datafox-masteriv.md](docs/datafox-masteriv.md) und `deploy/install-dfcom.sh`.

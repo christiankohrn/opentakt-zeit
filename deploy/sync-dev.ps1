@@ -26,6 +26,7 @@ $excludes = @(
     "--exclude=.venv",
     "--exclude=backend/.venv",
     "--exclude=data",
+    "--exclude=lib",
     "--exclude=__pycache__",
     "--exclude=*.pyc"
 )
@@ -49,7 +50,7 @@ rm -f /tmp/ze-sync.tgz
 export REPO=/tmp/ze-src
 chmod a+x /tmp/ze-src/deploy/*.sh
 if [ -d /opt/zeiterfassung/backend ]; then
-  rsync -a --delete --exclude venv --exclude frontend/node_modules --exclude frontend/dist \
+  rsync -a --delete --exclude venv --exclude frontend/node_modules --exclude frontend/dist --exclude lib \
     /tmp/ze-src/ /opt/zeiterfassung/
   chmod a+x /opt/zeiterfassung/deploy/*.sh
   sudo /opt/zeiterfassung/deploy/update.sh

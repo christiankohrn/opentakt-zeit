@@ -68,6 +68,7 @@ Ohne Zertifikat (Labor, noch kein DNS): `-SkipCertbot`.
 | Datenbank | `/var/lib/zeiterfassung/app.db` |
 | Backups | `/var/lib/zeiterfassung/backups/` (täglich 02:15, 30/12/2) |
 | Health | `GET https://<domain>/api/health` |
+| Optional DFCom | `bash /opt/zeiterfassung/deploy/install-dfcom.sh` → `/opt/zeiterfassung/lib/libDFCom.so` (nicht mitgeliefert, siehe [docs/datafox-masteriv.md](docs/datafox-masteriv.md)) |
 
 SSH danach als **`deploy`**, nicht dauerhaft als root. Sudo ist auf Dienst-Kommandos begrenzt.
 

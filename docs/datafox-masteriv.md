@@ -1,6 +1,6 @@
 # Datafox MasterIV an Opentakt Zeit
 
-Die App spricht **HTTP API Level 1** — keine Windows-DLL, kein DFCom-Dienst. Jedes Terminal braucht eine Route zum öffentlichen Host der Instanz (`https://zeit.firma.de`).
+Die App spricht **HTTP API Level 1**. Jedes Terminal braucht eine Route zum öffentlichen Host der Instanz (`https://zeit.firma.de`). Die optionale Datafox-Bibliothek DFCom liefern wir nicht mit; wer sie lokal bauen will, siehe unten.
 
 Typischer Aufbau: ein oder mehrere PZE-MasterIV in unterschiedlichen Netzen, Firmware ab 04.02.x. HTTPS und HTTP-Basic-Auth hängen an der Firmware (siehe unten).
 
@@ -74,6 +74,24 @@ An jedem Gerät gleich vorgehen (StudioIV → Gerät verbinden, Status grün **D
 7. Uhrzeit vom Server übernehmen (`df_time` kommt in jeder Antwort).
 
 Die Terminal-Netze müssen Port 80 (und nach dem Firmware-Update 443) zum Server durchlassen.
+
+## Optional: Datafox DFCom lokal bauen (nicht mitgeliefert)
+
+Opentakt Zeit spricht die Geräte standardmäßig per **HTTP**. Die Kommunikationsbibliothek **DFCom** (`libDFCom.so`) ist Software der **Datafox GmbH**, nicht Teil dieses AGPL-Projekts. Wir legen weder Quellen noch die `.so` ins Git.
+
+Wer DFCom später für Polling (Server holt Buchungen per TCP vom Gerät) vorbereiten will, lädt das offizielle SDK von Datafox und baut auf der Debian-Maschine:
+
+```bash
+# Produktion, als root
+bash /opt/zeiterfassung/deploy/install-dfcom.sh
+# → /opt/zeiterfassung/lib/libDFCom.so
+```
+
+Das Skript holt das Source-Zip **direkt von datafox.de**, prüft die SHA-256-Summe und ruft `make` auf. Es spiegelt Datafox-Code nicht. Ohne Netz das Zip selbst laden und `DFCOM_ZIP=/pfad/zur.zip` setzen.
+
+Die App **pollen die Terminals damit noch nicht**. Fehlt die `.so`, bleibt HTTP-Stempeln unverändert. Polling braucht zusätzlich, dass der Server die Geräte per TCP erreicht (LAN oder VPN).
+
+DFCom unterliegt den Bedingungen von Datafox. Opentakt Zeit bleibt AGPL.
 
 ## 4. Datafox StudioIV — Tabelle Booking
 
