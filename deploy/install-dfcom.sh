@@ -118,5 +118,5 @@ if id zeiterfassung >/dev/null 2>&1 && id deploy >/dev/null 2>&1; then
 fi
 
 echo "Fertig: $DFCOM_LIBDIR/libDFCom.so"
-echo "HTTP-Stempeln braucht diese Datei nicht. Polling über DFCom ist noch nicht in der App verdrahtet."
+echo "HTTP-Stempeln braucht diese Datei nicht. Polling: Einstellungen → Datafox-Polling, plus TCP zum Gerät (Port 8000)."
 echo "Lizenz: Dateien von Datafox GmbH, eigene Bedingungen, nicht Teil der AGPL von Opentakt Zeit."

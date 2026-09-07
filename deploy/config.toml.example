@@ -41,3 +41,6 @@ group_admin = ""
 # Shared secret for Datafox MasterIV HTTP. Empty = Terminal-API ist aus.
 # In der Send-URL als ?k=... eintragen, niemals ins Git.
 datafox_secret = ""
+
+# Optional: Pfad zu libDFCom.so für Polling.
+# dfcom_lib = "/opt/zeiterfassung/lib/libDFCom.so"

@@ -20,7 +20,7 @@ Opentakt Zeit ist das erste Produkt unter dem Namen Opentakt. Weitere Anwendunge
 - Personal: Stammdaten, Arbeitsmodelle ab Datum, Ein-/Austritt
 - Plausibilität (fehlendes Gehen, Pausen, 10-Stunden-Grenze, …)
 - Abwesenheiten, Feiertage je Bundesland, betriebsfreie Tage
-- Datafox MasterIV über HTTP (Transponder), optional ohne Web-Login
+- Datafox MasterIV über HTTP (Transponder), optional Polling per DFCom, optional ohne Web-Login
 - Optional LDAP und SMTP (Feierabend-Erinnerung)
 - CSV-Export, tägliche SQLite-Backups, Dark Mode
 
@@ -96,6 +96,7 @@ cd frontend && npx tsc --noEmit
 | `bundesland` | Feiertage (z. B. `NW`, `BY`) |
 | `secret_key` | Session-Cookie, unbedingt ändern |
 | `datafox_secret` | Shared Secret für Terminal-HTTP; leer = API aus |
+| `dfcom_lib` | Optionaler Pfad zu `libDFCom.so` (sonst `/opt/zeiterfassung/lib/libDFCom.so`) |
 
 `config.toml`, `*.db` und `.env` sind per `.gitignore` ausgeschlossen.
 

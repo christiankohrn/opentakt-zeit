@@ -31,6 +31,13 @@ KIND_ALIASES = {
     "f4": "break_end",
 }
 
+# BSS/TopZeit table Stempelung: Kennzeichen 0 = Kommen, 1 = Gehen (not HTTP fn).
+STEMPELUNG_KENNZEICHEN = {
+    "0": "in",
+    "1": "out",
+}
+HTTP_KIND_FIELDS = ("fn", "kind", "status", "aktion", "function", "taste")
+
 
 def normalize_badge(value: str) -> set[str]:
     raw = (value or "").strip().replace(" ", "").replace(":", "").replace("-", "")
@@ -62,18 +69,28 @@ def col(params: dict[str, str], *names: str) -> str:
     return ""
 
 
+def _table_name(params: dict[str, str]) -> str:
+    return (params.get("df_table") or params.get("table") or "").strip().lower()
+
+
 def parse_kind(params: dict[str, str]) -> str | None:
-    raw = col(params, "fn", "kind", "status", "aktion", "function", "taste")
-    key = raw.strip().lower().replace(" ", "").replace("-", "_")
+    table = _table_name(params)
+    kz = col(params, "kennzeichen", "kz")
+    http_raw = col(params, *HTTP_KIND_FIELDS)
+    if table == "stempelung" or (kz and not http_raw):
+        if not kz:
+            return None
+        return STEMPELUNG_KENNZEICHEN.get(kz.strip().lower())
+    key = http_raw.strip().lower().replace(" ", "").replace("-", "_")
     return KIND_ALIASES.get(key)
 
 
 def parse_badge(params: dict[str, str]) -> str:
-    return col(params, "badge", "transponder", "ausweis", "card", "cardno", "rfid")
+    return col(params, "badge", "karte", "transponder", "ausweis", "card", "cardno", "rfid")
 
 
 def parse_timestamp(params: dict[str, str]) -> datetime | None:
-    raw = col(params, "timestamp", "time", "dt", "datetime", "zeit")
+    raw = col(params, "timestamp", "datum/zeit", "datumzeit", "time", "dt", "datetime", "zeit")
     if not raw:
         return None
     text = raw.replace(" ", "T", 1)

@@ -6,17 +6,17 @@ import logging
 from urllib.parse import parse_qsl
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import Response
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.config import get_config
-from app.datafox import ack_body, flatten_params, normalize_badge, parse_badge, parse_kind, parse_timestamp
-from app.database import get_db
-from app.models import AuditEvent, User
 from app.balance import account_hours, format_flex
-from app.punches import KIND_LABELS, record_punch
+from app.config import get_config
+from app.datafox import ack_body, flatten_params, parse_badge, parse_kind, parse_timestamp
+from app.database import get_db
+from app.models import Punch, User
+from app.punches import KIND_LABELS
+from app.terminal_punch import apply_booking
 
 router = APIRouter(prefix="/terminals", tags=["terminals"])
 log = logging.getLogger(__name__)
@@ -39,17 +39,6 @@ def _secret_ok(provided: str) -> bool:
     if len(left) != len(right):
         return False
     return hmac.compare_digest(left, right)
-
-
-def _find_user(db: Session, badge: str) -> User | None:
-    keys = normalize_badge(badge)
-    if not keys:
-        return None
-    users = list(db.scalars(select(User).where(User.active.is_(True), User.transponder_id.is_not(None))))
-    for user in users:
-        if normalize_badge(user.transponder_id or "") & keys:
-            return user
-    return None
 
 
 async def _params(request: Request) -> dict[str, str]:
@@ -95,44 +84,34 @@ async def datafox(request: Request, db: Session = Depends(get_db)):
             return _latin1(ack_body())
         return _latin1(ack_body({"df_msg": "Ungueltige Buchung,5,2,0", "df_beep": "2"}))
 
-    user = _find_user(db, badge)
-    if not user:
-        return _latin1(ack_body({"df_msg": "Unbekannter Ausweis,5,2,0", "df_beep": "2"}))
-
     event_id = (params.get("df_id") or params.get("id") or "").strip() or uuid4().hex
-    try:
-        punch = record_punch(
-            db,
-            user,
-            kind,
-            source="terminal",
-            client_event_id=f"df-{event_id}"[:64],
-            device_time=parse_timestamp(params),
-            note=f"terminal {request.client.host if request.client else ''}".strip(),
-        )
-    except HTTPException as exc:
-        if exc.status_code == 409:
-            msg = str(exc.detail)[:80]
-            return _latin1(ack_body({"df_msg": f"{msg},6,2,0", "df_beep": "2"}))
-        raise
-
-    db.add(
-        AuditEvent(
-            actor_id=user.id,
-            action="terminal.punch",
-            entity_type="punch",
-            entity_id=str(punch.id),
-            payload=KIND_LABELS.get(kind, kind),
-        )
+    result = apply_booking(
+        db,
+        badge=badge,
+        kind=kind,
+        timestamp=parse_timestamp(params),
+        event_id=f"df-{event_id}"[:64],
+        source="terminal",
+        note=f"terminal {request.client.host if request.client else ''}".strip(),
+        persist=True,
     )
-    db.commit()
-    first = user.display_name.split()[0] if user.display_name else "OK"
-    label = KIND_LABELS.get(kind, kind)
-    try:
-        month_h, total_h = account_hours(db, user, punch.server_time)
-        line2 = f"{label} {format_flex(month_h)}/{format_flex(total_h)}"
-    except Exception:
-        log.exception("flex display failed user=%s", user.id)
-        line2 = label
-    log.info("terminal punch user=%s kind=%s", user.id, kind)
+    if result.outcome == "unknown":
+        return _latin1(ack_body({"df_msg": "Unbekannter Ausweis,5,2,0", "df_beep": "2"}))
+    if result.outcome == "invalid":
+        return _latin1(ack_body({"df_msg": "Ungueltige Buchung,5,2,0", "df_beep": "2"}))
+    if result.outcome == "conflict":
+        return _latin1(ack_body({"df_msg": f"{result.detail[:80]},6,2,0", "df_beep": "2"}))
+
+    user = db.get(User, result.user_id) if result.user_id else None
+    punch = db.get(Punch, result.punch_id) if result.punch_id else None
+    first = (user.display_name.split()[0] if user and user.display_name else None) or "OK"
+    label = KIND_LABELS.get(result.kind or "", result.kind or "")
+    line2 = label
+    if user and punch:
+        try:
+            month_h, total_h = account_hours(db, user, punch.server_time)
+            line2 = f"{label} {format_flex(month_h)}/{format_flex(total_h)}"
+        except Exception:
+            log.exception("flex display failed user=%s", user.id)
+    log.info("terminal punch user=%s kind=%s", result.user_id, result.kind)
     return _latin1(ack_body({"df_msg": f"{first}\\r{line2},4,1,0", "df_beep": "1"}))

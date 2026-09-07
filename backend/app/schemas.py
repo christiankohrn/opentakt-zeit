@@ -202,6 +202,55 @@ class OrgSettingsIn(BaseModel):
     bundesland: str
 
 
+class TerminalDeviceIn(BaseModel):
+    name: str = Field(default="Terminal", max_length=120)
+    host: str = Field(min_length=1, max_length=200)
+    port: int = Field(default=8000, ge=1, le=65535)
+    device_address: int = Field(default=255, ge=0, le=255)
+    enabled: bool = True
+
+
+class TerminalDevicePatch(BaseModel):
+    name: Optional[str] = Field(default=None, max_length=120)
+    host: Optional[str] = Field(default=None, max_length=200)
+    port: Optional[int] = Field(default=None, ge=1, le=65535)
+    device_address: Optional[int] = Field(default=None, ge=0, le=255)
+    enabled: Optional[bool] = None
+
+
+class TerminalDeviceOut(BaseModel):
+    id: int
+    name: str
+    host: str
+    port: int
+    device_address: int
+    enabled: bool
+    last_poll_at: Optional[datetime] = None
+    last_ok_at: Optional[datetime] = None
+    last_error: str = ""
+    last_summary: str = ""
+
+    model_config = {"from_attributes": True}
+
+
+class DfcomSettingsIn(BaseModel):
+    poll_enabled: Optional[bool] = None
+    poll_dry_run: Optional[bool] = None
+    poll_interval_sec: Optional[int] = Field(default=None, ge=10, le=300)
+    sync_lists: Optional[bool] = None
+
+
+class DfcomSettingsOut(BaseModel):
+    library_ok: bool
+    library_path: Optional[str] = None
+    poll_enabled: bool
+    poll_dry_run: bool
+    poll_interval_sec: int
+    sync_lists: bool
+    last_poll: Optional[dict] = None
+    terminals: list[TerminalDeviceOut] = Field(default_factory=list)
+
+
 class CalendarIn(BaseModel):
     day: date
     kind: Literal["holiday", "company_off"]

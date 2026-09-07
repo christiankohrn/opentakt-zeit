@@ -89,7 +89,30 @@ bash /opt/zeiterfassung/deploy/install-dfcom.sh
 
 Das Skript holt das Source-Zip **direkt von datafox.de**, prüft die SHA-256-Summe und ruft `make` auf. Es spiegelt Datafox-Code nicht. Ohne Netz das Zip selbst laden und `DFCOM_ZIP=/pfad/zur.zip` setzen.
 
-Die App **pollen die Terminals damit noch nicht**. Fehlt die `.so`, bleibt HTTP-Stempeln unverändert. Polling braucht zusätzlich, dass der Server die Geräte per TCP erreicht (LAN oder VPN).
+Polling (Server holt Buchungen per TCP, typisch Port **8000**) schaltet ein Administrator unter **Einstellungen** ein. Fehlt die `.so`, bleibt HTTP-Stempeln unverändert. Polling braucht, dass der Server die Geräte per TCP erreicht (LAN oder VPN). TopZeit und Opentakt dürfen dieselben Geräte **nicht** gleichzeitig pollen.
+
+Bestehende MasterIV mit BSS-Setup `bss_PZEMaster_Basic` bleiben unverändert (kein Studio-Rewrite). Opentakt ersetzt den Poller von TopZeit.
+
+### Was geht beim Polling zum Terminal?
+
+| Richtung | Inhalt |
+| --- | --- |
+| Terminal → Server | Datensätze der Tabelle `Stempelung` (und weiterhin `Booking` für HTTP-Setups) |
+| Server → Terminal, Normalbetrieb | Bestätigung (`DFCQuitRecord`): der Datensatz wird am Gerät gelöscht. Zusätzlich die Uhrzeit. Liste `PERSONAL` (Name, Zeitkonto, genommene Urlaubstage), nur wenn sich der Inhalt geändert hat. |
+| Server → Terminal, Testbetrieb | Nichts Schreibendes. Der Datensatz bleibt liegen. Die Personalliste wird nicht geschrieben. |
+| Nicht | Resturlaub (Anspruch), Kranktage, andere Listen (`ABWESENHEIT`, `AUFTRAG`, …) |
+
+`Stempelung.Kennzeichen`: **0 = Kommen, 1 = Gehen**. Das ist nicht dasselbe wie HTTP-`fn` (dort ist 1 = Kommen). Andere Kennzeichen (Abwesenheit) werden bestätigt, aber nicht als Stempel gespeichert.
+
+Beim **HTTP**-Stempeln kommt nach der Buchung ein kurzer Display-Text zurück (Vorname + Gleitzeit). Beim Polling steht der Name und das Zeitkonto in der Liste `PERSONAL` auf dem Gerät.
+
+**Testbetrieb** (Haken in den Einstellungen): Buchungen werden gelesen, aber **nicht bestätigt** — sie bleiben auf dem Terminal und landen nicht in Opentakt. Datafox liefert ohne Bestätigung immer denselben ältesten Datensatz.
+
+### Wie kommt die Mitarbeiterliste aufs Terminal?
+
+Im Normalbetrieb schreibt Opentakt die Liste `PERSONAL` (Index 0 im BSS-Setup): `KARTE`, `NAME`, `ZKO` (Gleitzeit des Monats), `UKO` (genommene Urlaubstage im Kalenderjahr, ohne Anspruch). Nur aktive Personen mit Transponder. Die Liste wird nicht bei jedem Poll neu geflasht, sondern nur wenn sich der Inhalt geändert hat. Unter Einstellungen gibt es zusätzlich **Personalliste jetzt schreiben**.
+
+Unbekannter Chip → keine Stempelzeile in Opentakt (im Normalbetrieb wird der Datensatz trotzdem bestätigt, damit er nicht ewig wiederholt wird).
 
 DFCom unterliegt den Bedingungen von Datafox. Opentakt Zeit bleibt AGPL.
 
@@ -119,7 +142,7 @@ Ablauf am Gerät: Taste drücken, Transponder halten. Unbekannter Chip → Displ
 
 Nach einer gültigen Buchung zeigt das Display zwei Zeilen: Vorname und darunter z. B. `Kommen +2,5h`. Die Zahl ist das **Gleitzeit-Delta des laufenden Monats** (Ist minus Soll), dasselbe wie in der App unter Zeiten. Es wird nicht vorher aufs Gerät geladen, sondern in der HTTP-Antwort (`df_msg`) mitgeschickt.
 
-**Nicht** auf dem Terminal: Resturlaub, Jahresanspruch, Kranktage, Monatsübersicht als Liste. Dafür gibt es in der App Personal → Urlaub eintragen und die eigene Zeiten-Ansicht. Ein Urlaubskonto (Anspruch minus genommen) ist noch nicht modelliert. Listen/Menüs fest im MasterIV (DFCom-Tabellen) sind mit HTTP Level 1 nicht vorgesehen.
+**Nicht** auf dem Terminal per HTTP: Resturlaub, Jahresanspruch, Kranktage, Monatsübersicht als Liste. Dafür gibt es in der App Personal → Urlaub eintragen und die eigene Zeiten-Ansicht. Ein Urlaubskonto (Anspruch minus genommen) ist noch nicht modelliert. Listen/Menüs fest im MasterIV sind mit HTTP Level 1 nicht vorgesehen; beim **DFCom-Polling** schreibt Opentakt die Liste `PERSONAL` (siehe oben).
 
 ## 5. Nummer am Gerät lesen
 
