@@ -5,6 +5,7 @@ Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Ve
 ## [Unreleased]
 
 - Optionales Skript `deploy/install-dfcom.sh`: Datafox-DFCom-SDK von datafox.de laden und `libDFCom.so` lokal bauen. Die Bibliothek wird nicht mitgeliefert; HTTP-Stempeln bleibt der Standardweg.
+- Optionales DFCom-Polling: der Server holt Buchungen per TCP vom MasterIV (Tabelle `Stempelung`: Kennzeichen 0 = Kommen, 1 = Gehen). Testbetrieb bestätigt Datensätze nicht. Im Normalbetrieb wird die Liste PERSONAL geschrieben (Name, Zeitkonto, genommene Urlaubstage), nur wenn sich der Inhalt geändert hat.
 
 ## [0.1.0] - 2026-09-06
 

@@ -11,7 +11,8 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.branding import PRODUCT_NAME
 from app.config import get_config
 from app.database import SessionLocal, ensure_schema
-from app.routers import auth, health, hr, me, terminals
+from app.dfcom_poll import start_background, stop_background
+from app.routers import auth, dfcom_api, health, hr, me, terminals
 from app.routers.health import APP_VERSION
 from app.seed import seed_if_empty
 
@@ -24,7 +25,9 @@ async def lifespan(_app: FastAPI):
         seed_if_empty(db)
     finally:
         db.close()
+    start_background()
     yield
+    stop_background()
 
 
 def create_app() -> FastAPI:
@@ -42,6 +45,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router, prefix="/api")
     app.include_router(me.router, prefix="/api")
     app.include_router(hr.router, prefix="/api")
+    app.include_router(dfcom_api.router, prefix="/api")
     app.include_router(terminals.router, prefix="/api")
 
     dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"

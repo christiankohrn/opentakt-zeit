@@ -85,6 +85,23 @@ def ensure_schema() -> None:
         alters.append("ALTER TABLE org_settings ADD COLUMN smtp_use_tls BOOLEAN NOT NULL DEFAULT 1")
     if "smtp_use_ssl" not in org_cols:
         alters.append("ALTER TABLE org_settings ADD COLUMN smtp_use_ssl BOOLEAN NOT NULL DEFAULT 0")
+    if "dfcom_poll_enabled" not in org_cols:
+        alters.append("ALTER TABLE org_settings ADD COLUMN dfcom_poll_enabled BOOLEAN NOT NULL DEFAULT 0")
+    if "dfcom_poll_dry_run" not in org_cols:
+        alters.append("ALTER TABLE org_settings ADD COLUMN dfcom_poll_dry_run BOOLEAN NOT NULL DEFAULT 1")
+    if "dfcom_poll_interval_sec" not in org_cols:
+        alters.append("ALTER TABLE org_settings ADD COLUMN dfcom_poll_interval_sec INTEGER NOT NULL DEFAULT 20")
+    if "dfcom_sync_lists" not in org_cols:
+        alters.append("ALTER TABLE org_settings ADD COLUMN dfcom_sync_lists BOOLEAN NOT NULL DEFAULT 1")
+    if "dfcom_last_poll" not in org_cols:
+        alters.append("ALTER TABLE org_settings ADD COLUMN dfcom_last_poll TEXT")
+    term_cols = (
+        {c["name"] for c in inspect(engine).get_columns("terminal_devices")}
+        if inspect(engine).has_table("terminal_devices")
+        else set()
+    )
+    if "last_list_hash" not in term_cols:
+        alters.append("ALTER TABLE terminal_devices ADD COLUMN last_list_hash VARCHAR(64) NOT NULL DEFAULT ''")
     if alters:
         with engine.begin() as conn:
             for stmt in alters:

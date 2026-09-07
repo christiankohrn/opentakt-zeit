@@ -9,6 +9,7 @@ Group=zeiterfassung
 WorkingDirectory=/opt/zeiterfassung/backend
 Environment=ZEITERFASSUNG_CONFIG=/etc/zeiterfassung/config.toml
 Environment=PYTHONPATH=/opt/zeiterfassung/backend
+Environment=DFCOM_LIB=/opt/zeiterfassung/lib/libDFCom.so
 ExecStart=/opt/zeiterfassung/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips=127.0.0.1
 Restart=always
 RestartSec=3

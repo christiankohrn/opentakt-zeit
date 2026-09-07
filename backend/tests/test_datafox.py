@@ -17,6 +17,18 @@ def test_parse_kind_from_fn_and_labels():
     assert parse_kind({"status": "pause_ende"}) == "break_end"
 
 
+def test_parse_stempelung_kennzeichen_is_not_http_fn():
+    assert parse_kind({"df_table": "Stempelung", "Kennzeichen": "0"}) == "in"
+    assert parse_kind({"df_table": "Stempelung", "kennzeichen": "1"}) == "out"
+    assert parse_kind({"df_table": "Stempelung", "kennzeichen": "2"}) is None
+    assert parse_kind({"fn": "1"}) == "in"
+    assert parse_kind({"kennzeichen": "1"}) == "out"
+    assert parse_badge({"Karte": "AABB"}) == "AABB"
+    when = parse_timestamp({"Datum/Zeit": "2026-09-07T08:15:00"})
+    assert when is not None
+    assert when.astimezone(ZoneInfo("Europe/Berlin")).hour == 8
+
+
 def test_parse_badge_prefers_named_field():
     params = flatten_params({"df_col_badge": "1234", "df_col_sn": "3569"})
     assert parse_badge(params) == "1234"
