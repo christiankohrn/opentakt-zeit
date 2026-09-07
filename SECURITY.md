@@ -24,6 +24,7 @@ Wir bestätigen den Eingang in der Regel innerhalb weniger Tage und koordinieren
 - Terminal-API (`datafox_secret` in der URL)
 - Pfade und Uploads, SQL, XSS in der PWA
 - Leak von `config.toml`, Datenbank oder Seed-Passwörtern
+- Mitgelieferte Secrets; die optionale Datafox-Bibliothek DFCom nicht ins Git legen
 
 ## Betrieb
 

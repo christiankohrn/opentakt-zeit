@@ -43,6 +43,7 @@ rsync -a --delete \
   --exclude 'frontend/dist' \
   --exclude 'data' \
   --exclude 'venv' \
+  --exclude 'lib' \
   "$REPO"/ "$APP_ROOT"/
 
 chown -R deploy:zeiterfassung "$APP_ROOT"
