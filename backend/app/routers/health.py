@@ -19,6 +19,7 @@ def health():
     from pathlib import Path
     from sqlalchemy import text
     from app.database import engine
+    from app.dfcom import library_available
 
     db_ok = False
     try:
@@ -42,4 +43,5 @@ def health():
         "org": cfg.org_name,
         "db": db_ok,
         "disk_free_bytes": disk_free,
+        "dfcom_library": library_available(),
     }

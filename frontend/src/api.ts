@@ -109,6 +109,35 @@ export type SmtpSettings = {
   ready: boolean;
 };
 
+export type TerminalDevice = {
+  id: number;
+  name: string;
+  host: string;
+  port: number;
+  device_address: number;
+  enabled: boolean;
+  last_poll_at: string | null;
+  last_ok_at: string | null;
+  last_error: string;
+  last_summary: string;
+};
+
+export type DfcomSettings = {
+  library_ok: boolean;
+  library_path: string | null;
+  poll_enabled: boolean;
+  poll_dry_run: boolean;
+  poll_interval_sec: number;
+  sync_lists: boolean;
+  last_poll: {
+    at?: string;
+    dry_run?: boolean;
+    error?: string;
+    devices?: { host: string; read: number; stored: number; preview: number; quit: number; lists_written?: number; error: string }[];
+  } | null;
+  terminals: TerminalDevice[];
+};
+
 export type UserCreateResult = User & {
   mail_sent?: boolean | null;
   mail_error?: string | null;
@@ -327,6 +356,28 @@ export const api = {
     request<SmtpSettings>("/api/hr/smtp", { method: "PATCH", body: JSON.stringify(body) }),
   testSmtp: (to?: string) =>
     request<{ ok: boolean }>("/api/hr/smtp/test", { method: "POST", body: JSON.stringify({ to: to || null }) }),
+  dfcomSettings: () => request<DfcomSettings>("/api/hr/dfcom"),
+  patchDfcomSettings: (body: {
+    poll_enabled?: boolean;
+    poll_dry_run?: boolean;
+    poll_interval_sec?: number;
+    sync_lists?: boolean;
+  }) => request<DfcomSettings>("/api/hr/dfcom", { method: "PATCH", body: JSON.stringify(body) }),
+  pollDfcom: () =>
+    request<{ dry_run: boolean; error: string; devices: { host: string; read: number; error: string }[] }>(
+      "/api/hr/dfcom/poll",
+      { method: "POST" },
+    ),
+  pushDfcomLists: () =>
+    request<{ dry_run: boolean; error: string; devices: { host: string; lists_written?: number; error: string }[] }>(
+      "/api/hr/dfcom/lists",
+      { method: "POST" },
+    ),
+  createDfcomTerminal: (body: { name: string; host: string; port: number; device_address?: number; enabled?: boolean }) =>
+    request<TerminalDevice>("/api/hr/dfcom/terminals", { method: "POST", body: JSON.stringify(body) }),
+  patchDfcomTerminal: (id: number, body: Partial<{ name: string; host: string; port: number; device_address: number; enabled: boolean }>) =>
+    request<TerminalDevice>(`/api/hr/dfcom/terminals/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  deleteDfcomTerminal: (id: number) => request<{ ok: boolean }>(`/api/hr/dfcom/terminals/${id}`, { method: "DELETE" }),
   sendAccessMail: (id: number) => request<{ ok: boolean }>(`/api/hr/users/${id}/access-mail`, { method: "POST" }),
   calendar: (year: number) =>
     request<{ id: number | null; day: string; kind: string; name: string; source: string }[]>(

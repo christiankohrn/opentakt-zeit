@@ -157,6 +157,28 @@ class OrgSettings(Base):
     mfa_policy_supervisor: Mapped[str] = mapped_column(String(16), default="off")
     mfa_policy_hr: Mapped[str] = mapped_column(String(16), default="off")
     mfa_policy_admin: Mapped[str] = mapped_column(String(16), default="off")
+    dfcom_poll_enabled: Mapped[bool] = mapped_column(default=False)
+    dfcom_poll_dry_run: Mapped[bool] = mapped_column(default=True)
+    dfcom_poll_interval_sec: Mapped[int] = mapped_column(Integer, default=20)
+    dfcom_sync_lists: Mapped[bool] = mapped_column(default=True)
+    dfcom_last_poll: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
+class TerminalDevice(Base):
+    __tablename__ = "terminal_devices"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), default="Terminal")
+    host: Mapped[str] = mapped_column(String(200))
+    port: Mapped[int] = mapped_column(Integer, default=8000)
+    device_address: Mapped[int] = mapped_column(Integer, default=255)
+    enabled: Mapped[bool] = mapped_column(default=True)
+    last_poll_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_ok_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str] = mapped_column(String(400), default="")
+    last_summary: Mapped[str] = mapped_column(String(500), default="")
+    last_list_hash: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
 
 class MailToken(Base):

@@ -67,6 +67,7 @@ class AppConfig(BaseModel):
     smtp: SmtpConfig = Field(default_factory=SmtpConfig)
     ldap: LdapConfig = Field(default_factory=LdapConfig)
     webauthn: WebAuthnConfig = Field(default_factory=WebAuthnConfig)
+    dfcom_lib: str = ""
     datafox_secret: str = ""
 
     @property
