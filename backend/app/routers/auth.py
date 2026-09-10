@@ -29,6 +29,7 @@ from app.schemas import (
     UserOut,
 )
 from app.security import hash_password
+from app.security_policy import self_out
 from app.totp import backup_codes_remaining, consume_backup_code, verify_code
 from app.webauthn_auth import authentication_options, credential_raw_id, verify_authentication
 
@@ -41,8 +42,8 @@ WEBAUTHN_AUTH_KEY = "webauthn_auth"
 WEBAUTHN_TTL = 300
 
 
-def _user_out(user: User) -> UserOut:
-    return UserOut.model_validate(user)
+def _user_out(db: Session, user: User) -> UserOut:
+    return self_out(db, user)
 
 
 def _mfa_methods(db: Session, user: User) -> list[str]:
@@ -71,7 +72,7 @@ def login(payload: LoginIn, request: Request, db: Session = Depends(get_db)) -> 
     write_session(request, user)
     db.add(AuditEvent(actor_id=user.id, action="login", entity_type="user", entity_id=str(user.id)))
     db.commit()
-    return _user_out(user)
+    return _user_out(db, user)
 
 
 @router.post("/mfa", response_model=None)
@@ -114,7 +115,7 @@ def mfa(payload: MfaVerifyIn, request: Request, db: Session = Depends(get_db)) -
         )
     )
     db.commit()
-    return _user_out(user)
+    return _user_out(db, user)
 
 
 @router.post("/passkey/options", response_model=None)
@@ -166,7 +167,7 @@ def passkey_verify(payload: PasskeyAuthVerifyIn, request: Request, db: Session =
         )
     )
     db.commit()
-    return _user_out(user)
+    return _user_out(db, user)
 
 
 @router.post("/logout")
@@ -177,7 +178,7 @@ def logout(request: Request):
 
 @router.get("/me", response_model=UserOut)
 def me(request: Request, db: Session = Depends(get_db)):
-    return current_user(request, db)
+    return _user_out(db, current_user(request, db))
 
 
 @router.post("/forgot")

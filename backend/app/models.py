@@ -152,6 +152,11 @@ class OrgSettings(Base):
     smtp_from: Mapped[str] = mapped_column(String(200), default="")
     smtp_use_tls: Mapped[bool] = mapped_column(default=True)
     smtp_use_ssl: Mapped[bool] = mapped_column(default=False)
+    # Erzwungene starke Anmeldung je Rolle: off | totp | passkey | any
+    mfa_policy_employee: Mapped[str] = mapped_column(String(16), default="off")
+    mfa_policy_supervisor: Mapped[str] = mapped_column(String(16), default="off")
+    mfa_policy_hr: Mapped[str] = mapped_column(String(16), default="off")
+    mfa_policy_admin: Mapped[str] = mapped_column(String(16), default="off")
 
 
 class MailToken(Base):

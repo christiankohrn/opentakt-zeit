@@ -26,6 +26,9 @@ class UserOut(BaseModel):
     web_login: bool = True
     hired_on: Optional[date] = None
     left_on: Optional[date] = None
+    totp_enabled: bool = False
+    passkey_count: int = 0
+    security_setup_required: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -261,6 +264,16 @@ class OrgSettingsOut(BaseModel):
 
 class OrgSettingsIn(BaseModel):
     bundesland: str
+
+
+class SecurityPolicyOut(BaseModel):
+    policies: dict[str, str]
+    roles: list[str]
+    values: list[str]
+
+
+class SecurityPolicyIn(BaseModel):
+    policies: dict[str, str]
 
 
 class CalendarIn(BaseModel):

@@ -91,6 +91,9 @@ def ensure_schema() -> None:
         alters.append("ALTER TABLE org_settings ADD COLUMN smtp_use_tls BOOLEAN NOT NULL DEFAULT 1")
     if "smtp_use_ssl" not in org_cols:
         alters.append("ALTER TABLE org_settings ADD COLUMN smtp_use_ssl BOOLEAN NOT NULL DEFAULT 0")
+    for _role in ("employee", "supervisor", "hr", "admin"):
+        if f"mfa_policy_{_role}" not in org_cols:
+            alters.append(f"ALTER TABLE org_settings ADD COLUMN mfa_policy_{_role} VARCHAR(16) NOT NULL DEFAULT 'off'")
     if alters:
         with engine.begin() as conn:
             for stmt in alters:
