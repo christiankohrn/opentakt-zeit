@@ -6,6 +6,26 @@ import PasswordField from "../components/PasswordField";
 import { hoursTone, isoDate, signedHours } from "../labels";
 import { generatePassword } from "../password";
 
+function SecurityBadges({ u, compact = false }: { u: User; compact?: boolean }) {
+  const totp = Boolean(u.totp_enabled);
+  const keys = u.passkey_count ?? 0;
+  if (!totp && keys === 0) {
+    return <span className="text-muted">{compact ? "keine 2FA" : "—"}</span>;
+  }
+  return (
+    <span className="inline-flex flex-wrap gap-1">
+      {totp ? (
+        <span className="rounded border border-present px-1.5 py-0.5 text-xs text-present">2FA</span>
+      ) : null}
+      {keys > 0 ? (
+        <span className="rounded border border-ok px-1.5 py-0.5 text-xs text-ok">
+          {keys > 1 ? `${keys} Passkeys` : "Passkey"}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 function payrollMonth() {
   const d = new Date();
   if (d.getDate() <= 15) {
@@ -316,6 +336,9 @@ export default function HrUsers() {
                       {u.web_login ? "" : " · nur Terminal"}
                       {u.active ? "" : " · inaktiv"}
                     </p>
+                    <div className="mt-1">
+                      <SecurityBadges u={u} compact />
+                    </div>
                   </div>
                   {flex ? (
                     <div className="shrink-0 text-right text-sm tabular-nums">
@@ -342,6 +365,7 @@ export default function HrUsers() {
               <th className="px-4 py-3 font-medium">Transponder</th>
               <th className="px-4 py-3 font-medium text-right">Monat</th>
               <th className="px-4 py-3 font-medium text-right">Gesamt</th>
+              <th className="px-4 py-3 font-medium">Sicherheit</th>
               <th className="px-4 py-3 font-medium">Status</th>
             </tr>
           </thead>
@@ -371,6 +395,9 @@ export default function HrUsers() {
                     className={`px-4 py-2.5 text-right tabular-nums ${flex ? hoursTone(flex.total_delta_hours) : "text-muted"}`}
                   >
                     {flex ? signedHours(flex.total_delta_hours) : "—"}
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <SecurityBadges u={u} />
                   </td>
                   <td className="px-4 py-2.5 text-muted">
                     {u.active ? "aktiv" : "inaktiv"}

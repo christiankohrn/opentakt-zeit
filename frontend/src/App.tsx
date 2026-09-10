@@ -11,6 +11,7 @@ import HrUsers from "./pages/HrUsers";
 import Account from "./pages/Account";
 import ForgotPassword from "./pages/ForgotPassword";
 import Login from "./pages/Login";
+import SecuritySetup from "./pages/SecuritySetup";
 import SetPassword from "./pages/SetPassword";
 import Settings from "./pages/Settings";
 import Stamp from "./pages/Stamp";
@@ -23,6 +24,7 @@ function Guard({ children }: { children: ReactNode }) {
     return <div className="p-8 text-muted">Laden …</div>;
   }
   if (!user) return <Navigate to="/login" replace />;
+  if (user.security_setup_required) return <Navigate to="/sicherheit-einrichten" replace />;
   return <>{children}</>;
 }
 
@@ -54,6 +56,7 @@ const router = createBrowserRouter([
   { path: "/login", element: <Login /> },
   { path: "/passwort-vergessen", element: <ForgotPassword /> },
   { path: "/passwort-setzen", element: <SetPassword /> },
+  { path: "/sicherheit-einrichten", element: <SecuritySetup /> },
   {
     path: "/",
     element: <AppShell />,

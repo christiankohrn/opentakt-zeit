@@ -43,7 +43,14 @@ function BackupCodes({ codes, onClose }: { codes: string[]; onClose: () => void 
   );
 }
 
-export default function SecuritySettings() {
+type Props = {
+  onChanged?: () => void;
+  restrict?: "totp" | "passkey" | "any" | null;
+};
+
+export default function SecuritySettings({ onChanged, restrict = null }: Props = {}) {
+  const showTotp = !restrict || restrict === "totp" || restrict === "any";
+  const showPasskey = !restrict || restrict === "passkey" || restrict === "any";
   const [status, setStatus] = useState<SecurityStatus | null>(null);
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
@@ -66,6 +73,11 @@ export default function SecuritySettings() {
 
   async function reload() {
     setStatus(await api.securityStatus());
+  }
+
+  async function refreshAll() {
+    await reload();
+    onChanged?.();
   }
 
   useEffect(() => {
@@ -99,7 +111,7 @@ export default function SecuritySettings() {
       setBackupCodes(res.backup_codes);
       setSetup(null);
       setMsg("Zwei-Faktor-Authentisierung ist aktiv.");
-      await reload();
+      await refreshAll();
     } catch (e2) {
       fail(e2, "Code stimmt nicht.");
     } finally {
@@ -117,7 +129,7 @@ export default function SecuritySettings() {
       setDisablePassword("");
       setDisableCode("");
       setMsg("Zwei-Faktor-Authentisierung wurde deaktiviert.");
-      await reload();
+      await refreshAll();
     } catch (e2) {
       fail(e2, "Deaktivieren fehlgeschlagen.");
     } finally {
@@ -134,7 +146,7 @@ export default function SecuritySettings() {
       const credential = await startRegistration({ optionsJSON: options });
       await api.passkeyRegisterVerify(credential, newPasskeyName.trim() || "Passkey");
       setMsg("Passkey gespeichert.");
-      await reload();
+      await refreshAll();
     } catch (e) {
       if (e instanceof ApiError) setErr(e.message);
       else if (e instanceof Error && e.name === "NotAllowedError") setErr("Passkey-Einrichtung abgebrochen.");
@@ -149,7 +161,7 @@ export default function SecuritySettings() {
     if (!name || name.trim() === pk.name) return;
     try {
       await api.renamePasskey(pk.id, name.trim());
-      await reload();
+      await refreshAll();
     } catch (e) {
       fail(e, "Umbenennen fehlgeschlagen.");
     }
@@ -161,7 +173,7 @@ export default function SecuritySettings() {
     try {
       await api.deletePasskey(toDelete.id);
       setToDelete(null);
-      await reload();
+      await refreshAll();
     } catch (e) {
       fail(e, "Löschen fehlgeschlagen.");
     } finally {
@@ -179,6 +191,7 @@ export default function SecuritySettings() {
       {msg ? <p className="text-sm text-present">{msg}</p> : null}
 
       {/* Two-factor / authenticator app */}
+      {showTotp ? (
       <section className="space-y-3 rounded-2xl border border-line bg-card p-4">
         <div className="flex items-center justify-between">
           <p className="text-sm font-medium">Zwei-Faktor per Authenticator-App</p>
@@ -255,7 +268,7 @@ export default function SecuritySettings() {
         {status.totp_enabled ? (
           <div className="space-y-2">
             <p className="text-xs text-muted">Noch {status.backup_codes_remaining} Backup-Codes übrig.</p>
-            {!showDisable ? (
+            {restrict ? null : !showDisable ? (
               <button
                 type="button"
                 className="w-full rounded-xl border border-danger py-2 text-sm text-danger"
@@ -307,8 +320,10 @@ export default function SecuritySettings() {
           </div>
         ) : null}
       </section>
+      ) : null}
 
       {/* Passkeys */}
+      {showPasskey ? (
       <section className="space-y-3 rounded-2xl border border-line bg-card p-4">
         <p className="text-sm font-medium">Passkeys</p>
         <p className="text-xs text-muted">
@@ -362,6 +377,7 @@ export default function SecuritySettings() {
           <p className="text-xs text-muted">Dieser Browser unterstützt keine Passkeys.</p>
         )}
       </section>
+      ) : null}
 
       {toDelete ? (
         <ConfirmDialog

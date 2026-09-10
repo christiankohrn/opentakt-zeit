@@ -1,7 +1,92 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, ApiError, type SmtpSettings } from "../api";
+import { api, ApiError, type SecurityPolicyValue, type SmtpSettings } from "../api";
 import PasswordField from "../components/PasswordField";
+
+const ROLE_LABELS: Record<string, string> = {
+  employee: "Mitarbeiter",
+  supervisor: "Vorgesetzt",
+  hr: "Personal",
+  admin: "Admin",
+};
+
+const POLICY_LABELS: Record<SecurityPolicyValue, string> = {
+  off: "Aus",
+  totp: "2FA per App erforderlich",
+  passkey: "Passkey erforderlich",
+  any: "2FA oder Passkey erforderlich",
+};
+
+function SecurityPolicyCard() {
+  const [policies, setPolicies] = useState<Record<string, SecurityPolicyValue>>({});
+  const [roles, setRoles] = useState<string[]>([]);
+  const [values, setValues] = useState<SecurityPolicyValue[]>([]);
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    void api
+      .securityPolicy()
+      .then((p) => {
+        setPolicies(p.policies);
+        setRoles(p.roles);
+        setValues(p.values);
+      })
+      .catch(() => setErr("Sicherheitsrichtlinie konnte nicht geladen werden."));
+  }, []);
+
+  async function save() {
+    setMsg("");
+    setErr("");
+    setBusy(true);
+    try {
+      const next = await api.patchSecurityPolicy(policies);
+      setPolicies(next.policies);
+      setMsg("Sicherheitsrichtlinie gespeichert.");
+    } catch (ex) {
+      setErr(ex instanceof ApiError ? ex.message : "Fehler");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-4 space-y-3 rounded-2xl border border-line bg-card p-4">
+      <p className="text-sm font-medium">Anmelde-Sicherheit erzwingen</p>
+      <p className="text-xs text-muted">
+        Pro Benutzergruppe festlegen, ob eine zweite Stufe Pflicht ist. Betroffene Personen werden beim nächsten Login
+        aufgefordert, 2FA bzw. einen Passkey einzurichten, bevor sie weiterkommen.
+      </p>
+      {roles.map((role) => (
+        <label key={role} className="flex items-center justify-between gap-3 text-sm">
+          <span>{ROLE_LABELS[role] ?? role}</span>
+          <select
+            className="rounded-lg border border-line bg-bg px-3 py-2 text-sm"
+            value={policies[role] ?? "off"}
+            onChange={(e) => setPolicies({ ...policies, [role]: e.target.value as SecurityPolicyValue })}
+          >
+            {values.map((v) => (
+              <option key={v} value={v}>
+                {POLICY_LABELS[v] ?? v}
+              </option>
+            ))}
+          </select>
+        </label>
+      ))}
+      {err ? <p className="text-sm text-danger">{err}</p> : null}
+      {msg ? <p className="text-sm text-present">{msg}</p> : null}
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => void save()}
+        className="w-full rounded-xl bg-navy py-2 text-sm text-white disabled:opacity-60"
+      >
+        {busy ? "…" : "Richtlinie speichern"}
+      </button>
+    </div>
+  );
+}
 
 const empty: SmtpSettings = {
   enabled: false,
@@ -80,7 +165,10 @@ export default function Settings() {
         ← Personal
       </Link>
       <h1 className="mt-2 text-xl font-medium">Einstellungen</h1>
-      <p className="mt-1 text-sm text-muted">
+
+      <SecurityPolicyCard />
+
+      <p className="mt-6 text-sm text-muted">
         Mailserver für Zugangsdaten, Passwort-Reset und die Erinnerung zum Ausstempeln.
       </p>
       <form onSubmit={onSave} className="mt-4 space-y-3 rounded-2xl border border-line bg-card p-4">

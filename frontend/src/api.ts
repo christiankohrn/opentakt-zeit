@@ -24,6 +24,17 @@ export type User = {
   web_login: boolean;
   hired_on: string | null;
   left_on: string | null;
+  totp_enabled?: boolean;
+  passkey_count?: number;
+  security_setup_required?: string | null;
+};
+
+export type SecurityPolicyValue = "off" | "totp" | "passkey" | "any";
+
+export type SecurityPolicy = {
+  policies: Record<string, SecurityPolicyValue>;
+  roles: string[];
+  values: SecurityPolicyValue[];
 };
 
 export type DaySummary = {
@@ -307,6 +318,9 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
+  securityPolicy: () => request<SecurityPolicy>("/api/hr/security-policy"),
+  patchSecurityPolicy: (policies: Record<string, string>) =>
+    request<SecurityPolicy>("/api/hr/security-policy", { method: "PATCH", body: JSON.stringify({ policies }) }),
   mailStatus: () => request<{ ready: boolean }>("/api/hr/mail-status"),
   smtpSettings: () => request<SmtpSettings>("/api/hr/smtp"),
   patchSmtpSettings: (body: Record<string, unknown>) =>
