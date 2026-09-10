@@ -1,3 +1,10 @@
+import type {
+  AuthenticationResponseJSON,
+  PublicKeyCredentialCreationOptionsJSON,
+  PublicKeyCredentialRequestOptionsJSON,
+  RegistrationResponseJSON,
+} from "@simplewebauthn/browser";
+
 export type Role = "employee" | "supervisor" | "hr" | "admin";
 export type PunchKind = "in" | "out" | "break_start" | "break_end";
 export type WorkState = "away" | "in" | "break";
@@ -138,15 +145,85 @@ export type Meta = {
   version: string;
 };
 
+export type MfaChallenge = { mfa_required: true; methods: string[] };
+export type LoginResult = User | MfaChallenge;
+
+export function isMfaChallenge(result: LoginResult): result is MfaChallenge {
+  return typeof result === "object" && result !== null && (result as MfaChallenge).mfa_required === true;
+}
+
+export type Passkey = {
+  id: number;
+  name: string;
+  created_at: string;
+  last_used_at: string | null;
+};
+
+export type SecurityStatus = {
+  totp_enabled: boolean;
+  backup_codes_remaining: number;
+  can_use_password: boolean;
+  passkeys: Passkey[];
+};
+
+export type TotpSetup = {
+  secret: string;
+  otpauth_uri: string;
+  qr_svg: string;
+};
+
 export const api = {
   meta: () => request<Meta>("/api/meta"),
   login: (username: string, password: string) =>
-    request<User>("/api/auth/login", {
+    request<LoginResult>("/api/auth/login", {
       method: "POST",
       body: JSON.stringify({ username, password }),
     }),
+  verifyMfa: (code: string) =>
+    request<User>("/api/auth/mfa", {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    }),
+  passkeyLoginOptions: (username?: string) =>
+    request<PublicKeyCredentialRequestOptionsJSON>("/api/auth/passkey/options", {
+      method: "POST",
+      body: JSON.stringify({ username: username || null }),
+    }),
+  passkeyLoginVerify: (credential: AuthenticationResponseJSON) =>
+    request<User>("/api/auth/passkey/verify", {
+      method: "POST",
+      body: JSON.stringify({ credential }),
+    }),
   logout: () => request<{ ok: boolean }>("/api/auth/logout", { method: "POST" }),
   me: () => request<User>("/api/auth/me"),
+  securityStatus: () => request<SecurityStatus>("/api/me/security"),
+  totpSetup: () => request<TotpSetup>("/api/me/totp/setup", { method: "POST" }),
+  totpEnable: (code: string) =>
+    request<{ backup_codes: string[] }>("/api/me/totp/enable", {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    }),
+  totpDisable: (password: string, code: string) =>
+    request<{ ok: boolean }>("/api/me/totp/disable", {
+      method: "POST",
+      body: JSON.stringify({ password, code }),
+    }),
+  totpRegenerateBackupCodes: (code: string) =>
+    request<{ backup_codes: string[] }>("/api/me/totp/backup-codes", {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    }),
+  passkeyRegisterOptions: () =>
+    request<PublicKeyCredentialCreationOptionsJSON>("/api/me/passkeys/register/options", { method: "POST" }),
+  passkeyRegisterVerify: (credential: RegistrationResponseJSON, name: string) =>
+    request<Passkey>("/api/me/passkeys/register/verify", {
+      method: "POST",
+      body: JSON.stringify({ credential, name }),
+    }),
+  passkeys: () => request<Passkey[]>("/api/me/passkeys"),
+  renamePasskey: (id: number, name: string) =>
+    request<Passkey>(`/api/me/passkeys/${id}`, { method: "PATCH", body: JSON.stringify({ name }) }),
+  deletePasskey: (id: number) => request(`/api/me/passkeys/${id}`, { method: "DELETE" }),
   forgotPassword: (username_or_email: string) =>
     request<{ ok: boolean }>("/api/auth/forgot", {
       method: "POST",
