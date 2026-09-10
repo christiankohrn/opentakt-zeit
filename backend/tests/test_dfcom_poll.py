@@ -204,6 +204,37 @@ def test_retransmit_does_not_duplicate_punch(client):
         set_client_factory(None)
 
 
+def test_poll_stores_out_even_when_live_state_is_away(client):
+    # Regression: batch-ingested terminal events must be stored verbatim. A lone
+    # "Gehen" (out) while the live presence state is "away" must NOT be dropped
+    # by the interactive state machine (that check only applies to live punches).
+    fake = FakeDfcom()
+    schema = booking_schema()
+    when = datetime(2026, 9, 7, 17, 0, 0, tzinfo=ZoneInfo("Europe/Berlin"))
+    fake.records.append(pack_record(schema, {"badge": "CHIP-OUT", "fn": "2", "timestamp": when}))
+    set_client_factory(lambda: fake)
+    try:
+        login(client)
+        people = users_by_name(client)
+        uid = people["erika"]["id"]
+        client.patch(f"/api/hr/users/{uid}/settings", json={"transponder_id": "CHIP-OUT"})
+        client.post("/api/hr/dfcom/terminals", json={"name": "Nur-Gehen", "host": "10.9.0.1"})
+        client.patch("/api/hr/dfcom", json={"poll_enabled": True, "poll_dry_run": False})
+        before = punch_count()
+        res = client.post("/api/hr/dfcom/poll")
+        assert res.status_code == 200, res.text
+        assert res.json()["devices"][0]["stored"] == 1
+        assert punch_count() == before + 1
+        db = SessionLocal()
+        try:
+            last = db.scalars(select(Punch).where(Punch.user_id == uid).order_by(Punch.id)).all()[-1]
+            assert last.kind == "out"
+        finally:
+            db.close()
+    finally:
+        set_client_factory(None)
+
+
 def test_stempelung_poll_stores_kommen_and_gehen(client):
     fake = FakeDfcom(schemas={0: stempelung_schema()})
     schema = stempelung_schema()

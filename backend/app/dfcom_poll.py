@@ -144,6 +144,8 @@ def _poll_device(
                         source="terminal",
                         note=f"poll {device.host}",
                         persist=not dry_run,
+                        # Recorded events: ingest verbatim, don't refuse on live state.
+                        enforce_state=False,
                     )
                     if booking.outcome == "stored":
                         result.stored += 1
