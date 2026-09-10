@@ -1,8 +1,10 @@
 import { FormEvent, useEffect, useState } from "react";
-import { Link, useBlocker, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, type DaySummary, type PunchKind, type User } from "../api";
+import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
 import { IconTrash } from "../components/Icons";
 import { absenceLabel, formatDayTitle, punchLabel, warnLabel } from "../labels";
+import { useUnsavedGuard } from "../unsaved";
 
 const KINDS: PunchKind[] = ["in", "out", "break_start", "break_end"];
 const ISSUE_KEYS = new Set(["missing_day", "checkout_missing", "break_short", "break_short_9h", "break_long", "over_10h"]);
@@ -47,7 +49,7 @@ export default function HrDay() {
 
   const punchesDirty = rowsKey(rows) !== rowsKey(baselineRows);
   const dirty = punchesDirty || pendingAbsence !== null || pendingAccept;
-  const blocker = useBlocker(dirty);
+  const blocker = useUnsavedGuard(dirty);
   const issues = (summary?.warnings ?? []).filter((w) => ISSUE_KEYS.has(w));
 
   async function load() {
@@ -70,20 +72,6 @@ export default function HrDay() {
     if (userId && day) void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, day]);
-
-  useEffect(() => {
-    const on = (e: BeforeUnloadEvent) => {
-      if (!dirty) return;
-      e.preventDefault();
-      e.returnValue = "";
-    };
-    window.addEventListener("beforeunload", on);
-    return () => window.removeEventListener("beforeunload", on);
-  }, [dirty]);
-
-  useEffect(() => {
-    if (blocker.state === "blocked" && !dirty) blocker.reset();
-  }, [blocker, dirty]);
 
   function discardLocal() {
     setRows(cloneRows(baselineRows));
@@ -410,22 +398,7 @@ export default function HrDay() {
         </div>
       ) : null}
       {blocker.state === "blocked" ? (
-        <div className="fixed inset-0 z-30 flex items-end justify-center bg-black/40 p-4 sm:items-center">
-          <div className="w-full max-w-lg rounded-2xl bg-card p-5 shadow-xl">
-            <p className="text-lg font-medium">Ungespeicherte Änderungen</p>
-            <p className="mt-1 text-sm text-muted">
-              Wenn du die Bearbeitung verlässt, gehen die Änderungen verloren.
-            </p>
-            <div className="mt-4 flex gap-2">
-              <button type="button" className="flex-1 rounded-xl border border-line py-2" onClick={() => blocker.reset()}>
-                Bleiben
-              </button>
-              <button type="button" className="flex-1 rounded-xl bg-navy py-2 text-white" onClick={() => blocker.proceed()}>
-                Verwerfen
-              </button>
-            </div>
-          </div>
-        </div>
+        <UnsavedChangesDialog onStay={() => blocker.reset()} onDiscard={() => blocker.proceed()} />
       ) : null}
     </div>
   );

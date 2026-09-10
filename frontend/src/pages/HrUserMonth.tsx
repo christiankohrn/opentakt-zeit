@@ -4,10 +4,14 @@ import { api, type DaySummary, type User, type WorkModel, type WorkModelAssignme
 import { useAuth } from "../auth";
 import DayLegend from "../components/DayLegend";
 import ConfirmDialog from "../components/ConfirmDialog";
+import FieldError from "../components/FieldError";
 import { IconChevron, IconTrash } from "../components/Icons";
 import PasswordField from "../components/PasswordField";
+import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
 import { bookingText, dayRowClass, daySurfaceClass, formatDayLabel, formatHours, hoursTone, signedHours, warnLabel } from "../labels";
 import { generatePassword } from "../password";
+import { useUnsavedGuard } from "../unsaved";
+import { firstUserFieldError, inputClass, validateUserAccount, type UserFieldErrors } from "../userForm";
 
 function payrollMonth() {
   const d = new Date();
@@ -69,6 +73,7 @@ export default function HrUserMonth() {
     left_on: "",
   });
   const [accountMsg, setAccountMsg] = useState("");
+  const [accountErrors, setAccountErrors] = useState<UserFieldErrors>({});
   const [generatedPassword, setGeneratedPassword] = useState("");
   const [exportMsg, setExportMsg] = useState("");
   const [inviteMsg, setInviteMsg] = useState("");
@@ -117,6 +122,34 @@ export default function HrUserMonth() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, month]);
 
+  const accountDirty = Boolean(
+    user &&
+      (account.display_name !== user.display_name ||
+        account.username !== user.username ||
+        account.email !== (user.email ?? "") ||
+        account.role !== user.role ||
+        account.active !== user.active ||
+        account.hired_on !== (user.hired_on ?? "") ||
+        account.left_on !== (user.left_on ?? "") ||
+        account.password.trim() !== ""),
+  );
+  const accessDirty = Boolean(
+    user && (transponder !== (user.transponder_id ?? "") || webLogin !== (user.web_login !== false)),
+  );
+  const dirty = accountDirty || accessDirty;
+  const blocker = useUnsavedGuard(dirty);
+
+  function patchAccount(patch: Partial<typeof account>) {
+    setAccount((cur) => ({ ...cur, ...patch }));
+    setAccountErrors((cur) => {
+      const next = { ...cur };
+      for (const key of Object.keys(patch) as (keyof UserFieldErrors)[]) {
+        delete next[key];
+      }
+      return next;
+    });
+  }
+
   const visibleDays = days;
   const chosenModel = models.find((m) => String(m.id) === modelId);
   const totals = days
@@ -134,9 +167,26 @@ export default function HrUserMonth() {
       {user ? (
         <form
           className="space-y-2 rounded-2xl border border-line bg-card p-4"
+          noValidate
           onSubmit={async (e: FormEvent) => {
             e.preventDefault();
             setAccountMsg("");
+            const nextErrors = validateUserAccount({
+              display_name: account.display_name,
+              username: account.username,
+              email: account.email,
+              password: account.password,
+              hired_on: account.hired_on,
+              left_on: account.left_on,
+            });
+            setAccountErrors(nextErrors);
+            if (firstUserFieldError(nextErrors)) {
+              setAccountMsg("Bitte die markierten Felder ausfüllen.");
+              requestAnimationFrame(() => {
+                document.querySelector<HTMLElement>("#user-account-form [aria-invalid='true']")?.focus();
+              });
+              return;
+            }
             try {
               const body: {
                 username: string;
@@ -162,6 +212,7 @@ export default function HrUserMonth() {
               const next = await api.patchUserAccount(userId, body);
               setUser(next);
               setGeneratedPassword("");
+              setAccountErrors({});
               setAccount({
                 ...account,
                 password: "",
@@ -179,36 +230,44 @@ export default function HrUserMonth() {
               setAccountMsg(err instanceof Error ? err.message : "Fehler");
             }
           }}
+          id="user-account-form"
         >
           <p className="text-sm font-medium">Benutzer</p>
           <label className="block text-xs text-muted">
             Anzeigename
             <input
-              className="mt-1 w-full rounded-lg border border-line bg-bg px-3 py-2 text-sm text-ink"
+              className={`mt-1 w-full px-3 py-2 text-sm ${inputClass(accountErrors.display_name)}`}
               value={account.display_name}
-              onChange={(e) => setAccount({ ...account, display_name: e.target.value })}
-              required
+              onChange={(e) => patchAccount({ display_name: e.target.value })}
+              aria-invalid={Boolean(accountErrors.display_name)}
+              aria-describedby={accountErrors.display_name ? "err-acc-display" : undefined}
             />
+            <FieldError id="err-acc-display">{accountErrors.display_name}</FieldError>
           </label>
           <label className="block text-xs text-muted">
             Benutzername
             <input
-              className="mt-1 w-full rounded-lg border border-line bg-bg px-3 py-2 text-sm text-ink"
+              className={`mt-1 w-full px-3 py-2 text-sm ${inputClass(accountErrors.username)}`}
               value={account.username}
-              onChange={(e) => setAccount({ ...account, username: e.target.value })}
+              onChange={(e) => patchAccount({ username: e.target.value })}
               autoCapitalize="none"
-              required
+              aria-invalid={Boolean(accountErrors.username)}
+              aria-describedby={accountErrors.username ? "err-acc-username" : undefined}
             />
+            <FieldError id="err-acc-username">{accountErrors.username}</FieldError>
           </label>
           <label className="block text-xs text-muted">
             E-Mail
             <input
               type="email"
-              className="mt-1 w-full rounded-lg border border-line bg-bg px-3 py-2 text-sm text-ink"
+              className={`mt-1 w-full px-3 py-2 text-sm ${inputClass(accountErrors.email)}`}
               value={account.email}
-              onChange={(e) => setAccount({ ...account, email: e.target.value })}
+              onChange={(e) => patchAccount({ email: e.target.value })}
               autoCapitalize="none"
+              aria-invalid={Boolean(accountErrors.email)}
+              aria-describedby={accountErrors.email ? "err-acc-email" : undefined}
             />
+            <FieldError id="err-acc-email">{accountErrors.email}</FieldError>
           </label>
           <label className="block text-xs text-muted">
             Rolle
@@ -216,7 +275,7 @@ export default function HrUserMonth() {
               className="mt-1 w-full rounded-lg border border-line bg-bg px-3 py-2 text-sm text-ink disabled:opacity-70"
               value={account.role}
               disabled={!isAdmin}
-              onChange={(e) => setAccount({ ...account, role: e.target.value })}
+              onChange={(e) => patchAccount({ role: e.target.value })}
             >
               <option value="employee">Mitarbeiter</option>
               <option value="supervisor">Vorgesetzt</option>
@@ -231,7 +290,7 @@ export default function HrUserMonth() {
               className="mt-1"
               checked={account.active}
               disabled={!isAdmin}
-              onChange={(e) => setAccount({ ...account, active: e.target.checked })}
+              onChange={(e) => patchAccount({ active: e.target.checked })}
             />
             <span>
               Aktiv
@@ -243,21 +302,19 @@ export default function HrUserMonth() {
               Eintritt
               <input
                 type="date"
-                className="mt-1 h-10 w-full rounded-lg border border-line bg-bg px-2 text-sm text-ink"
+                className={`mt-1 h-10 w-full px-2 text-sm ${inputClass(accountErrors.hired_on)}`}
                 value={account.hired_on}
-                onChange={(e) => setAccount({ ...account, hired_on: e.target.value })}
-                required
+                onChange={(e) => patchAccount({ hired_on: e.target.value })}
+                aria-invalid={Boolean(accountErrors.hired_on)}
+                aria-describedby={accountErrors.hired_on ? "err-acc-hired" : undefined}
               />
+              <FieldError id="err-acc-hired">{accountErrors.hired_on}</FieldError>
             </label>
             <div className="min-w-0 overflow-hidden text-xs text-muted">
               <div className="flex items-baseline justify-between gap-2">
                 <label htmlFor="account-left-on">Austritt</label>
                 {account.left_on ? (
-                  <button
-                    type="button"
-                    className="text-present"
-                    onClick={() => setAccount({ ...account, left_on: "" })}
-                  >
+                  <button type="button" className="text-present" onClick={() => patchAccount({ left_on: "" })}>
                     Leeren
                   </button>
                 ) : null}
@@ -266,10 +323,13 @@ export default function HrUserMonth() {
                 id="account-left-on"
                 key={account.left_on ? "left-set" : "left-empty"}
                 type="date"
-                className="mt-1 h-10 w-full rounded-lg border border-line bg-bg px-2 text-sm text-ink"
+                className={`mt-1 h-10 w-full px-2 text-sm ${inputClass(accountErrors.left_on)}`}
                 value={account.left_on}
-                onChange={(e) => setAccount({ ...account, left_on: e.target.value })}
+                onChange={(e) => patchAccount({ left_on: e.target.value })}
+                aria-invalid={Boolean(accountErrors.left_on)}
+                aria-describedby={accountErrors.left_on ? "err-acc-left" : undefined}
               />
+              <FieldError id="err-acc-left">{accountErrors.left_on}</FieldError>
             </div>
           </div>
           {isAdmin ? (
@@ -279,14 +339,17 @@ export default function HrUserMonth() {
                 <PasswordField
                   autoComplete="new-password"
                   minLength={8}
-                  className="mt-1 w-full rounded-lg border border-line bg-bg px-3 py-2 text-sm text-ink"
+                  className={`mt-1 w-full px-3 py-2 text-sm ${inputClass(accountErrors.password)}`}
                   value={account.password}
                   onChange={(e) => {
-                    setAccount({ ...account, password: e.target.value });
+                    patchAccount({ password: e.target.value });
                     setGeneratedPassword("");
                   }}
                   placeholder="mind. 8 Zeichen"
+                  aria-invalid={Boolean(accountErrors.password)}
+                  aria-describedby={accountErrors.password ? "err-acc-password" : undefined}
                 />
+                <FieldError id="err-acc-password">{accountErrors.password}</FieldError>
               </label>
               <button
                 type="button"
@@ -294,6 +357,11 @@ export default function HrUserMonth() {
                 onClick={() => {
                   const next = generatePassword();
                   setAccount((cur) => ({ ...cur, password: next }));
+                  setAccountErrors((cur) => {
+                    const nextErr = { ...cur };
+                    delete nextErr.password;
+                    return nextErr;
+                  });
                   setGeneratedPassword(next);
                 }}
               >
@@ -804,6 +872,9 @@ export default function HrUserMonth() {
             </div>
           </div>
         </div>
+      ) : null}
+      {blocker.state === "blocked" ? (
+        <UnsavedChangesDialog onStay={() => blocker.reset()} onDiscard={() => blocker.proceed()} />
       ) : null}
     </div>
   );
