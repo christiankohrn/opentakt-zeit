@@ -43,6 +43,7 @@ def apply_booking(
     source: str,
     note: str | None,
     persist: bool,
+    enforce_state: bool = True,
 ) -> BookingResult:
     if not badge or not kind:
         return BookingResult("invalid", "Ungültige Buchung")
@@ -68,6 +69,7 @@ def apply_booking(
             client_event_id=event_id[:64],
             device_time=timestamp,
             note=note,
+            enforce_state=enforce_state,
         )
     except HTTPException as exc:
         if exc.status_code == 409:

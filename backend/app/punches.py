@@ -66,18 +66,24 @@ def record_punch(
     client_event_id: str,
     device_time: datetime | None = None,
     note: str | None = None,
+    enforce_state: bool = True,
 ) -> Punch:
     existing = db.scalar(select(Punch).where(Punch.user_id == user.id, Punch.client_event_id == client_event_id))
     if existing:
         return existing
     booked = booking_time(device_time)
-    punches = punches_around(db, user.id, booked)
-    state = status_from_punches(punches)
-    if kind not in allowed_kinds(state):
-        raise HTTPException(
-            status_code=409,
-            detail=f"{KIND_LABELS.get(kind, kind)} ist im Status {STATE_LABELS.get(state, state)} nicht möglich",
-        )
+    # Interactive punches (PWA, HTTP terminal) are validated against the live
+    # presence state so an implausible action is refused with feedback. Batch
+    # ingestion of already-recorded terminal events (DFCom polling) must store
+    # every stamp verbatim — refusing here would silently drop real bookings.
+    if enforce_state:
+        punches = punches_around(db, user.id, booked)
+        state = status_from_punches(punches)
+        if kind not in allowed_kinds(state):
+            raise HTTPException(
+                status_code=409,
+                detail=f"{KIND_LABELS.get(kind, kind)} ist im Status {STATE_LABELS.get(state, state)} nicht möglich",
+            )
     punch = Punch(
         user_id=user.id,
         kind=kind,
