@@ -162,6 +162,8 @@ class OrgSettings(Base):
     dfcom_poll_interval_sec: Mapped[int] = mapped_column(Integer, default=20)
     dfcom_sync_lists: Mapped[bool] = mapped_column(default=True)
     dfcom_last_poll: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    esp_ok_line1: Mapped[str] = mapped_column(String(80), default="{first_name}")
+    esp_ok_line2: Mapped[str] = mapped_column(String(80), default="{kind} {flex_month}")
 
 
 class TerminalDevice(Base):

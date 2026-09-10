@@ -122,6 +122,13 @@ export type TerminalDevice = {
   last_summary: string;
 };
 
+export type EspTerminalSettings = {
+  secret_configured: boolean;
+  ok_line1: string;
+  ok_line2: string;
+  placeholders: string[];
+};
+
 export type DfcomSettings = {
   library_ok: boolean;
   library_path: string | null;
@@ -373,6 +380,9 @@ export const api = {
       "/api/hr/dfcom/lists",
       { method: "POST" },
     ),
+  espTerminalSettings: () => request<EspTerminalSettings>("/api/hr/esp-terminal"),
+  patchEspTerminalSettings: (body: { ok_line1?: string; ok_line2?: string }) =>
+    request<EspTerminalSettings>("/api/hr/esp-terminal", { method: "PATCH", body: JSON.stringify(body) }),
   createDfcomTerminal: (body: { name: string; host: string; port: number; device_address?: number; enabled?: boolean }) =>
     request<TerminalDevice>("/api/hr/dfcom/terminals", { method: "POST", body: JSON.stringify(body) }),
   patchDfcomTerminal: (id: number, body: Partial<{ name: string; host: string; port: number; device_address: number; enabled: boolean }>) =>

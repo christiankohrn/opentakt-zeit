@@ -69,6 +69,7 @@ class AppConfig(BaseModel):
     webauthn: WebAuthnConfig = Field(default_factory=WebAuthnConfig)
     dfcom_lib: str = ""
     datafox_secret: str = ""
+    esp_terminal_secret: str = ""
 
     @property
     def is_dev(self) -> bool:

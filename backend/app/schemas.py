@@ -276,6 +276,33 @@ class SecurityPolicyIn(BaseModel):
     policies: dict[str, str]
 
 
+class EspPunchIn(BaseModel):
+    badge: str = Field(min_length=1, max_length=80)
+    event_id: str = Field(min_length=8, max_length=64)
+    device_id: str = Field(default="", max_length=80)
+
+
+class EspPunchOut(BaseModel):
+    ok: bool
+    line1: str
+    line2: str
+    kind: Optional[str] = None
+
+
+class EspTerminalSettingsIn(BaseModel):
+    ok_line1: Optional[str] = Field(default=None, max_length=80)
+    ok_line2: Optional[str] = Field(default=None, max_length=80)
+
+
+class EspTerminalSettingsOut(BaseModel):
+    secret_configured: bool
+    ok_line1: str
+    ok_line2: str
+    placeholders: list[str] = Field(
+        default_factory=lambda: ["first_name", "display_name", "kind", "flex_month", "flex_total"]
+    )
+
+
 class TerminalDeviceIn(BaseModel):
     name: str = Field(default="Terminal", max_length=120)
     host: str = Field(min_length=1, max_length=200)

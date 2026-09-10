@@ -21,6 +21,7 @@ public_url = "http://test.local"
 database_path = "{(_ROOT / "app.db").as_posix()}"
 listen_host = "127.0.0.1"
 listen_port = 8000
+esp_terminal_secret = "test-esp-secret"
 """,
     encoding="utf-8",
 )

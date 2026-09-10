@@ -44,4 +44,5 @@ def health():
         "db": db_ok,
         "disk_free_bytes": disk_free,
         "dfcom_library": library_available(),
+        "esp_terminal": bool((cfg.esp_terminal_secret or "").strip()),
     }

@@ -139,6 +139,44 @@ print(f"datafox_secret {action}")
 PY
 }
 
+ensure_esp_terminal_secret() {
+  local conf="${1:-$CONF/config.toml}"
+  python3 - "$conf" <<'PY'
+from pathlib import Path
+import re
+import secrets
+import sys
+
+p = Path(sys.argv[1])
+if not p.is_file():
+    raise SystemExit(0)
+text = p.read_text(encoding="utf-8")
+found = re.findall(r'(?m)^esp_terminal_secret\s*=\s*"(.*)"\s*$', text)
+secret = next((v.strip() for v in found if v.strip()), "")
+top = text.split("\n[", 1)[0]
+was_top = bool(re.search(r'(?m)^esp_terminal_secret\s*=\s*".+\s*$', top))
+text = re.sub(r'(?m)^esp_terminal_secret\s*=\s*".*"\s*\n?', "", text)
+if not secret:
+    secret = secrets.token_urlsafe(32)
+    action = "ergänzt"
+elif was_top:
+    action = "vorhanden"
+else:
+    action = "nach oben verschoben"
+insert = f'esp_terminal_secret = "{secret}"\n'
+head, sep, tail = text.partition("\n[")
+head = head.rstrip() + "\n"
+if tail:
+    text = head + "\n" + insert + "[" + tail
+else:
+    text = head + "\n" + insert
+if not text.endswith("\n"):
+    text += "\n"
+p.write_text(text, encoding="utf-8")
+print(f"esp_terminal_secret {action}")
+PY
+}
+
 ensure_terminal_http() {
   local script="${APP_ROOT}/deploy/ensure_terminal_http.py"
   if [ ! -f "$script" ]; then

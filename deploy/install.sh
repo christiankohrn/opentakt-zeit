@@ -55,6 +55,7 @@ chmod a+x "$APP_ROOT/deploy/"*.sh
 if [ ! -f "$CONF/config.toml" ]; then
   SECRET=$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')
   DATAFOX=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
+  ESPSEC=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
   ADMIN_PW=$(python3 -c 'import secrets; print(secrets.token_urlsafe(12))')
   HR_PW=$(python3 -c 'import secrets; print(secrets.token_urlsafe(12))')
   EMP_PW=$(python3 -c 'import secrets; print(secrets.token_urlsafe(12))')
@@ -70,6 +71,7 @@ database_path = "$DATA/app.db"
 listen_host = "127.0.0.1"
 listen_port = 8000
 datafox_secret = "$DATAFOX"
+esp_terminal_secret = "$ESPSEC"
 
 [seed]
 admin_username = "admin"

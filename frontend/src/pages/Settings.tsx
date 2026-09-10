@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, ApiError, type DfcomSettings, type SecurityPolicyValue, type SmtpSettings } from "../api";
+import { api, ApiError, type DfcomSettings, type EspTerminalSettings, type SecurityPolicyValue, type SmtpSettings } from "../api";
 import PasswordField from "../components/PasswordField";
 
 const ROLE_LABELS: Record<string, string> = {
@@ -101,6 +101,13 @@ const empty: SmtpSettings = {
   ready: false,
 };
 
+const emptyEsp: EspTerminalSettings = {
+  secret_configured: false,
+  ok_line1: "{first_name}",
+  ok_line2: "{kind} {flex_month}",
+  placeholders: ["first_name", "display_name", "kind", "flex_month", "flex_total"],
+};
+
 const emptyDfcom: DfcomSettings = {
   library_ok: false,
   library_path: null,
@@ -115,6 +122,7 @@ const emptyDfcom: DfcomSettings = {
 export default function Settings() {
   const [form, setForm] = useState<SmtpSettings>(empty);
   const [dfcom, setDfcom] = useState<DfcomSettings>(emptyDfcom);
+  const [esp, setEsp] = useState<EspTerminalSettings>(emptyEsp);
   const [termName, setTermName] = useState("Halle");
   const [termHost, setTermHost] = useState("");
   const [termPort, setTermPort] = useState(8000);
@@ -125,9 +133,14 @@ export default function Settings() {
   const [busy, setBusy] = useState(false);
 
   async function load() {
-    const [smtp, nextDfcom] = await Promise.all([api.smtpSettings(), api.dfcomSettings()]);
+    const [smtp, nextDfcom, nextEsp] = await Promise.all([
+      api.smtpSettings(),
+      api.dfcomSettings(),
+      api.espTerminalSettings(),
+    ]);
     setForm(smtp);
     setDfcom(nextDfcom);
+    setEsp(nextEsp);
   }
 
   useEffect(() => {
@@ -168,6 +181,24 @@ export default function Settings() {
     try {
       await api.testSmtp(testTo.trim() || undefined);
       setMsg("Testmail ist unterwegs.");
+    } catch (ex) {
+      setErr(ex instanceof ApiError ? ex.message : "Fehler");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveEsp() {
+    setMsg("");
+    setErr("");
+    setBusy(true);
+    try {
+      const next = await api.patchEspTerminalSettings({
+        ok_line1: esp.ok_line1,
+        ok_line2: esp.ok_line2,
+      });
+      setEsp(next);
+      setMsg("Displaytexte gespeichert.");
     } catch (ex) {
       setErr(ex instanceof ApiError ? ex.message : "Fehler");
     } finally {
@@ -258,7 +289,7 @@ export default function Settings() {
       <SecurityPolicyCard />
 
       <p className="mt-6 text-sm text-muted">
-        Mailserver und optionales Datafox-Polling (DFCom). HTTP-Stempeln bleibt parallel nutzbar.
+        Mailserver, ESP-Terminal-Display und optionales Datafox-Polling (DFCom). HTTP-Stempeln bleibt parallel nutzbar.
       </p>
       {err ? <p className="mt-3 text-sm text-danger">{err}</p> : null}
       {msg ? <p className="mt-3 text-sm text-present">{msg}</p> : null}
@@ -370,6 +401,40 @@ export default function Settings() {
           className="w-full rounded-xl border border-line py-2 text-sm disabled:opacity-60"
         >
           Testmail senden
+        </button>
+      </div>
+
+      <div className="mt-3 space-y-3 rounded-2xl border border-line bg-card p-4">
+        <p className="text-sm font-medium">ESP-Terminal (Display)</p>
+        <p className="text-sm text-muted">
+          Zwei Zeilen auf dem OLED, je etwa 21 Zeichen. Platzhalter:{" "}
+          {esp.placeholders.map((name) => `{${name}}`).join(", ")}. Das Gerät bucht nur mit Netz; Kommen/Gehen entscheidet
+          der Server. Secret in der Config: <code className="text-xs">esp_terminal_secret</code>
+          {esp.secret_configured ? " (gesetzt)." : " (noch leer — API aus)."}
+        </p>
+        <label className="block text-xs text-muted">
+          Zeile 1
+          <input
+            className="mt-1 w-full rounded-lg border border-line bg-bg px-3 py-2 text-sm text-ink"
+            value={esp.ok_line1}
+            onChange={(e) => setEsp({ ...esp, ok_line1: e.target.value })}
+          />
+        </label>
+        <label className="block text-xs text-muted">
+          Zeile 2
+          <input
+            className="mt-1 w-full rounded-lg border border-line bg-bg px-3 py-2 text-sm text-ink"
+            value={esp.ok_line2}
+            onChange={(e) => setEsp({ ...esp, ok_line2: e.target.value })}
+          />
+        </label>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void saveEsp()}
+          className="w-full rounded-xl bg-navy py-2 text-sm text-white disabled:opacity-60"
+        >
+          Displaytexte speichern
         </button>
       </div>
 
