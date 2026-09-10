@@ -44,6 +44,14 @@ class LdapConfig(BaseModel):
     group_admin: str = ""
 
 
+class WebAuthnConfig(BaseModel):
+    # Relying-Party ID (a registrable domain, e.g. "zeit.firma.de"). Empty =
+    # derive from public_url. WebAuthn does not work on raw IPs; use a hostname.
+    rp_id: str = ""
+    # Allowed browser origins. Empty = derive from public_url.
+    origins: list[str] = Field(default_factory=list)
+
+
 class AppConfig(BaseModel):
     environment: str = "development"
     secret_key: str = "dev-only-change-me"
@@ -58,6 +66,7 @@ class AppConfig(BaseModel):
     seed: SeedConfig = Field(default_factory=SeedConfig)
     smtp: SmtpConfig = Field(default_factory=SmtpConfig)
     ldap: LdapConfig = Field(default_factory=LdapConfig)
+    webauthn: WebAuthnConfig = Field(default_factory=WebAuthnConfig)
     dfcom_lib: str = ""
     datafox_secret: str = ""
 

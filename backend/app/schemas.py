@@ -26,6 +26,9 @@ class UserOut(BaseModel):
     web_login: bool = True
     hired_on: Optional[date] = None
     left_on: Optional[date] = None
+    totp_enabled: bool = False
+    passkey_count: int = 0
+    security_setup_required: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -177,6 +180,67 @@ class ResetInfoOut(BaseModel):
     purpose: str
 
 
+class MfaRequiredOut(BaseModel):
+    mfa_required: bool = True
+    methods: list[str] = Field(default_factory=list)
+
+
+class MfaVerifyIn(BaseModel):
+    code: str = Field(min_length=6, max_length=20)
+
+
+class TotpSetupOut(BaseModel):
+    secret: str
+    otpauth_uri: str
+    qr_svg: str
+
+
+class TotpEnableIn(BaseModel):
+    code: str = Field(min_length=6, max_length=10)
+
+
+class TotpEnableOut(BaseModel):
+    backup_codes: list[str]
+
+
+class TotpDisableIn(BaseModel):
+    password: Optional[str] = None
+    code: Optional[str] = None
+
+
+class PasskeyOut(BaseModel):
+    id: int
+    name: str
+    created_at: datetime
+    last_used_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class SecurityStatusOut(BaseModel):
+    totp_enabled: bool
+    backup_codes_remaining: int
+    can_use_password: bool
+    passkeys: list[PasskeyOut] = Field(default_factory=list)
+
+
+class PasskeyRegisterVerifyIn(BaseModel):
+    credential: dict
+    name: Optional[str] = Field(default=None, max_length=120)
+
+
+class PasskeyRenameIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+
+
+class PasskeyAuthOptionsIn(BaseModel):
+    username: Optional[str] = Field(default=None, max_length=200)
+
+
+class PasskeyAuthVerifyIn(BaseModel):
+    credential: dict
+
+
 class SmtpSettingsIn(BaseModel):
     enabled: Optional[bool] = None
     host: Optional[str] = None
@@ -200,6 +264,16 @@ class OrgSettingsOut(BaseModel):
 
 class OrgSettingsIn(BaseModel):
     bundesland: str
+
+
+class SecurityPolicyOut(BaseModel):
+    policies: dict[str, str]
+    roles: list[str]
+    values: list[str]
+
+
+class SecurityPolicyIn(BaseModel):
+    policies: dict[str, str]
 
 
 class TerminalDeviceIn(BaseModel):

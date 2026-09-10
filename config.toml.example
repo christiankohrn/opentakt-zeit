@@ -41,6 +41,13 @@ user_filter = "(sAMAccountName={username})"
 group_hr = ""
 group_admin = ""
 
+# Passkeys (WebAuthn) und Zwei-Faktor per Authenticator-App sind ohne weitere
+# Konfiguration aktiv. rp_id/Origin werden aus public_url abgeleitet. Nur setzen,
+# wenn die App über mehrere Hostnamen läuft. rp_id muss ein Hostname sein (kein IP).
+[webauthn]
+rp_id = ""
+origins = []
+
 # Shared secret für Datafox MasterIV HTTP. Leer = Terminal-API aus.
 # In der Send-URL als ?k=... eintragen, niemals committen.
 datafox_secret = ""

@@ -2,6 +2,7 @@ import { FormEvent, useState } from "react";
 import { api, ApiError } from "../api";
 import { useAuth } from "../auth";
 import PasswordField from "../components/PasswordField";
+import SecuritySettings from "../components/SecuritySettings";
 
 export default function Account() {
   const { user } = useAuth();
@@ -94,6 +95,10 @@ export default function Account() {
           {busy ? "…" : "Passwort speichern"}
         </button>
       </form>
+
+      <h2 className="mt-6 text-lg font-medium">Sicherheit</h2>
+      <p className="mt-1 text-sm text-muted">Zwei-Faktor-Authentisierung und Passkeys für dein Konto.</p>
+      <SecuritySettings />
     </div>
   );
 }

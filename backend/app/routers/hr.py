@@ -25,6 +25,8 @@ from app.schemas import (
     DayReplaceIn,
     OrgSettingsIn,
     OrgSettingsOut,
+    SecurityPolicyIn,
+    SecurityPolicyOut,
     SmtpSettingsIn,
     SmtpTestIn,
     UserAccountIn,
@@ -38,6 +40,7 @@ from app.schemas import (
     WorkModelOut,
 )
 from app.security import hash_password
+from app.security_policy import POLICY_ROLES, POLICY_VALUES, get_policies, passkey_counts, set_policies
 from app.holidays import STATES, bundesland_of, calendar_map
 from app.mail import MailError, apply_smtp, has_open_invite, normalize_email, send_access_mail, send_test_mail, smtp_ready, smtp_status, valid_email
 from app.timecalc import punches_window_for_month, summarize_day
@@ -178,7 +181,8 @@ def _check_employment_dates(user: User) -> None:
 def list_users(request: Request, db: Session = Depends(get_db)):
     _actor(request, db)
     users = list(db.scalars(select(User).options(selectinload(User.work_model)).order_by(User.display_name)))
-    return [_user_out(u) for u in users]
+    counts = passkey_counts(db, [u.id for u in users])
+    return [_user_out(u).model_copy(update={"passkey_count": counts.get(u.id, 0)}) for u in users]
 
 
 @router.post("/users", response_model=UserCreateOut)
@@ -508,6 +512,32 @@ def patch_settings(payload: OrgSettingsIn, request: Request, db: Session = Depen
     )
     db.commit()
     return OrgSettingsOut(bundesland=code, bundesland_name=STATES[code], states=STATES)
+
+
+@router.get("/security-policy", response_model=SecurityPolicyOut)
+def get_security_policy(request: Request, db: Session = Depends(get_db)):
+    _actor(request, db)
+    return SecurityPolicyOut(policies=get_policies(db), roles=list(POLICY_ROLES), values=list(POLICY_VALUES))
+
+
+@router.patch("/security-policy", response_model=SecurityPolicyOut)
+def patch_security_policy(payload: SecurityPolicyIn, request: Request, db: Session = Depends(get_db)):
+    actor = _actor_admin(request, db)
+    for role, value in payload.policies.items():
+        if role not in POLICY_ROLES or value not in POLICY_VALUES:
+            raise HTTPException(400, "Ungültige Sicherheitsrichtlinie")
+    policies = set_policies(db, payload.policies)
+    db.add(
+        AuditEvent(
+            actor_id=actor.id,
+            action="org.security_policy",
+            entity_type="org",
+            entity_id="1",
+            payload=json.dumps(policies),
+        )
+    )
+    db.commit()
+    return SecurityPolicyOut(policies=policies, roles=list(POLICY_ROLES), values=list(POLICY_VALUES))
 
 
 @router.get("/mail-status")

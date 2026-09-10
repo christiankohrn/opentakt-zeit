@@ -66,6 +66,12 @@ def ensure_schema() -> None:
         alters.append("ALTER TABLE users ADD COLUMN hired_on DATE")
     if "left_on" not in cols:
         alters.append("ALTER TABLE users ADD COLUMN left_on DATE")
+    if "totp_secret" not in cols:
+        alters.append("ALTER TABLE users ADD COLUMN totp_secret VARCHAR(64)")
+    if "totp_enabled" not in cols:
+        alters.append("ALTER TABLE users ADD COLUMN totp_enabled BOOLEAN NOT NULL DEFAULT 0")
+    if "totp_confirmed_at" not in cols:
+        alters.append("ALTER TABLE users ADD COLUMN totp_confirmed_at DATETIME")
     org_cols = {c["name"] for c in inspect(engine).get_columns("org_settings")} if inspect(engine).has_table("org_settings") else set()
     if "smtp_configured" not in org_cols:
         alters.append("ALTER TABLE org_settings ADD COLUMN smtp_configured BOOLEAN NOT NULL DEFAULT 0")
@@ -85,6 +91,9 @@ def ensure_schema() -> None:
         alters.append("ALTER TABLE org_settings ADD COLUMN smtp_use_tls BOOLEAN NOT NULL DEFAULT 1")
     if "smtp_use_ssl" not in org_cols:
         alters.append("ALTER TABLE org_settings ADD COLUMN smtp_use_ssl BOOLEAN NOT NULL DEFAULT 0")
+    for _role in ("employee", "supervisor", "hr", "admin"):
+        if f"mfa_policy_{_role}" not in org_cols:
+            alters.append(f"ALTER TABLE org_settings ADD COLUMN mfa_policy_{_role} VARCHAR(16) NOT NULL DEFAULT 'off'")
     if "dfcom_poll_enabled" not in org_cols:
         alters.append("ALTER TABLE org_settings ADD COLUMN dfcom_poll_enabled BOOLEAN NOT NULL DEFAULT 0")
     if "dfcom_poll_dry_run" not in org_cols:
