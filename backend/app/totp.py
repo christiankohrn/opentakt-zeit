@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import secrets
-from urllib.parse import quote
 
 import pyotp
 from sqlalchemy import select
@@ -34,12 +33,17 @@ def verify_code(secret: str | None, code: str) -> bool:
 
 
 def qr_svg_data_uri(uri: str) -> str:
-    """Inline SVG data URI for the otpauth URI, rendered without extra deps."""
+    """Base64 SVG data URI for the otpauth URI (renders reliably in <img src>)."""
+    import base64
+    import io
+
     import segno
 
     qr = segno.make(uri, error="m")
-    svg = qr.svg_inline(scale=5, border=2)
-    return "data:image/svg+xml;utf8," + quote(svg)
+    buf = io.BytesIO()
+    qr.save(buf, kind="svg", scale=5, border=2)
+    b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+    return "data:image/svg+xml;base64," + b64
 
 
 def _normalize_backup(code: str) -> str:
