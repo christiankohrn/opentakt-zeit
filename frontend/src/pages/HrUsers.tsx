@@ -2,9 +2,43 @@ import { FormEvent, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, type FlexBalance, type User, type WorkModel } from "../api";
 import { useAuth } from "../auth";
+import FieldError from "../components/FieldError";
 import PasswordField from "../components/PasswordField";
+import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
 import { hoursTone, isoDate, signedHours } from "../labels";
 import { generatePassword } from "../password";
+import { useUnsavedGuard } from "../unsaved";
+import { firstUserFieldError, inputClass, validateUserAccount, type UserFieldErrors } from "../userForm";
+
+type UserForm = {
+  username: string;
+  display_name: string;
+  email: string;
+  password: string;
+  role: string;
+  work_model_id: string;
+  transponder_id: string;
+  web_login: boolean;
+  hired_on: string;
+  left_on: string;
+  send_access_mail: boolean;
+};
+
+function emptyUserForm(workModelId: string): UserForm {
+  return {
+    username: "",
+    display_name: "",
+    email: "",
+    password: "",
+    role: "employee",
+    work_model_id: workModelId,
+    transponder_id: "",
+    web_login: true,
+    hired_on: isoDate(),
+    left_on: "",
+    send_access_mail: true,
+  };
+}
 
 function SecurityBadges({ u, compact = false }: { u: User; compact?: boolean }) {
   const totp = Boolean(u.totp_enabled);
@@ -44,23 +78,17 @@ export default function HrUsers() {
   const [models, setModels] = useState<WorkModel[]>([]);
   const [balances, setBalances] = useState<Record<number, FlexBalance>>({});
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({
-    username: "",
-    display_name: "",
-    email: "",
-    password: "",
-    role: "employee",
-    work_model_id: "",
-    transponder_id: "",
-    web_login: true,
-    hired_on: isoDate(),
-    left_on: "",
-    send_access_mail: true,
-  });
+  const [closeConfirm, setCloseConfirm] = useState(false);
+  const [form, setForm] = useState<UserForm>(() => emptyUserForm(""));
+  const [fieldErrors, setFieldErrors] = useState<UserFieldErrors>({});
   const [error, setError] = useState("");
   const [generatedPassword, setGeneratedPassword] = useState("");
   const [mailReady, setMailReady] = useState(false);
   const [info, setInfo] = useState("");
+  const dirty = open && JSON.stringify(form) !== JSON.stringify(emptyUserForm(form.work_model_id));
+  const blocker = useUnsavedGuard(dirty);
+  const sendingMail = Boolean(isAdmin && form.send_access_mail && form.web_login && mailReady);
+  const passwordRequired = Boolean(isAdmin && form.web_login && !sendingMail);
 
   async function load() {
     const [u, m, b, mail] = await Promise.all([api.users(), api.models(), api.balances(month), api.mailStatus().catch(() => ({ ready: false }))]);
@@ -82,10 +110,66 @@ export default function HrUsers() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [month]);
 
+  function patchForm(patch: Partial<UserForm>) {
+    setForm((cur) => ({ ...cur, ...patch }));
+    setFieldErrors((cur) => {
+      const next = { ...cur };
+      for (const key of Object.keys(patch) as (keyof UserFieldErrors)[]) {
+        delete next[key];
+      }
+      return next;
+    });
+  }
+
+  function resetAndClose() {
+    setForm(emptyUserForm(form.work_model_id));
+    setGeneratedPassword("");
+    setFieldErrors({});
+    setError("");
+    setCloseConfirm(false);
+    setOpen(false);
+  }
+
+  function requestClose() {
+    if (dirty) setCloseConfirm(true);
+    else resetAndClose();
+  }
+
+  function onStay() {
+    if (blocker.state === "blocked") blocker.reset();
+    setCloseConfirm(false);
+  }
+
+  function onDiscard() {
+    if (blocker.state === "blocked") {
+      blocker.proceed();
+      return;
+    }
+    resetAndClose();
+  }
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
     setInfo("");
+    const nextErrors = validateUserAccount({
+      display_name: form.display_name,
+      username: form.username,
+      email: form.email,
+      emailRequired: sendingMail,
+      password: form.password,
+      passwordRequired,
+      hired_on: form.hired_on,
+      left_on: form.left_on,
+    });
+    setFieldErrors(nextErrors);
+    if (firstUserFieldError(nextErrors)) {
+      setError("Bitte die markierten Felder ausfüllen.");
+      requestAnimationFrame(() => {
+        document.querySelector<HTMLElement>("#new-user-form [aria-invalid='true']")?.focus();
+      });
+      return;
+    }
     try {
       const created = await api.createUser({
         ...form,
@@ -97,23 +181,12 @@ export default function HrUsers() {
         password: isAdmin ? form.password || null : null,
         hired_on: form.hired_on || null,
         left_on: form.left_on || null,
-        send_access_mail: Boolean(isAdmin && form.send_access_mail && form.web_login && mailReady),
+        send_access_mail: sendingMail,
       });
-      setOpen(false);
       setGeneratedPassword("");
-      setForm({
-        username: "",
-        display_name: "",
-        email: "",
-        password: "",
-        role: "employee",
-        work_model_id: form.work_model_id,
-        transponder_id: "",
-        web_login: true,
-        hired_on: isoDate(),
-        left_on: "",
-        send_access_mail: true,
-      });
+      setFieldErrors({});
+      setForm(emptyUserForm(form.work_model_id));
+      setOpen(false);
       if (created.mail_sent) setInfo(`Zugang per Mail an ${created.email} gesendet.`);
       else if (created.mail_error) setError(`Benutzer angelegt, Mail fehlgeschlagen: ${created.mail_error}`);
       await load();
@@ -148,59 +221,77 @@ export default function HrUsers() {
             Mail
           </Link>
         ) : null}
-        <button type="button" className="text-present" onClick={() => setOpen((v) => !v)}>
+        <button type="button" className="text-present" onClick={() => (open ? requestClose() : setOpen(true))}>
           {open ? "Schließen" : "Neu"}
         </button>
       </div>
       {info ? <p className="mt-2 text-sm text-present">{info}</p> : null}
       {!open && error ? <p className="mt-2 text-sm text-danger">{error}</p> : null}
       {open ? (
-        <form onSubmit={onSubmit} className="mt-4 space-y-3 rounded-2xl border border-line bg-card p-4">
-          <input
-            placeholder="Anzeigename"
-            className="w-full rounded-lg border border-line bg-bg px-3 py-2"
-            value={form.display_name}
-            onChange={(e) => setForm({ ...form, display_name: e.target.value })}
-            required
-          />
-          <input
-            placeholder="Benutzername"
-            className="w-full rounded-lg border border-line bg-bg px-3 py-2"
-            value={form.username}
-            onChange={(e) => setForm({ ...form, username: e.target.value })}
-            required
-          />
-          <input
-            type="email"
-            placeholder="E-Mail"
-            className="w-full rounded-lg border border-line bg-bg px-3 py-2"
-            value={form.email}
-            onChange={(e) => setForm({ ...form, email: e.target.value })}
-            required={Boolean(isAdmin && form.send_access_mail && form.web_login)}
-          />
+        <form id="new-user-form" noValidate onSubmit={onSubmit} className="mt-4 space-y-3 rounded-2xl border border-line bg-card p-4">
+          <label className="block text-xs text-muted">
+            Anzeigename
+            <input
+              placeholder="z. B. Erika Mustermann"
+              className={`mt-1 w-full px-3 py-2 ${inputClass(fieldErrors.display_name)}`}
+              value={form.display_name}
+              onChange={(e) => patchForm({ display_name: e.target.value })}
+              aria-invalid={Boolean(fieldErrors.display_name)}
+              aria-describedby={fieldErrors.display_name ? "err-display-name" : undefined}
+            />
+            <FieldError id="err-display-name">{fieldErrors.display_name}</FieldError>
+          </label>
+          <label className="block text-xs text-muted">
+            Benutzername
+            <input
+              placeholder="zum Anmelden"
+              className={`mt-1 w-full px-3 py-2 ${inputClass(fieldErrors.username)}`}
+              value={form.username}
+              onChange={(e) => patchForm({ username: e.target.value })}
+              autoCapitalize="none"
+              aria-invalid={Boolean(fieldErrors.username)}
+              aria-describedby={fieldErrors.username ? "err-username" : undefined}
+            />
+            <FieldError id="err-username">{fieldErrors.username}</FieldError>
+          </label>
+          <label className="block text-xs text-muted">
+            E-Mail{sendingMail ? "" : " (optional)"}
+            <input
+              type="email"
+              placeholder={sendingMail ? "für den Zugangslink" : "optional"}
+              className={`mt-1 w-full px-3 py-2 ${inputClass(fieldErrors.email)}`}
+              value={form.email}
+              onChange={(e) => patchForm({ email: e.target.value })}
+              autoCapitalize="none"
+              aria-invalid={Boolean(fieldErrors.email)}
+              aria-describedby={fieldErrors.email ? "err-email" : undefined}
+            />
+            <FieldError id="err-email">{fieldErrors.email}</FieldError>
+          </label>
           {isAdmin ? (
             <>
-              <PasswordField
-                placeholder={
-                  form.web_login && !(form.send_access_mail && form.email)
-                    ? "Passwort"
-                    : "Passwort (optional)"
-                }
-                autoComplete="new-password"
-                className="w-full rounded-lg border border-line bg-bg px-3 py-2"
-                value={form.password}
-                onChange={(e) => {
-                  setForm({ ...form, password: e.target.value });
-                  setGeneratedPassword("");
-                }}
-                required={form.web_login && !(form.send_access_mail && form.email.trim())}
-              />
+              <label className="block text-xs text-muted">
+                {passwordRequired ? "Passwort" : "Passwort (optional)"}
+                <PasswordField
+                  placeholder={passwordRequired ? "mind. 8 Zeichen" : "leer lassen, wenn Mail den Zugang setzt"}
+                  autoComplete="new-password"
+                  className={`mt-1 w-full px-3 py-2 ${inputClass(fieldErrors.password)}`}
+                  value={form.password}
+                  onChange={(e) => {
+                    patchForm({ password: e.target.value });
+                    setGeneratedPassword("");
+                  }}
+                  aria-invalid={Boolean(fieldErrors.password)}
+                  aria-describedby={fieldErrors.password ? "err-password" : undefined}
+                />
+                <FieldError id="err-password">{fieldErrors.password}</FieldError>
+              </label>
               <button
                 type="button"
                 className="text-sm text-present"
                 onClick={() => {
                   const next = generatePassword();
-                  setForm((f) => ({ ...f, password: next }));
+                  patchForm({ password: next });
                   setGeneratedPassword(next);
                 }}
               >
@@ -218,21 +309,19 @@ export default function HrUsers() {
               Eintritt
               <input
                 type="date"
-                className="mt-1 h-10 w-full rounded-lg border border-line bg-bg px-2 text-sm text-ink"
+                className={`mt-1 h-10 w-full px-2 text-sm ${inputClass(fieldErrors.hired_on)}`}
                 value={form.hired_on}
-                onChange={(e) => setForm({ ...form, hired_on: e.target.value })}
-                required
+                onChange={(e) => patchForm({ hired_on: e.target.value })}
+                aria-invalid={Boolean(fieldErrors.hired_on)}
+                aria-describedby={fieldErrors.hired_on ? "err-hired-on" : undefined}
               />
+              <FieldError id="err-hired-on">{fieldErrors.hired_on}</FieldError>
             </label>
             <div className="min-w-0 overflow-hidden text-xs text-muted">
               <div className="flex items-baseline justify-between gap-2">
                 <label htmlFor="new-left-on">Austritt</label>
                 {form.left_on ? (
-                  <button
-                    type="button"
-                    className="text-present"
-                    onClick={() => setForm({ ...form, left_on: "" })}
-                  >
+                  <button type="button" className="text-present" onClick={() => patchForm({ left_on: "" })}>
                     Leeren
                   </button>
                 ) : null}
@@ -241,18 +330,24 @@ export default function HrUsers() {
                 id="new-left-on"
                 key={form.left_on ? "left-set" : "left-empty"}
                 type="date"
-                className="mt-1 h-10 w-full rounded-lg border border-line bg-bg px-2 text-sm text-ink"
+                className={`mt-1 h-10 w-full px-2 text-sm ${inputClass(fieldErrors.left_on)}`}
                 value={form.left_on}
-                onChange={(e) => setForm({ ...form, left_on: e.target.value })}
+                onChange={(e) => patchForm({ left_on: e.target.value })}
+                aria-invalid={Boolean(fieldErrors.left_on)}
+                aria-describedby={fieldErrors.left_on ? "err-left-on" : undefined}
               />
+              <FieldError id="err-left-on">{fieldErrors.left_on}</FieldError>
             </div>
           </div>
-          <input
-            placeholder="Transpondernummer (Terminal)"
-            className="w-full rounded-lg border border-line bg-bg px-3 py-2"
-            value={form.transponder_id}
-            onChange={(e) => setForm({ ...form, transponder_id: e.target.value })}
-          />
+          <label className="block text-xs text-muted">
+            Transpondernummer (optional)
+            <input
+              placeholder="wie am Gerät angezeigt"
+              className="mt-1 w-full rounded-lg border border-line bg-bg px-3 py-2"
+              value={form.transponder_id}
+              onChange={(e) => patchForm({ transponder_id: e.target.value })}
+            />
+          </label>
           {isAdmin ? (
             <>
               <label className="flex items-start gap-3 text-sm">
@@ -260,7 +355,7 @@ export default function HrUsers() {
                   type="checkbox"
                   className="mt-1"
                   checked={form.web_login}
-                  onChange={(e) => setForm({ ...form, web_login: e.target.checked })}
+                  onChange={(e) => patchForm({ web_login: e.target.checked })}
                   disabled={form.role === "hr" || form.role === "admin" || form.role === "supervisor"}
                 />
                 <span>Anmeldung auf der Webseite aktivieren</span>
@@ -271,7 +366,7 @@ export default function HrUsers() {
                   className="mt-1"
                   checked={form.send_access_mail && form.web_login && mailReady}
                   disabled={!form.web_login || !mailReady}
-                  onChange={(e) => setForm({ ...form, send_access_mail: e.target.checked })}
+                  onChange={(e) => patchForm({ send_access_mail: e.target.checked })}
                 />
                 <span>
                   Zugangsdaten per E-Mail senden
@@ -288,7 +383,7 @@ export default function HrUsers() {
                 onChange={(e) => {
                   const role = e.target.value;
                   const forceWeb = role === "hr" || role === "admin" || role === "supervisor";
-                  setForm({ ...form, role, web_login: forceWeb ? true : form.web_login });
+                  patchForm({ role, web_login: forceWeb ? true : form.web_login });
                 }}
               >
                 <option value="employee">Mitarbeiter</option>
@@ -303,7 +398,7 @@ export default function HrUsers() {
           <select
             className="w-full rounded-lg border border-line bg-bg px-3 py-2"
             value={form.work_model_id}
-            onChange={(e) => setForm({ ...form, work_model_id: e.target.value })}
+            onChange={(e) => patchForm({ work_model_id: e.target.value })}
           >
             {models.map((m) => (
               <option key={m.id} value={m.id}>
@@ -409,6 +504,9 @@ export default function HrUsers() {
           </tbody>
         </table>
       </div>
+      {closeConfirm || blocker.state === "blocked" ? (
+        <UnsavedChangesDialog onStay={onStay} onDiscard={onDiscard} />
+      ) : null}
     </div>
   );
 }
