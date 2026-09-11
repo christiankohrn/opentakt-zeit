@@ -8,6 +8,7 @@ STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 source "$(cd "$(dirname "$0")" && pwd)/common.sh"
 
 ensure_datafox_secret
+ensure_esp_terminal_secret
 ensure_terminal_http
 
 if [ -f "$DATA/app.db" ]; then

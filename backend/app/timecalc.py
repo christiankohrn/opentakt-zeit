@@ -199,6 +199,8 @@ def summarize_day(
                 "kind": p.kind,
                 "time": as_local(_as_utc(p.server_time)).strftime("%H:%M"),
                 "source": p.source,
+                "device_id": p.device_id,
+                "terminal_name": p.terminal_name or "",
                 "voided": p.voided_at is not None,
             }
             for p in all_in_day

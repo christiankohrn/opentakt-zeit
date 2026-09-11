@@ -7,9 +7,11 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.auth import now_utc
 from app.datafox import normalize_badge
 from app.models import AuditEvent, Punch, User
-from app.punches import KIND_LABELS, record_punch
+from app.punches import KIND_LABELS, punches_around, record_punch
+from app.timecalc import status_from_punches
 
 
 @dataclass
@@ -33,6 +35,13 @@ def find_user_by_badge(db: Session, badge: str) -> User | None:
     return None
 
 
+def auto_kind_for(db: Session, user: User, when: datetime | None = None) -> str:
+    punches = punches_around(db, user.id, when or now_utc())
+    if status_from_punches(punches) == "away":
+        return "in"
+    return "out"
+
+
 def apply_booking(
     db: Session,
     *,
@@ -44,6 +53,8 @@ def apply_booking(
     note: str | None,
     persist: bool,
     enforce_state: bool = True,
+    device_id: str | None = None,
+    terminal_name: str | None = None,
 ) -> BookingResult:
     if not badge or not kind:
         return BookingResult("invalid", "Ungültige Buchung")
@@ -70,6 +81,8 @@ def apply_booking(
             device_time=timestamp,
             note=note,
             enforce_state=enforce_state,
+            device_id=device_id,
+            terminal_name=terminal_name,
         )
     except HTTPException as exc:
         if exc.status_code == 409:

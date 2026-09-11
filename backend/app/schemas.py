@@ -276,6 +276,79 @@ class SecurityPolicyIn(BaseModel):
     policies: dict[str, str]
 
 
+class EspPunchIn(BaseModel):
+    badge: str = Field(min_length=1, max_length=80)
+    event_id: str = Field(min_length=8, max_length=64)
+    device_id: str = Field(default="", max_length=80)
+    fw: int = Field(default=0, ge=0, le=99999)
+    ssid: str = Field(default="", max_length=80)
+
+
+class EspPunchOut(BaseModel):
+    ok: bool
+    line1: str
+    line2: str
+    kind: Optional[str] = None
+
+
+class EspHelloIn(BaseModel):
+    device_id: str = Field(min_length=4, max_length=80)
+    fw: int = Field(default=0, ge=0, le=99999)
+    ssid: str = Field(default="", max_length=80)
+    ip: str = Field(default="", max_length=64)
+
+
+class EspHelloOut(BaseModel):
+    ok: bool = True
+    name: str = ""
+    fw: int = 0
+    firmware_url: str = ""
+    wifi_ssid: str = ""
+    wifi_pass: str = ""
+
+
+class EspDeviceOut(BaseModel):
+    id: int
+    device_id: str
+    name: str
+    firmware: int
+    last_ssid: str
+    last_ip: str
+    last_seen_at: Optional[datetime] = None
+    wifi_ssid: str = ""
+    wifi_pass_set: bool = False
+
+    model_config = {"from_attributes": True}
+
+
+class EspDevicePatch(BaseModel):
+    name: Optional[str] = Field(default=None, max_length=120)
+    wifi_ssid: Optional[str] = Field(default=None, max_length=80)
+    wifi_pass: Optional[str] = Field(default=None, max_length=200)
+    clear_wifi: Optional[bool] = None
+
+
+class EspTerminalSettingsIn(BaseModel):
+    ok_line1: Optional[str] = Field(default=None, max_length=80)
+    ok_line2: Optional[str] = Field(default=None, max_length=80)
+    secret: Optional[str] = Field(default=None, max_length=200)
+
+
+class EspTerminalSettingsOut(BaseModel):
+    secret: str = ""
+    secret_configured: bool
+    secret_source: str = ""
+    ok_line1: str
+    ok_line2: str
+    line_max: int = 21
+    firmware_version: int = 0
+    firmware_uploaded: bool = False
+    devices: list[EspDeviceOut] = Field(default_factory=list)
+    placeholders: list[str] = Field(
+        default_factory=lambda: ["first_name", "display_name", "kind", "flex_month", "flex_total"]
+    )
+
+
 class TerminalDeviceIn(BaseModel):
     name: str = Field(default="Terminal", max_length=120)
     host: str = Field(min_length=1, max_length=200)

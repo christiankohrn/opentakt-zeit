@@ -90,6 +90,8 @@ class Punch(Base):
     device_time: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     source: Mapped[str] = mapped_column(String(16), default="pwa")
     client_event_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    device_id: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    terminal_name: Mapped[str] = mapped_column(String(120), default="")
     note: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
     voided_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     voided_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
@@ -162,6 +164,25 @@ class OrgSettings(Base):
     dfcom_poll_interval_sec: Mapped[int] = mapped_column(Integer, default=20)
     dfcom_sync_lists: Mapped[bool] = mapped_column(default=True)
     dfcom_last_poll: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    esp_ok_line1: Mapped[str] = mapped_column(String(80), default="{first_name}")
+    esp_ok_line2: Mapped[str] = mapped_column(String(80), default="{kind} {flex_month}")
+    esp_terminal_secret: Mapped[str] = mapped_column(String(200), default="")
+    esp_firmware_version: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class EspTerminal(Base):
+    __tablename__ = "esp_terminals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    device_id: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(120), default="")
+    firmware: Mapped[int] = mapped_column(Integer, default=0)
+    last_ssid: Mapped[str] = mapped_column(String(80), default="")
+    last_ip: Mapped[str] = mapped_column(String(64), default="")
+    last_seen_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    wifi_ssid: Mapped[str] = mapped_column(String(80), default="")
+    wifi_pass: Mapped[str] = mapped_column(String(200), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
 
 class TerminalDevice(Base):
