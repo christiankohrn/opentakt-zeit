@@ -28,7 +28,8 @@ Wir bestätigen den Eingang in der Regel innerhalb weniger Tage und koordinieren
 
 ## Betrieb
 
-- `secret_key`, SMTP/LDAP-Passwörter, `datafox_secret` und `esp_terminal_secret` nur in `/etc/zeiterfassung/config.toml` (Rechte 640), nie ins Git
+- `secret_key`, SMTP/LDAP-Passwörter, `datafox_secret` nur in `/etc/zeiterfassung/config.toml` (Rechte 640), nie ins Git
+- `esp_terminal_secret` in der Config **oder** in den Admin-Einstellungen (Org-Datenbank); nicht ins Git
 - Seed-Datei `/etc/zeiterfassung/seed-once.txt` nach dem ersten Login löschen oder offline aufbewahren
 - HTTPS in Produktion; Terminal-HTTP nur so lange, wie die Firmware kein TLS kann — siehe [docs/datafox-masteriv.md](docs/datafox-masteriv.md)
 - Backups unter `/var/lib/zeiterfassung/backups/` sind ebenso schützenswert wie `app.db`

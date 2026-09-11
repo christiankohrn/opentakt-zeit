@@ -22,6 +22,7 @@ def health():
     from app.dfcom import library_available
 
     db_ok = False
+    esp_ok = False
     try:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
@@ -29,6 +30,17 @@ def health():
         db_ok = True
     except Exception:
         db_ok = False
+    try:
+        from app.database import SessionLocal
+        from app.esp_service import effective_secret
+
+        session = SessionLocal()
+        try:
+            esp_ok = bool(effective_secret(session))
+        finally:
+            session.close()
+    except Exception:
+        esp_ok = bool((cfg.esp_terminal_secret or "").strip())
     db_path = Path(cfg.database_path)
     disk_free = None
     try:
@@ -44,5 +56,5 @@ def health():
         "db": db_ok,
         "disk_free_bytes": disk_free,
         "dfcom_library": library_available(),
-        "esp_terminal": bool((cfg.esp_terminal_secret or "").strip()),
+        "esp_terminal": esp_ok,
     }

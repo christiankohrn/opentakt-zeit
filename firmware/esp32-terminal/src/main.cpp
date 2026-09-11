@@ -2,16 +2,19 @@
 #include <DNSServer.h>
 #include <HTTPClient.h>
 #include <Preferences.h>
+#include <Update.h>
 #include <WebServer.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <U8g2lib.h>
 #include <ArduinoJson.h>
-#include <time.h>
 
 namespace {
 
+constexpr int kFwVersion = 2;
 constexpr uint32_t kStaTimeoutMs = 60000;
+constexpr uint32_t kHelloMs = 30000;
+constexpr uint32_t kBootPortalMs = 4000;
 constexpr uint8_t kSdaPin = 21;
 constexpr uint8_t kSclPin = 22;
 constexpr uint8_t kBootPin = 0;
@@ -31,10 +34,14 @@ String testUid;
 enum class Mode { Connecting, Station, Portal };
 Mode mode = Mode::Connecting;
 uint32_t staStarted = 0;
+uint32_t lastHello = 0;
 String line1 = "Opentakt";
 String line2 = "Start";
 uint32_t showUntil = 0;
 bool bootWasHigh = true;
+uint32_t bootDownAt = 0;
+bool bootLongHandled = false;
+bool inFlight = false;
 
 String apSsid() {
   uint8_t mac[6];
@@ -49,6 +56,14 @@ String apPass() {
   WiFi.macAddress(mac);
   char buf[16];
   snprintf(buf, sizeof(buf), "ot-%02X%02X%02X", mac[3], mac[4], mac[5]);
+  return String(buf);
+}
+
+String deviceId() {
+  uint8_t mac[6];
+  WiFi.macAddress(mac);
+  char buf[18];
+  snprintf(buf, sizeof(buf), "%02X%02X%02X%02X%02X%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
   return String(buf);
 }
 
@@ -99,24 +114,29 @@ void savePrefs() {
 
 String htmlPage() {
   String page;
-  page.reserve(1800);
+  page.reserve(2000);
   page += F("<!DOCTYPE html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width'>"
             "<title>Opentakt Terminal</title><style>"
             "body{font-family:sans-serif;max-width:28rem;margin:1.5rem auto;padding:0 1rem}"
             "label{display:block;margin:.8rem 0 .2rem}input{width:100%;padding:.4rem;box-sizing:border-box}"
             "button{margin-top:1rem;padding:.6rem 1rem;width:100%}</style></head><body>");
-  page += F("<h1>Opentakt Terminal</h1><form method='POST' action='/save'>");
+  page += F("<h1>Opentakt Terminal</h1><p>Firmware ");
+  page += String(kFwVersion);
+  page += F(" · ");
+  page += deviceId();
+  page += F("</p><form method='POST' action='/save'>");
   page += F("<label>WLAN-Name (SSID)</label><input name='ssid' value='");
   page += wifiSsid;
   page += F("'><label>WLAN-Passwort</label><input name='pass' type='password' value='");
   page += wifiPass;
   page += F("'><label>Server (https://zeit.firma.de)</label><input name='server' value='");
   page += serverBase;
-  page += F("'><label>Secret (esp_terminal_secret)</label><input name='secret' value='");
+  page += F("'><label>Secret</label><input name='secret' value='");
   page += apiSecret;
   page += F("'><label>Test-UID (ohne RFID)</label><input name='uid' value='");
   page += testUid;
-  page += F("'><button type='submit'>Speichern und verbinden</button></form></body></html>");
+  page += F("'><button type='submit'>Speichern und verbinden</button></form>");
+  page += F("<p>BOOT kurz: buchen. BOOT 4&nbsp;s halten: wieder dieses Portal.</p></body></html>");
   return page;
 }
 
@@ -140,6 +160,7 @@ void handleSave() {
 
 void startPortal() {
   mode = Mode::Portal;
+  WiFi.disconnect(true, false);
   WiFi.mode(WIFI_AP);
   String ssid = apSsid();
   String pass = apPass();
@@ -166,7 +187,167 @@ String newEventId() {
   return String(buf);
 }
 
+void showHttpError(int code) {
+  if (code == 401) {
+    show("Falsches Secret", "", 4000);
+    return;
+  }
+  if (code == 503) {
+    show("API aus", "kein Secret", 4000);
+    return;
+  }
+  if (code <= 0 || code == 408 || code == 502 || code == 504) {
+    show("Server nicht erreicht", "", 4000);
+    return;
+  }
+  show("Fehler", String(code), 4000);
+}
+
+struct HttpResult {
+  int code = -1;
+  String body;
+};
+
+HttpResult httpCall(const char *method, const String &path, const String &payload) {
+  HttpResult out;
+  if (serverBase.isEmpty()) return out;
+  String url = serverBase + path;
+  HTTPClient http;
+  WiFiClient client;
+  WiFiClientSecure secure;
+  bool https = url.startsWith("https://");
+  bool begun = false;
+  if (https) {
+    secure.setInsecure();
+    secure.setTimeout(8);
+#if defined(ESP32)
+    secure.setHandshakeTimeout(8);
+#endif
+    begun = http.begin(secure, url);
+  } else {
+    client.setTimeout(8);
+    begun = http.begin(client, url);
+  }
+  if (!begun) {
+    out.code = -1;
+    return out;
+  }
+  http.setConnectTimeout(4000);
+  http.setTimeout(8000);
+  http.setReuse(false);
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("X-Terminal-Key", apiSecret);
+  if (strcmp(method, "GET") == 0) {
+    out.code = http.GET();
+  } else {
+    out.code = http.POST(payload);
+  }
+  if (out.code > 0) out.body = http.getString();
+  http.end();
+  return out;
+}
+
+bool otaFromUrl(const String &url) {
+  if (url.isEmpty()) return false;
+  show("Update...", String("FW ") + kFwVersion);
+  HTTPClient http;
+  WiFiClient client;
+  WiFiClientSecure secure;
+  bool https = url.startsWith("https://");
+  bool begun = false;
+  if (https) {
+    secure.setInsecure();
+    secure.setTimeout(20);
+#if defined(ESP32)
+    secure.setHandshakeTimeout(12);
+#endif
+    begun = http.begin(secure, url);
+  } else {
+    client.setTimeout(20);
+    begun = http.begin(client, url);
+  }
+  if (!begun) {
+    show("Update fehlgeschl", "HTTP", 4000);
+    return false;
+  }
+  http.setConnectTimeout(8000);
+  http.setTimeout(25000);
+  http.setReuse(false);
+  http.addHeader("X-Terminal-Key", apiSecret);
+  int code = http.GET();
+  if (code != 200) {
+    http.end();
+    showHttpError(code);
+    return false;
+  }
+  int len = http.getSize();
+  if (!Update.begin(len > 0 ? static_cast<size_t>(len) : UPDATE_SIZE_UNKNOWN)) {
+    http.end();
+    show("Update fehlgeschl", "Flash", 4000);
+    return false;
+  }
+  WiFiClient *stream = http.getStreamPtr();
+  size_t written = Update.writeStream(*stream);
+  bool ok = Update.end() && (len <= 0 || written == static_cast<size_t>(len));
+  http.end();
+  if (!ok) {
+    show("Update fehlgeschl", "Schreiben", 4000);
+    return false;
+  }
+  show("Update OK", "Neustart", 1500);
+  delay(800);
+  ESP.restart();
+  return true;
+}
+
+void applyHello(JsonDocument &parsed) {
+  const char *ssid = parsed["wifi_ssid"] | "";
+  const char *pass = parsed["wifi_pass"] | "";
+  if (ssid[0]) {
+    String nextSsid = String(ssid);
+    String nextPass = String(pass);
+    bool change = nextSsid != wifiSsid || (nextPass.length() && nextPass != wifiPass);
+    if (change) {
+      wifiSsid = nextSsid;
+      if (nextPass.length()) wifiPass = nextPass;
+      savePrefs();
+      show("WLAN neu", wifiSsid, 1500);
+      delay(500);
+      ESP.restart();
+      return;
+    }
+  }
+  const char *url = parsed["firmware_url"] | "";
+  int remoteFw = parsed["fw"] | 0;
+  if (url[0] && remoteFw > kFwVersion) {
+    otaFromUrl(String(url));
+  }
+}
+
+void hello() {
+  if (inFlight || mode != Mode::Station || WiFi.status() != WL_CONNECTED) return;
+  if (serverBase.isEmpty() || apiSecret.isEmpty()) return;
+  inFlight = true;
+  JsonDocument body;
+  body["device_id"] = deviceId();
+  body["fw"] = kFwVersion;
+  body["ssid"] = wifiSsid;
+  body["ip"] = WiFi.localIP().toString();
+  String payload;
+  serializeJson(body, payload);
+  HttpResult res = httpCall("POST", "/api/terminals/esp/hello", payload);
+  inFlight = false;
+  lastHello = millis();
+  if (res.code != 200) return;
+  JsonDocument parsed;
+  if (deserializeJson(parsed, res.body)) return;
+  inFlight = true;
+  applyHello(parsed);
+  inFlight = false;
+}
+
 bool punch(const String &badge) {
+  if (inFlight) return false;
   if (mode != Mode::Station || WiFi.status() != WL_CONNECTED) {
     show("Kein Netz", "nicht gebucht", 2500);
     return false;
@@ -175,46 +356,25 @@ bool punch(const String &badge) {
     show("Config fehlt", "nicht gebucht", 2500);
     return false;
   }
+  inFlight = true;
   show("Senden...", badge);
-  String url = serverBase + "/api/terminals/esp/punch";
   JsonDocument body;
   body["badge"] = badge;
   body["event_id"] = newEventId();
-  uint8_t mac[6];
-  WiFi.macAddress(mac);
-  char dev[18];
-  snprintf(dev, sizeof(dev), "%02X%02X%02X%02X%02X%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-  body["device_id"] = dev;
+  body["device_id"] = deviceId();
+  body["fw"] = kFwVersion;
+  body["ssid"] = wifiSsid;
   String payload;
   serializeJson(body, payload);
-
-  HTTPClient http;
-  WiFiClient client;
-  WiFiClientSecure secure;
-  bool https = url.startsWith("https://");
-  if (https) {
-    secure.setInsecure();
-    if (!http.begin(secure, url)) {
-      show("HTTP Fehler", "begin", 2500);
-      return false;
-    }
-  } else if (!http.begin(client, url)) {
-    show("HTTP Fehler", "begin", 2500);
-    return false;
-  }
-  http.setTimeout(8000);
-  http.addHeader("Content-Type", "application/json");
-  http.addHeader("X-Terminal-Key", apiSecret);
-  int code = http.POST(payload);
-  String resp = http.getString();
-  http.end();
-  if (code == 401 || code == 503) {
-    show(code == 401 ? "Zugang" : "API aus", "verweigert", 3000);
+  HttpResult res = httpCall("POST", "/api/terminals/esp/punch", payload);
+  inFlight = false;
+  if (res.code != 200) {
+    showHttpError(res.code);
     return false;
   }
   JsonDocument parsed;
-  if (deserializeJson(parsed, resp)) {
-    show("Antwort?", String(code), 3000);
+  if (deserializeJson(parsed, res.body)) {
+    show("Antwort ungueltig", "", 3000);
     return false;
   }
   show(parsed["line1"] | "OK", parsed["line2"] | "", 4000);
@@ -259,9 +419,17 @@ void setup() {
 void loop() {
   handleSerial();
   bool bootHigh = digitalRead(kBootPin) == HIGH;
-  if (bootWasHigh && !bootHigh) {
+  if (!bootHigh) {
+    if (bootWasHigh) {
+      bootDownAt = millis();
+      bootLongHandled = false;
+    } else if (!bootLongHandled && millis() - bootDownAt >= kBootPortalMs) {
+      bootLongHandled = true;
+      if (mode != Mode::Portal) startPortal();
+    }
+  } else if (!bootWasHigh && !bootLongHandled) {
     delay(30);
-    if (digitalRead(kBootPin) == LOW) punch(testUid);
+    if (digitalRead(kBootPin) == HIGH && mode == Mode::Station) punch(testUid);
   }
   bootWasHigh = bootHigh;
 
@@ -274,6 +442,7 @@ void loop() {
   if (mode == Mode::Connecting) {
     if (WiFi.status() == WL_CONNECTED) {
       mode = Mode::Station;
+      lastHello = 0;
       show("Bereit", "Chip halten");
     } else if (millis() - staStarted >= kStaTimeoutMs) {
       startPortal();
@@ -286,5 +455,6 @@ void loop() {
     startSta();
     return;
   }
+  if (!lastHello || millis() - lastHello >= kHelloMs) hello();
   idleScreen();
 }

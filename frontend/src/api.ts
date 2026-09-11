@@ -52,7 +52,7 @@ export type DaySummary = {
   absence: { kind: string; note: string | null } | null;
   calendar: { kind: string; name: string; source: string } | null;
   weekday: number;
-  punches: { id: number; kind: string; time: string; source: string; voided: boolean }[];
+  punches: { id: number; kind: string; time: string; source: string; device_id?: string | null; terminal_name?: string; voided: boolean }[];
 };
 
 export type Status = {
@@ -122,10 +122,28 @@ export type TerminalDevice = {
   last_summary: string;
 };
 
+export type EspDevice = {
+  id: number;
+  device_id: string;
+  name: string;
+  firmware: number;
+  last_ssid: string;
+  last_ip: string;
+  last_seen_at: string | null;
+  wifi_ssid: string;
+  wifi_pass_set: boolean;
+};
+
 export type EspTerminalSettings = {
+  secret: string;
   secret_configured: boolean;
+  secret_source: string;
   ok_line1: string;
   ok_line2: string;
+  line_max: number;
+  firmware_version: number;
+  firmware_uploaded: boolean;
+  devices: EspDevice[];
   placeholders: string[];
 };
 
@@ -162,7 +180,8 @@ export const AUTH_EVENT = "ze:unauthorized";
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
-  if (init.body && !headers.has("Content-Type")) {
+  const isForm = typeof FormData !== "undefined" && init.body instanceof FormData;
+  if (init.body && !isForm && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
   const res = await fetch(path, { ...init, headers, credentials: "include", cache: "no-store" });
@@ -381,8 +400,19 @@ export const api = {
       { method: "POST" },
     ),
   espTerminalSettings: () => request<EspTerminalSettings>("/api/hr/esp-terminal"),
-  patchEspTerminalSettings: (body: { ok_line1?: string; ok_line2?: string }) =>
+  patchEspTerminalSettings: (body: { ok_line1?: string; ok_line2?: string; secret?: string }) =>
     request<EspTerminalSettings>("/api/hr/esp-terminal", { method: "PATCH", body: JSON.stringify(body) }),
+  generateEspSecret: () => request<EspTerminalSettings>("/api/hr/esp-terminal/secret", { method: "POST" }),
+  patchEspDevice: (
+    id: number,
+    body: { name?: string; wifi_ssid?: string; wifi_pass?: string; clear_wifi?: boolean },
+  ) => request<EspDevice>(`/api/hr/esp-terminal/devices/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  uploadEspFirmware: async (file: File, version: number) => {
+    const body = new FormData();
+    body.append("file", file);
+    body.append("version", String(version));
+    return request<EspTerminalSettings>("/api/hr/esp-terminal/firmware", { method: "POST", body });
+  },
   createDfcomTerminal: (body: { name: string; host: string; port: number; device_address?: number; enabled?: boolean }) =>
     request<TerminalDevice>("/api/hr/dfcom/terminals", { method: "POST", body: JSON.stringify(body) }),
   patchDfcomTerminal: (id: number, body: Partial<{ name: string; host: string; port: number; device_address: number; enabled: boolean }>) =>

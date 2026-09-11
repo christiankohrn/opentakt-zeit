@@ -53,6 +53,8 @@ def apply_booking(
     note: str | None,
     persist: bool,
     enforce_state: bool = True,
+    device_id: str | None = None,
+    terminal_name: str | None = None,
 ) -> BookingResult:
     if not badge or not kind:
         return BookingResult("invalid", "Ungültige Buchung")
@@ -79,6 +81,8 @@ def apply_booking(
             device_time=timestamp,
             note=note,
             enforce_state=enforce_state,
+            device_id=device_id,
+            terminal_name=terminal_name,
         )
     except HTTPException as exc:
         if exc.status_code == 409:

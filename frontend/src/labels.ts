@@ -75,10 +75,15 @@ export function absenceLabel(kind: string) {
   return ABSENCE_LABELS[kind] ?? kind;
 }
 
-export function formatPunchLine(punches: { kind: string; time: string; voided: boolean }[]) {
+export function formatPunchLine(
+  punches: { kind: string; time: string; voided: boolean; terminal_name?: string }[],
+) {
   return punches
     .filter((p) => !p.voided)
-    .map((p) => `${punchLabel(p.kind)} ${p.time}`)
+    .map((p) => {
+      const place = (p.terminal_name || "").trim();
+      return place ? `${punchLabel(p.kind)} ${p.time} (${place})` : `${punchLabel(p.kind)} ${p.time}`;
+    })
     .join("  ·  ");
 }
 

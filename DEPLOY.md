@@ -69,7 +69,7 @@ Ohne Zertifikat (Labor, noch kein DNS): `-SkipCertbot`.
 | Backups | `/var/lib/zeiterfassung/backups/` (täglich 02:15, 30/12/2) |
 | Health | `GET https://<domain>/api/health` |
 | Optional DFCom | `bash /opt/zeiterfassung/deploy/install-dfcom.sh` → `/opt/zeiterfassung/lib/libDFCom.so`. Polling in der UI unter Einstellungen (nicht mitgeliefert, siehe [docs/datafox-masteriv.md](docs/datafox-masteriv.md)) |
-| ESP32-Terminal | Secret `esp_terminal_secret` in der Config; Displaytexte unter Einstellungen; Firmware [`firmware/esp32-terminal`](firmware/esp32-terminal), Doku [docs/esp32-terminal.md](docs/esp32-terminal.md) |
+| ESP32-Terminal | Secret und Geräte unter Einstellungen; Firmware [`firmware/esp32-terminal`](firmware/esp32-terminal), Doku [docs/esp32-terminal.md](docs/esp32-terminal.md) |
 
 SSH danach als **`deploy`**, nicht dauerhaft als root. Sudo ist auf Dienst-Kommandos begrenzt.
 

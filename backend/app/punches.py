@@ -67,6 +67,8 @@ def record_punch(
     device_time: datetime | None = None,
     note: str | None = None,
     enforce_state: bool = True,
+    device_id: str | None = None,
+    terminal_name: str | None = None,
 ) -> Punch:
     existing = db.scalar(select(Punch).where(Punch.user_id == user.id, Punch.client_event_id == client_event_id))
     if existing:
@@ -91,6 +93,8 @@ def record_punch(
         device_time=device_time,
         source=source,
         client_event_id=client_event_id,
+        device_id=(device_id or "").strip() or None,
+        terminal_name=(terminal_name or "").strip(),
         note=note,
     )
     db.add(punch)

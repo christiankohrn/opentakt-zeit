@@ -97,7 +97,7 @@ cd frontend && npx tsc --noEmit
 | `bundesland` | Feiertage (z. B. `NW`, `BY`) |
 | `secret_key` | Session-Cookie, unbedingt ändern |
 | `datafox_secret` | Shared Secret für Terminal-HTTP; leer = API aus |
-| `esp_terminal_secret` | Shared Secret für das ESP32-Terminal (`X-Terminal-Key`); leer = API aus |
+| `esp_terminal_secret` | Fallback-Secret für das ESP32-Terminal; leer = nur das Secret aus den Einstellungen gilt. Leer in beiden = API aus |
 | `dfcom_lib` | Optionaler Pfad zu `libDFCom.so` (sonst `/opt/zeiterfassung/lib/libDFCom.so`) |
 
 `config.toml`, `*.db` und `.env` sind per `.gitignore` ausgeschlossen. ESP32-Gerät: [docs/esp32-terminal.md](docs/esp32-terminal.md).

@@ -50,7 +50,8 @@ origins = []
 # In der Send-URL als ?k=... eintragen, niemals ins Git.
 datafox_secret = ""
 
-# Shared secret für das ESP32-Terminal (Header X-Terminal-Key). Leer = API aus.
+# Shared secret für das ESP32-Terminal (Header X-Terminal-Key). Leer = Secret aus den
+# Admin-Einstellungen; beides leer = API aus.
 esp_terminal_secret = ""
 
 # Optional: Pfad zu libDFCom.so für Polling.

@@ -108,6 +108,15 @@ def ensure_schema() -> None:
         alters.append("ALTER TABLE org_settings ADD COLUMN esp_ok_line1 VARCHAR(80) NOT NULL DEFAULT '{first_name}'")
     if "esp_ok_line2" not in org_cols:
         alters.append("ALTER TABLE org_settings ADD COLUMN esp_ok_line2 VARCHAR(80) NOT NULL DEFAULT '{kind} {flex_month}'")
+    if "esp_terminal_secret" not in org_cols:
+        alters.append("ALTER TABLE org_settings ADD COLUMN esp_terminal_secret VARCHAR(200) NOT NULL DEFAULT ''")
+    if "esp_firmware_version" not in org_cols:
+        alters.append("ALTER TABLE org_settings ADD COLUMN esp_firmware_version INTEGER NOT NULL DEFAULT 0")
+    punch_cols = {c["name"] for c in inspect(engine).get_columns("punches")} if inspect(engine).has_table("punches") else set()
+    if "device_id" not in punch_cols:
+        alters.append("ALTER TABLE punches ADD COLUMN device_id VARCHAR(80)")
+    if "terminal_name" not in punch_cols:
+        alters.append("ALTER TABLE punches ADD COLUMN terminal_name VARCHAR(120) NOT NULL DEFAULT ''")
     term_cols = (
         {c["name"] for c in inspect(engine).get_columns("terminal_devices")}
         if inspect(engine).has_table("terminal_devices")
