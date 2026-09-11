@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { api, ApiError, type DfcomSettings, type EspTerminalSettings, type SecurityPolicyValue, type SmtpSettings } from "../api";
 import PasswordField from "../components/PasswordField";
 
@@ -16,6 +16,19 @@ const POLICY_LABELS: Record<SecurityPolicyValue, string> = {
   passkey: "Passkey erforderlich",
   any: "2FA oder Passkey erforderlich",
 };
+
+const TABS = [
+  { id: "sicherheit", label: "Sicherheit" },
+  { id: "mail", label: "Mail" },
+  { id: "terminals", label: "Terminals" },
+] as const;
+
+type TabId = (typeof TABS)[number]["id"];
+
+function parseTab(value: string | null): TabId {
+  if (value === "mail" || value === "terminals" || value === "sicherheit") return value;
+  return "sicherheit";
+}
 
 function SecurityPolicyCard() {
   const [policies, setPolicies] = useState<Record<string, SecurityPolicyValue>>({});
@@ -52,7 +65,7 @@ function SecurityPolicyCard() {
   }
 
   return (
-    <div className="mt-4 space-y-3 rounded-2xl border border-line bg-card p-4">
+    <div className="space-y-3 rounded-2xl border border-line bg-card p-4">
       <p className="text-sm font-medium">Anmelde-Sicherheit erzwingen</p>
       <p className="text-xs text-muted">
         Pro Benutzergruppe festlegen, ob eine zweite Stufe Pflicht ist. Betroffene Personen werden beim nächsten Login
@@ -88,7 +101,7 @@ function SecurityPolicyCard() {
   );
 }
 
-const empty: SmtpSettings = {
+const emptySmtp: SmtpSettings = {
   enabled: false,
   host: "",
   port: 587,
@@ -101,81 +114,19 @@ const empty: SmtpSettings = {
   ready: false,
 };
 
-const emptyEsp: EspTerminalSettings = {
-  secret: "",
-  secret_configured: false,
-  secret_source: "",
-  ok_line1: "{first_name}",
-  ok_line2: "{kind} {flex_month}",
-  line_max: 21,
-  firmware_version: 0,
-  firmware_uploaded: false,
-  devices: [],
-  placeholders: ["first_name", "display_name", "kind", "flex_month", "flex_total"],
-};
-
-function previewLine(template: string, max: number) {
-  const sample: Record<string, string> = {
-    first_name: "Anna",
-    display_name: "Anna Schmidt",
-    kind: "Kommen",
-    flex_month: "+2,5h",
-    flex_total: "+12,5h",
-  };
-  let out = template;
-  for (const [key, value] of Object.entries(sample)) out = out.replaceAll(`{${key}}`, value);
-  out = out.replace(/\{[a-z_]+\}/g, "").replace(/\s+/g, " ").trim();
-  return { text: out.slice(0, max), over: out.length > max, length: out.length };
-}
-
-function formatSeen(value: string | null) {
-  if (!value) return "noch nicht gesehen";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" });
-}
-
-const emptyDfcom: DfcomSettings = {
-  library_ok: false,
-  library_path: null,
-  poll_enabled: false,
-  poll_dry_run: true,
-  poll_interval_sec: 20,
-  sync_lists: true,
-  last_poll: null,
-  terminals: [],
-};
-
-export default function Settings() {
-  const [form, setForm] = useState<SmtpSettings>(empty);
-  const [dfcom, setDfcom] = useState<DfcomSettings>(emptyDfcom);
-  const [esp, setEsp] = useState<EspTerminalSettings>(emptyEsp);
-  const [fwFile, setFwFile] = useState<File | null>(null);
-  const [fwVersion, setFwVersion] = useState(2);
-  const [devicePass, setDevicePass] = useState<Record<number, string>>({});
-  const [termName, setTermName] = useState("Halle");
-  const [termHost, setTermHost] = useState("");
-  const [termPort, setTermPort] = useState(8000);
+function MailCard() {
+  const [form, setForm] = useState<SmtpSettings>(emptySmtp);
   const [password, setPassword] = useState("");
   const [testTo, setTestTo] = useState("");
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
 
-  async function load() {
-    const [smtp, nextDfcom, nextEsp] = await Promise.all([
-      api.smtpSettings(),
-      api.dfcomSettings(),
-      api.espTerminalSettings(),
-    ]);
-    setForm(smtp);
-    setDfcom(nextDfcom);
-    setEsp(nextEsp);
-    setFwVersion(Math.max(2, (nextEsp.firmware_version || 0) + 1));
-  }
-
   useEffect(() => {
-    void load();
+    void api
+      .smtpSettings()
+      .then(setForm)
+      .catch(() => setErr("Mailserver konnte nicht geladen werden."));
   }, []);
 
   async function onSave(e: FormEvent) {
@@ -219,128 +170,12 @@ export default function Settings() {
     }
   }
 
-  async function saveEsp() {
-    setMsg("");
-    setErr("");
-    setBusy(true);
-    try {
-      const next = await api.patchEspTerminalSettings({
-        ok_line1: esp.ok_line1,
-        ok_line2: esp.ok_line2,
-        secret: esp.secret,
-      });
-      setEsp(next);
-      setMsg("ESP-Terminal gespeichert.");
-    } catch (ex) {
-      setErr(ex instanceof ApiError ? ex.message : "Fehler");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function generateEspSecret() {
-    setMsg("");
-    setErr("");
-    setBusy(true);
-    try {
-      const next = await api.generateEspSecret();
-      setEsp(next);
-      setMsg("Neues Secret erzeugt. Am Gerät BOOT 4 Sekunden halten und eintragen.");
-    } catch (ex) {
-      setErr(ex instanceof ApiError ? ex.message : "Fehler");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function saveDfcom() {
-    setMsg("");
-    setErr("");
-    setBusy(true);
-    try {
-      const next = await api.patchDfcomSettings({
-        poll_enabled: dfcom.poll_enabled,
-        poll_dry_run: dfcom.poll_dry_run,
-        poll_interval_sec: Number(dfcom.poll_interval_sec) || 20,
-        sync_lists: dfcom.sync_lists,
-      });
-      setDfcom(next);
-      setMsg("Terminal-Polling gespeichert.");
-    } catch (ex) {
-      setErr(ex instanceof ApiError ? ex.message : "Fehler");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function addTerminal(e: FormEvent) {
-    e.preventDefault();
-    setMsg("");
-    setErr("");
-    setBusy(true);
-    try {
-      await api.createDfcomTerminal({
-        name: termName.trim() || "Terminal",
-        host: termHost.trim(),
-        port: Number(termPort) || 8000,
-      });
-      setTermHost("");
-      await load();
-      setMsg("Terminal eingetragen.");
-    } catch (ex) {
-      setErr(ex instanceof ApiError ? ex.message : "Fehler");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function pollNow() {
-    setMsg("");
-    setErr("");
-    setBusy(true);
-    try {
-      const report = await api.pollDfcom();
-      await load();
-      if (report.error) setErr(report.error);
-      else setMsg("Polling ausgeführt.");
-    } catch (ex) {
-      setErr(ex instanceof ApiError ? ex.message : "Fehler");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function pushListsNow() {
-    setMsg("");
-    setErr("");
-    setBusy(true);
-    try {
-      const report = await api.pushDfcomLists();
-      await load();
-      if (report.error) setErr(report.error);
-      else setMsg("Personalliste geschrieben.");
-    } catch (ex) {
-      setErr(ex instanceof ApiError ? ex.message : "Fehler");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
-    <div className="pt-2 md:max-w-2xl">
-      <Link to="/personal" className="text-sm text-muted">
-        ← Personal
-      </Link>
-      <h1 className="mt-2 text-xl font-medium">Einstellungen</h1>
-
-      <SecurityPolicyCard />
-
-      <p className="mt-6 text-sm text-muted">
-        Mailserver, ESP-Terminal und optionales Datafox-Polling (DFCom). HTTP-Stempeln bleibt parallel nutzbar.
-      </p>
-      {err ? <p className="mt-3 text-sm text-danger">{err}</p> : null}
-      {msg ? <p className="mt-3 text-sm text-present">{msg}</p> : null}
-      <form onSubmit={onSave} className="mt-4 space-y-3 rounded-2xl border border-line bg-card p-4">
+    <div className="space-y-3">
+      <p className="text-sm text-muted">Zugangsmails, Passwort-Reset und Testversand.</p>
+      {err ? <p className="text-sm text-danger">{err}</p> : null}
+      {msg ? <p className="text-sm text-present">{msg}</p> : null}
+      <form onSubmit={onSave} className="space-y-3 rounded-2xl border border-line bg-card p-4">
         <p className="text-sm font-medium">Mailserver</p>
         <label className="flex items-start gap-3 text-sm">
           <input
@@ -429,7 +264,7 @@ export default function Settings() {
           {busy ? "…" : "Mailserver speichern"}
         </button>
       </form>
-      <div className="mt-3 space-y-3 rounded-2xl border border-line bg-card p-4">
+      <div className="space-y-3 rounded-2xl border border-line bg-card p-4">
         <p className="text-sm font-medium">Testmail</p>
         <label className="block text-xs text-muted">
           Empfänger (leer = deine Adresse)
@@ -450,8 +285,102 @@ export default function Settings() {
           Testmail senden
         </button>
       </div>
+    </div>
+  );
+}
 
-      <div className="mt-3 space-y-3 rounded-2xl border border-line bg-card p-4">
+const emptyEsp: EspTerminalSettings = {
+  secret: "",
+  secret_configured: false,
+  secret_source: "",
+  ok_line1: "{first_name}",
+  ok_line2: "{kind} {flex_month}",
+  line_max: 21,
+  firmware_version: 0,
+  firmware_uploaded: false,
+  devices: [],
+  placeholders: ["first_name", "display_name", "kind", "flex_month", "flex_total"],
+};
+
+function previewLine(template: string, max: number) {
+  const sample: Record<string, string> = {
+    first_name: "Anna",
+    display_name: "Anna Schmidt",
+    kind: "Kommen",
+    flex_month: "+2,5h",
+    flex_total: "+12,5h",
+  };
+  let out = template;
+  for (const [key, value] of Object.entries(sample)) out = out.replaceAll(`{${key}}`, value);
+  out = out.replace(/\{[a-z_]+\}/g, "").replace(/\s+/g, " ").trim();
+  return { text: out.slice(0, max), over: out.length > max, length: out.length };
+}
+
+function formatSeen(value: string | null) {
+  if (!value) return "noch nicht gesehen";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" });
+}
+
+function EspCard() {
+  const [esp, setEsp] = useState<EspTerminalSettings>(emptyEsp);
+  const [fwFile, setFwFile] = useState<File | null>(null);
+  const [fwVersion, setFwVersion] = useState(2);
+  const [devicePass, setDevicePass] = useState<Record<number, string>>({});
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    void api
+      .espTerminalSettings()
+      .then((next) => {
+        setEsp(next);
+        setFwVersion(Math.max(2, (next.firmware_version || 0) + 1));
+      })
+      .catch(() => setErr("ESP-Terminal konnte nicht geladen werden."));
+  }, []);
+
+  async function saveEsp() {
+    setMsg("");
+    setErr("");
+    setBusy(true);
+    try {
+      const next = await api.patchEspTerminalSettings({
+        ok_line1: esp.ok_line1,
+        ok_line2: esp.ok_line2,
+        secret: esp.secret,
+      });
+      setEsp(next);
+      setMsg("ESP-Terminal gespeichert.");
+    } catch (ex) {
+      setErr(ex instanceof ApiError ? ex.message : "Fehler");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function generateEspSecret() {
+    setMsg("");
+    setErr("");
+    setBusy(true);
+    try {
+      const next = await api.generateEspSecret();
+      setEsp(next);
+      setMsg("Neues Secret erzeugt. Am Gerät BOOT 4 Sekunden halten und eintragen.");
+    } catch (ex) {
+      setErr(ex instanceof ApiError ? ex.message : "Fehler");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      {err ? <p className="text-sm text-danger">{err}</p> : null}
+      {msg ? <p className="text-sm text-present">{msg}</p> : null}
+      <div className="space-y-3 rounded-2xl border border-line bg-card p-4">
         <p className="text-sm font-medium">ESP-Terminal</p>
         <p className="text-sm text-muted">
           Eigenes Gerät (kein Datafox). Kommen/Gehen entscheidet der Server. Geräte melden sich mit ihrer MAC; hier
@@ -684,8 +613,117 @@ export default function Settings() {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
 
-      <div className="mt-3 space-y-3 rounded-2xl border border-line bg-card p-4">
+const emptyDfcom: DfcomSettings = {
+  library_ok: false,
+  library_path: null,
+  poll_enabled: false,
+  poll_dry_run: true,
+  poll_interval_sec: 20,
+  sync_lists: true,
+  last_poll: null,
+  terminals: [],
+};
+
+function DfcomCard() {
+  const [dfcom, setDfcom] = useState<DfcomSettings>(emptyDfcom);
+  const [termName, setTermName] = useState("Halle");
+  const [termHost, setTermHost] = useState("");
+  const [termPort, setTermPort] = useState(8000);
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function load() {
+    setDfcom(await api.dfcomSettings());
+  }
+
+  useEffect(() => {
+    void load().catch(() => setErr("Terminal-Einstellungen konnten nicht geladen werden."));
+  }, []);
+
+  async function saveDfcom() {
+    setMsg("");
+    setErr("");
+    setBusy(true);
+    try {
+      const next = await api.patchDfcomSettings({
+        poll_enabled: dfcom.poll_enabled,
+        poll_dry_run: dfcom.poll_dry_run,
+        poll_interval_sec: Number(dfcom.poll_interval_sec) || 20,
+        sync_lists: dfcom.sync_lists,
+      });
+      setDfcom(next);
+      setMsg("Terminal-Polling gespeichert.");
+    } catch (ex) {
+      setErr(ex instanceof ApiError ? ex.message : "Fehler");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function addTerminal(e: FormEvent) {
+    e.preventDefault();
+    setMsg("");
+    setErr("");
+    setBusy(true);
+    try {
+      await api.createDfcomTerminal({
+        name: termName.trim() || "Terminal",
+        host: termHost.trim(),
+        port: Number(termPort) || 8000,
+      });
+      setTermHost("");
+      await load();
+      setMsg("Terminal eingetragen.");
+    } catch (ex) {
+      setErr(ex instanceof ApiError ? ex.message : "Fehler");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function pollNow() {
+    setMsg("");
+    setErr("");
+    setBusy(true);
+    try {
+      const report = await api.pollDfcom();
+      await load();
+      if (report.error) setErr(report.error);
+      else setMsg("Polling ausgeführt.");
+    } catch (ex) {
+      setErr(ex instanceof ApiError ? ex.message : "Fehler");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function pushListsNow() {
+    setMsg("");
+    setErr("");
+    setBusy(true);
+    try {
+      const report = await api.pushDfcomLists();
+      await load();
+      if (report.error) setErr(report.error);
+      else setMsg("Personalliste geschrieben.");
+    } catch (ex) {
+      setErr(ex instanceof ApiError ? ex.message : "Fehler");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-muted">Datafox MasterIV per Polling. HTTP-Stempeln bleibt parallel nutzbar.</p>
+      {err ? <p className="text-sm text-danger">{err}</p> : null}
+      {msg ? <p className="text-sm text-present">{msg}</p> : null}
+      <div className="space-y-3 rounded-2xl border border-line bg-card p-4">
         <p className="text-sm font-medium">Datafox-Polling (DFCom)</p>
         <p className="text-sm text-muted">
           Der Server holt Buchungen per TCP vom Terminal (typisch Port 8000), Tabelle{" "}
@@ -845,6 +883,55 @@ export default function Settings() {
         >
           Personalliste jetzt schreiben
         </button>
+      </div>
+    </div>
+  );
+}
+
+export default function Settings() {
+  const [params, setParams] = useSearchParams();
+  const tab = parseTab(params.get("tab"));
+
+  function setTab(next: TabId) {
+    setParams({ tab: next }, { replace: true });
+  }
+
+  return (
+    <div className="pt-2 md:max-w-2xl">
+      <Link to="/personal" className="text-sm text-muted">
+        ← Personal
+      </Link>
+      <h1 className="mt-2 text-xl font-medium">Einstellungen</h1>
+      <div className="mt-3 flex gap-1 rounded-2xl border border-line bg-card p-1">
+        {TABS.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={`flex-1 rounded-xl px-2 py-2 text-sm font-medium ${
+              tab === item.id ? "bg-present text-white" : "text-muted"
+            }`}
+            onClick={() => setTab(item.id)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+      <div className="mt-4">
+        <div hidden={tab !== "sicherheit"}>
+          <SecurityPolicyCard />
+        </div>
+        <div hidden={tab !== "mail"}>
+          <MailCard />
+        </div>
+        <div hidden={tab !== "terminals"}>
+          <p className="mb-3 text-sm text-muted">
+            ESP-Geräte und optionales Datafox-Polling (DFCom). HTTP-Stempeln bleibt parallel nutzbar.
+          </p>
+          <EspCard />
+          <div className="mt-3">
+            <DfcomCard />
+          </div>
+        </div>
       </div>
     </div>
   );

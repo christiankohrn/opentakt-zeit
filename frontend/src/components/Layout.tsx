@@ -124,7 +124,7 @@ export default function Layout() {
             </NavLink>
             {admin ? (
               <NavLink to="/einstellungen" className="text-sm text-muted">
-                Mail
+                Einstellungen
               </NavLink>
             ) : null}
           </div>

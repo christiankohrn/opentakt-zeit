@@ -216,11 +216,6 @@ export default function HrUsers() {
         <Link to="/feiertage" className="text-muted">
           Feiertage
         </Link>
-        {me?.role === "admin" ? (
-          <Link to="/einstellungen" className="text-muted">
-            Mail
-          </Link>
-        ) : null}
         <button type="button" className="text-present" onClick={() => (open ? requestClose() : setOpen(true))}>
           {open ? "Schließen" : "Neu"}
         </button>
