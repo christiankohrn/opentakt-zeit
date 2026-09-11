@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { api, ApiError, type DfcomSettings, type SecurityPolicyValue, type SmtpSettings } from "../api";
+import { api, ApiError, type DfcomSettings, type EspTerminalSettings, type SecurityPolicyValue, type SmtpSettings } from "../api";
 import PasswordField from "../components/PasswordField";
 
 const ROLE_LABELS: Record<string, string> = {
@@ -289,6 +289,334 @@ function MailCard() {
   );
 }
 
+const emptyEsp: EspTerminalSettings = {
+  secret: "",
+  secret_configured: false,
+  secret_source: "",
+  ok_line1: "{first_name}",
+  ok_line2: "{kind} {flex_month}",
+  line_max: 21,
+  firmware_version: 0,
+  firmware_uploaded: false,
+  devices: [],
+  placeholders: ["first_name", "display_name", "kind", "flex_month", "flex_total"],
+};
+
+function previewLine(template: string, max: number) {
+  const sample: Record<string, string> = {
+    first_name: "Anna",
+    display_name: "Anna Schmidt",
+    kind: "Kommen",
+    flex_month: "+2,5h",
+    flex_total: "+12,5h",
+  };
+  let out = template;
+  for (const [key, value] of Object.entries(sample)) out = out.replaceAll(`{${key}}`, value);
+  out = out.replace(/\{[a-z_]+\}/g, "").replace(/\s+/g, " ").trim();
+  return { text: out.slice(0, max), over: out.length > max, length: out.length };
+}
+
+function formatSeen(value: string | null) {
+  if (!value) return "noch nicht gesehen";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" });
+}
+
+function EspCard() {
+  const [esp, setEsp] = useState<EspTerminalSettings>(emptyEsp);
+  const [fwFile, setFwFile] = useState<File | null>(null);
+  const [fwVersion, setFwVersion] = useState(2);
+  const [devicePass, setDevicePass] = useState<Record<number, string>>({});
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    void api
+      .espTerminalSettings()
+      .then((next) => {
+        setEsp(next);
+        setFwVersion(Math.max(2, (next.firmware_version || 0) + 1));
+      })
+      .catch(() => setErr("ESP-Terminal konnte nicht geladen werden."));
+  }, []);
+
+  async function saveEsp() {
+    setMsg("");
+    setErr("");
+    setBusy(true);
+    try {
+      const next = await api.patchEspTerminalSettings({
+        ok_line1: esp.ok_line1,
+        ok_line2: esp.ok_line2,
+        secret: esp.secret,
+      });
+      setEsp(next);
+      setMsg("ESP-Terminal gespeichert.");
+    } catch (ex) {
+      setErr(ex instanceof ApiError ? ex.message : "Fehler");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function generateEspSecret() {
+    setMsg("");
+    setErr("");
+    setBusy(true);
+    try {
+      const next = await api.generateEspSecret();
+      setEsp(next);
+      setMsg("Neues Secret erzeugt. Am Gerät BOOT 4 Sekunden halten und eintragen.");
+    } catch (ex) {
+      setErr(ex instanceof ApiError ? ex.message : "Fehler");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      {err ? <p className="text-sm text-danger">{err}</p> : null}
+      {msg ? <p className="text-sm text-present">{msg}</p> : null}
+      <div className="space-y-3 rounded-2xl border border-line bg-card p-4">
+        <p className="text-sm font-medium">ESP-Terminal</p>
+        <p className="text-sm text-muted">
+          Eigenes Gerät (kein Datafox). Kommen/Gehen entscheidet der Server. Geräte melden sich mit ihrer MAC; hier
+          benennen, WLAN vorgeben und Firmware per OTA hochladen. OLED: {esp.line_max} Zeichen je Zeile, längere Texte
+          werden abgeschnitten. Platzhalter: {esp.placeholders.map((name) => `{${name}}`).join(", ")}.
+        </p>
+        <label className="block text-xs text-muted">
+          Secret {esp.secret_source === "config" ? "(aus der Server-Config, speichern legt es in der App ab)" : ""}
+          <PasswordField
+            autoComplete="off"
+            className="mt-1 w-full rounded-lg border border-line bg-bg px-3 py-2 text-sm text-ink"
+            value={esp.secret}
+            onChange={(e) => setEsp({ ...esp, secret: e.target.value })}
+            placeholder="leer = API aus"
+          />
+        </label>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void generateEspSecret()}
+            className="flex-1 rounded-xl border border-line py-2 text-sm disabled:opacity-60"
+          >
+            Neu erzeugen
+          </button>
+          <button
+            type="button"
+            disabled={!esp.secret}
+            onClick={() => {
+              void navigator.clipboard.writeText(esp.secret).then(
+                () => setMsg("Secret kopiert."),
+                () => setErr("Kopieren nicht möglich."),
+              );
+            }}
+            className="flex-1 rounded-xl border border-line py-2 text-sm disabled:opacity-60"
+          >
+            Kopieren
+          </button>
+        </div>
+        <p className="text-xs text-muted">
+          {esp.secret_configured ? "API ist an." : "Kein Secret — Geräte werden abgewiesen."} Nach einem neuen Secret
+          BOOT am Gerät 4 Sekunden halten und das Secret im Portal eintragen.
+        </p>
+        <label className="block text-xs text-muted">
+          Zeile 1
+          <input
+            className="mt-1 w-full rounded-lg border border-line bg-bg px-3 py-2 text-sm text-ink"
+            value={esp.ok_line1}
+            onChange={(e) => setEsp({ ...esp, ok_line1: e.target.value })}
+          />
+        </label>
+        {(() => {
+          const p = previewLine(esp.ok_line1, esp.line_max);
+          return (
+            <p className={`text-xs ${p.over ? "text-danger" : "text-muted"}`}>
+              Vorschau ({p.length} Zeichen): {p.text || "—"}
+              {p.over ? ` — länger als ${esp.line_max}, wird abgeschnitten.` : ""}
+            </p>
+          );
+        })()}
+        <label className="block text-xs text-muted">
+          Zeile 2
+          <input
+            className="mt-1 w-full rounded-lg border border-line bg-bg px-3 py-2 text-sm text-ink"
+            value={esp.ok_line2}
+            onChange={(e) => setEsp({ ...esp, ok_line2: e.target.value })}
+          />
+        </label>
+        {(() => {
+          const p = previewLine(esp.ok_line2, esp.line_max);
+          return (
+            <p className={`text-xs ${p.over ? "text-danger" : "text-muted"}`}>
+              Vorschau ({p.length} Zeichen): {p.text || "—"}
+              {p.over ? ` — länger als ${esp.line_max}, wird abgeschnitten.` : ""}
+            </p>
+          );
+        })()}
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void saveEsp()}
+          className="w-full rounded-xl bg-navy py-2 text-sm text-white disabled:opacity-60"
+        >
+          Secret und Display speichern
+        </button>
+
+        <div className="space-y-2 border-t border-line pt-3">
+          <p className="text-sm font-medium">Geräte</p>
+          {esp.devices.length === 0 ? (
+            <p className="text-xs text-muted">Noch keines. Sobald ein Terminal bucht oder sich meldet, erscheint es hier.</p>
+          ) : null}
+          {esp.devices.map((dev) => (
+            <div key={dev.id} className="space-y-2 rounded-xl border border-line px-3 py-2">
+              <p className="text-xs text-muted">
+                ID {dev.device_id}
+                {dev.firmware ? ` · FW ${dev.firmware}` : ""}
+                {dev.last_ip ? ` · ${dev.last_ip}` : ""}
+                {dev.last_ssid ? ` · WLAN ${dev.last_ssid}` : ""}
+                {" · "}
+                {formatSeen(dev.last_seen_at)}
+              </p>
+              <label className="block text-xs text-muted">
+                Name
+                <input
+                  className="mt-1 w-full rounded-lg border border-line bg-bg px-3 py-2 text-sm text-ink"
+                  value={dev.name}
+                  placeholder="z. B. Eingang"
+                  onChange={(e) =>
+                    setEsp({
+                      ...esp,
+                      devices: esp.devices.map((d) => (d.id === dev.id ? { ...d, name: e.target.value } : d)),
+                    })
+                  }
+                />
+              </label>
+              <label className="block text-xs text-muted">
+                WLAN vorgeben (SSID, leer = Gerät behält sein WLAN)
+                <input
+                  className="mt-1 w-full rounded-lg border border-line bg-bg px-3 py-2 text-sm text-ink"
+                  value={dev.wifi_ssid}
+                  onChange={(e) =>
+                    setEsp({
+                      ...esp,
+                      devices: esp.devices.map((d) => (d.id === dev.id ? { ...d, wifi_ssid: e.target.value } : d)),
+                    })
+                  }
+                />
+              </label>
+              <label className="block text-xs text-muted">
+                WLAN-Passwort {dev.wifi_pass_set ? "(gesetzt, leer lassen zum Behalten)" : ""}
+                <PasswordField
+                  autoComplete="off"
+                  className="mt-1 w-full rounded-lg border border-line bg-bg px-3 py-2 text-sm text-ink"
+                  value={devicePass[dev.id] ?? ""}
+                  onChange={(e) => setDevicePass({ ...devicePass, [dev.id]: e.target.value })}
+                  placeholder={dev.wifi_pass_set ? "unverändert" : "optional"}
+                />
+              </label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    void (async () => {
+                      setBusy(true);
+                      setErr("");
+                      try {
+                        const body: { name: string; wifi_ssid: string; wifi_pass?: string; clear_wifi?: boolean } = {
+                          name: dev.name,
+                          wifi_ssid: dev.wifi_ssid,
+                        };
+                        const pass = (devicePass[dev.id] ?? "").trim();
+                        if (pass) body.wifi_pass = pass;
+                        if (!dev.wifi_ssid.trim()) body.clear_wifi = true;
+                        const next = await api.patchEspDevice(dev.id, body);
+                        setEsp({
+                          ...esp,
+                          devices: esp.devices.map((d) => (d.id === dev.id ? next : d)),
+                        });
+                        setDevicePass({ ...devicePass, [dev.id]: "" });
+                        setMsg("Gerät gespeichert.");
+                      } catch (ex) {
+                        setErr(ex instanceof ApiError ? ex.message : "Fehler");
+                      } finally {
+                        setBusy(false);
+                      }
+                    })();
+                  }}
+                  className="flex-1 rounded-xl border border-line py-2 text-sm disabled:opacity-60"
+                >
+                  Gerät speichern
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="space-y-2 border-t border-line pt-3">
+          <p className="text-sm font-medium">Firmware (OTA)</p>
+          <p className="text-xs text-muted">
+            Mit PlatformIO oder Arduino IDE bauen, dann die <code className="text-xs">firmware.bin</code> hochladen.
+            Geräte mit älterer Versionsnummer holen sie selbst (alle 30&nbsp;s). Aktuell auf dem Server:{" "}
+            {esp.firmware_uploaded ? `Version ${esp.firmware_version}` : "keine Datei"}. Die im Gerät eingebaute Version
+            ist 2.
+          </p>
+          <div className="grid grid-cols-3 gap-2">
+            <label className="col-span-2 block text-xs text-muted">
+              firmware.bin
+              <input
+                type="file"
+                accept=".bin,application/octet-stream"
+                className="mt-1 w-full text-sm"
+                onChange={(e) => setFwFile(e.target.files?.[0] ?? null)}
+              />
+            </label>
+            <label className="block text-xs text-muted">
+              Version
+              <input
+                type="number"
+                min={1}
+                className="mt-1 w-full rounded-lg border border-line bg-bg px-3 py-2 text-sm text-ink"
+                value={fwVersion}
+                onChange={(e) => setFwVersion(Number(e.target.value) || 1)}
+              />
+            </label>
+          </div>
+          <button
+            type="button"
+            disabled={busy || !fwFile}
+            onClick={() => {
+              void (async () => {
+                if (!fwFile) return;
+                setBusy(true);
+                setErr("");
+                try {
+                  const next = await api.uploadEspFirmware(fwFile, fwVersion);
+                  setEsp(next);
+                  setFwFile(null);
+                  setMsg(`Firmware Version ${next.firmware_version} liegt bereit.`);
+                } catch (ex) {
+                  setErr(ex instanceof ApiError ? ex.message : "Fehler");
+                } finally {
+                  setBusy(false);
+                }
+              })();
+            }}
+            className="w-full rounded-xl border border-line py-2 text-sm disabled:opacity-60"
+          >
+            Firmware hochladen
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const emptyDfcom: DfcomSettings = {
   library_ok: false,
   library_path: null,
@@ -392,7 +720,7 @@ function DfcomCard() {
 
   return (
     <div className="space-y-3">
-      <p className="text-sm text-muted">Optionales Datafox-Polling (DFCom). HTTP-Stempeln bleibt parallel nutzbar.</p>
+      <p className="text-sm text-muted">Datafox MasterIV per Polling. HTTP-Stempeln bleibt parallel nutzbar.</p>
       {err ? <p className="text-sm text-danger">{err}</p> : null}
       {msg ? <p className="text-sm text-present">{msg}</p> : null}
       <div className="space-y-3 rounded-2xl border border-line bg-card p-4">
@@ -596,7 +924,13 @@ export default function Settings() {
           <MailCard />
         </div>
         <div hidden={tab !== "terminals"}>
-          <DfcomCard />
+          <p className="mb-3 text-sm text-muted">
+            ESP-Geräte und optionales Datafox-Polling (DFCom). HTTP-Stempeln bleibt parallel nutzbar.
+          </p>
+          <EspCard />
+          <div className="mt-3">
+            <DfcomCard />
+          </div>
         </div>
       </div>
     </div>
