@@ -71,6 +71,7 @@ export default function HrUserMonth() {
     password: "",
     hired_on: "",
     left_on: "",
+    birthday: "",
   });
   const [accountMsg, setAccountMsg] = useState("");
   const [accountErrors, setAccountErrors] = useState<UserFieldErrors>({});
@@ -100,6 +101,7 @@ export default function HrUserMonth() {
       password: cur.username === r.user.username ? cur.password : "",
       hired_on: r.user.hired_on ?? "",
       left_on: r.user.left_on ?? "",
+      birthday: r.user.birthday ?? "",
     }));
   }
 
@@ -131,6 +133,7 @@ export default function HrUserMonth() {
         account.active !== user.active ||
         account.hired_on !== (user.hired_on ?? "") ||
         account.left_on !== (user.left_on ?? "") ||
+        account.birthday !== (user.birthday ?? "") ||
         account.password.trim() !== ""),
   );
   const accessDirty = Boolean(
@@ -197,12 +200,14 @@ export default function HrUserMonth() {
                 password?: string;
                 hired_on: string | null;
                 left_on: string | null;
+                birthday: string | null;
               } = {
                 username: account.username,
                 display_name: account.display_name,
                 email: account.email.trim() || null,
                 hired_on: account.hired_on || null,
                 left_on: account.left_on || null,
+                birthday: account.birthday || null,
               };
               if (isAdmin) {
                 body.role = account.role;
@@ -223,6 +228,7 @@ export default function HrUserMonth() {
                 active: next.active,
                 hired_on: next.hired_on ?? "",
                 left_on: next.left_on ?? "",
+                birthday: next.birthday ?? "",
               });
               setAccountMsg("Benutzer gespeichert.");
               await reload();
@@ -332,6 +338,15 @@ export default function HrUserMonth() {
               <FieldError id="err-acc-left">{accountErrors.left_on}</FieldError>
             </div>
           </div>
+          <label className="block min-w-0 overflow-hidden text-xs text-muted">
+            Geburtstag (optional)
+            <input
+              type="date"
+              className="mt-1 h-10 w-full rounded-lg border border-line bg-bg px-2 text-sm"
+              value={account.birthday}
+              onChange={(e) => patchAccount({ birthday: e.target.value })}
+            />
+          </label>
           {isAdmin ? (
             <>
               <label className="block text-xs text-muted">

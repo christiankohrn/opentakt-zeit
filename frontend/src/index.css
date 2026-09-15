@@ -165,3 +165,14 @@ input[type="date"]::-webkit-date-and-time-value {
   padding: 0;
   line-height: normal;
 }
+
+@media print {
+  body {
+    background: white;
+    color: black;
+  }
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+}

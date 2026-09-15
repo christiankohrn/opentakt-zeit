@@ -76,6 +76,48 @@ def _as_utc(dt: datetime) -> datetime:
     return dt.astimezone(ZoneInfo("UTC"))
 
 
+def work_intervals(
+    punches: list[Punch],
+    day: date,
+    now: datetime | None = None,
+) -> list[tuple[datetime, datetime]]:
+    """UTC work intervals on this local day, excluding breaks. Open shifts run until min(now, day end)."""
+    start_utc, end_utc = local_day_bounds(day)
+    now = now or datetime.now(tz=ZoneInfo("UTC"))
+    events = [
+        p
+        for p in punches
+        if p.voided_at is None and start_utc <= _as_utc(p.server_time) < end_utc
+    ]
+    events.sort(key=lambda p: p.server_time)
+    prev = [p for p in punches if p.voided_at is None and _as_utc(p.server_time) < start_utc]
+    prev_state = status_from_punches(prev)
+    intervals: list[tuple[datetime, datetime]] = []
+    open_in: datetime | None = start_utc if prev_state == "in" else None
+    open_break: datetime | None = start_utc if prev_state == "break" else None
+    for p in events:
+        t = _as_utc(p.server_time)
+        if p.kind == "in":
+            open_in = t
+        elif p.kind == "break_start" and open_in:
+            intervals.append((open_in, t))
+            open_in = None
+            open_break = t
+        elif p.kind == "break_end" and open_break:
+            open_break = None
+            open_in = t
+        elif p.kind == "out":
+            if open_break:
+                open_break = None
+            if open_in:
+                intervals.append((open_in, t))
+                open_in = None
+    day_end = min(now, end_utc)
+    if open_in:
+        intervals.append((open_in, day_end))
+    return intervals
+
+
 def summarize_day(
     punches: list[Punch],
     day: date,

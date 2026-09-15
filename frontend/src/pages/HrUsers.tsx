@@ -21,6 +21,7 @@ type UserForm = {
   web_login: boolean;
   hired_on: string;
   left_on: string;
+  birthday: string;
   send_access_mail: boolean;
 };
 
@@ -36,6 +37,7 @@ function emptyUserForm(workModelId: string): UserForm {
     web_login: true,
     hired_on: isoDate(),
     left_on: "",
+    birthday: "",
     send_access_mail: true,
   };
 }
@@ -181,6 +183,7 @@ export default function HrUsers() {
         password: isAdmin ? form.password || null : null,
         hired_on: form.hired_on || null,
         left_on: form.left_on || null,
+        birthday: form.birthday || null,
         send_access_mail: sendingMail,
       });
       setGeneratedPassword("");
@@ -334,6 +337,15 @@ export default function HrUsers() {
               <FieldError id="err-left-on">{fieldErrors.left_on}</FieldError>
             </div>
           </div>
+          <label className="block min-w-0 overflow-hidden text-xs text-muted">
+            Geburtstag (optional)
+            <input
+              type="date"
+              className="mt-1 h-10 w-full rounded-lg border border-line bg-bg px-2 text-sm"
+              value={form.birthday}
+              onChange={(e) => patchForm({ birthday: e.target.value })}
+            />
+          </label>
           <label className="block text-xs text-muted">
             Transpondernummer (optional)
             <input

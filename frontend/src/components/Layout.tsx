@@ -3,7 +3,7 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import ConfirmDialog from "./ConfirmDialog";
-import { IconAlert, IconCalendar, IconClock, IconGear, IconMoon, IconSun, IconUsers } from "./Icons";
+import { IconAlert, IconCalendar, IconChart, IconClock, IconGear, IconMoon, IconSun, IconUsers } from "./Icons";
 import { useTheme } from "../theme";
 
 function bottomClass(active: boolean) {
@@ -62,6 +62,10 @@ export default function Layout() {
               <IconUsers className={icon} />
               Personal
             </NavLink>
+            <NavLink to="/auswertungen" className={({ isActive }) => cls(isActive)}>
+              <IconChart className={icon} />
+              Auswertungen
+            </NavLink>
           </>
         ) : null}
         {admin && variant === "side" ? (
@@ -76,7 +80,7 @@ export default function Layout() {
 
   return (
     <div className="min-h-dvh lg:flex">
-      <aside className="hidden lg:sticky lg:top-0 lg:flex lg:h-dvh lg:w-56 lg:shrink-0 lg:flex-col lg:self-start bg-nav text-white">
+      <aside className="hidden print:hidden lg:sticky lg:top-0 lg:flex lg:h-dvh lg:w-56 lg:shrink-0 lg:flex-col lg:self-start bg-nav text-white">
         <div className="px-4 pt-6 pb-4">
           <p className="text-sm font-medium leading-tight">{orgName}</p>
           <p className="mt-1 text-sm font-medium">{user?.display_name}</p>
@@ -102,7 +106,7 @@ export default function Layout() {
         </div>
       </aside>
       <div className="mx-auto flex min-h-dvh w-full min-w-0 max-w-lg flex-col pb-[env(safe-area-inset-bottom)] sm:max-w-none lg:mx-0 lg:min-h-0 lg:flex-1">
-        <header className="flex items-center justify-between gap-3 px-5 pt-[max(1.25rem,env(safe-area-inset-top))] pb-2 lg:hidden">
+        <header className="flex items-center justify-between gap-3 px-5 pt-[max(1.25rem,env(safe-area-inset-top))] pb-2 print:hidden lg:hidden">
           <div className="min-w-0">
             <p className="text-[11px] font-medium text-muted">{orgName}</p>
             <p className="truncate text-sm text-ink">{user?.display_name}</p>
@@ -129,10 +133,10 @@ export default function Layout() {
             ) : null}
           </div>
         </header>
-        <main className="min-w-0 flex-1 px-5 pb-28 lg:px-8 lg:py-6 lg:pb-8 xl:px-10">
+        <main className="min-w-0 flex-1 px-5 pb-28 lg:px-8 lg:py-6 lg:pb-8 xl:px-10 print:px-0 print:pb-0">
           <Outlet />
         </main>
-        <nav className="fixed inset-x-0 bottom-0 bg-nav text-white shadow-[0_-12px_28px_rgba(0,34,70,0.35)] lg:hidden">
+        <nav className="fixed inset-x-0 bottom-0 bg-nav text-white shadow-[0_-12px_28px_rgba(0,34,70,0.35)] print:hidden lg:hidden">
           <div className="mx-auto flex w-full max-w-3xl gap-1 px-2 pb-[max(0.6rem,env(safe-area-inset-bottom))] pt-2">
             {links("bottom")}
           </div>

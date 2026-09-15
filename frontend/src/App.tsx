@@ -8,6 +8,12 @@ import HrModels from "./pages/HrModels";
 import HrPlausibility from "./pages/HrPlausibility";
 import HrUserMonth from "./pages/HrUserMonth";
 import HrUsers from "./pages/HrUsers";
+import ReportBalances from "./pages/ReportBalances";
+import ReportJournal from "./pages/ReportJournal";
+import ReportJubilees from "./pages/ReportJubilees";
+import ReportNightHours from "./pages/ReportNightHours";
+import ReportSickDays from "./pages/ReportSickDays";
+import Reports from "./pages/Reports";
 import Account from "./pages/Account";
 import ForgotPassword from "./pages/ForgotPassword";
 import Login from "./pages/Login";
@@ -71,6 +77,12 @@ const router = createBrowserRouter([
           { path: "personal", element: <HrUsers /> },
           { path: "personal/:id", element: <HrUserMonth /> },
           { path: "personal/:id/tag/:date", element: <HrDay /> },
+          { path: "auswertungen", element: <Reports /> },
+          { path: "auswertungen/krankheit", element: <ReportSickDays /> },
+          { path: "auswertungen/salden", element: <ReportBalances /> },
+          { path: "auswertungen/jubilaeen", element: <ReportJubilees /> },
+          { path: "auswertungen/nacht", element: <ReportNightHours /> },
+          { path: "auswertungen/journal", element: <ReportJournal /> },
           { path: "modelle", element: <HrModels /> },
           { path: "feiertage", element: <HrCalendar /> },
         ],
