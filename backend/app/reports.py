@@ -170,15 +170,15 @@ def absence_days_report(
     for user in people:
         period_days = _count_absence_days(user, absences, start, end)
         year_days = _count_absence_days(user, absences, year_start, year_end)
-        rows.append(
-            {
-                "user_id": user.id,
-                "display_name": user.display_name,
-                "period_days": period_days,
-                "year_days": year_days,
-                "sick_days": period_days,
-            }
-        )
+        row = {
+            "user_id": user.id,
+            "display_name": user.display_name,
+            "period_days": period_days,
+            "year_days": year_days,
+        }
+        if kind == "sick":
+            row["sick_days"] = period_days
+        rows.append(row)
     return rows
 
 
