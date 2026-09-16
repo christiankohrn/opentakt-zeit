@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <cstring>
 #include <DNSServer.h>
 #include <HTTPClient.h>
 #include <Preferences.h>
@@ -8,16 +9,32 @@
 #include <WiFiClientSecure.h>
 #include <U8g2lib.h>
 #include <ArduinoJson.h>
+#include <Wire.h>
+#include <HardwareSerial.h>
+#include <SPI.h>
+#include <MFRC522.h>
+
+#ifndef NFC_INTERFACE_HSU
+#define NFC_INTERFACE_HSU
+#endif
+#include <PN532_HSU.h>
+#include <PN532.h>
 
 namespace {
 
-constexpr int kFwVersion = 2;
+constexpr int kFwVersion = 1;
 constexpr uint32_t kStaTimeoutMs = 60000;
 constexpr uint32_t kHelloMs = 30000;
 constexpr uint32_t kBootPortalMs = 4000;
+constexpr uint32_t kRfidCooldownMs = 2500;
 constexpr uint8_t kSdaPin = 21;
 constexpr uint8_t kSclPin = 22;
 constexpr uint8_t kBootPin = 0;
+constexpr uint8_t kRfidSsPin = 5;
+constexpr uint8_t kRfidRstPin = 4;
+constexpr uint8_t kPn532RxPin = 17;
+constexpr uint8_t kPn532TxPin = 16;
+constexpr uint8_t kPn532I2cAddr = 0x24;
 constexpr uint16_t kDnsPort = 53;
 
 U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
@@ -38,10 +55,20 @@ uint32_t lastHello = 0;
 String line1 = "Opentakt";
 String line2 = "Start";
 uint32_t showUntil = 0;
+int otaPercent = -1;
 bool bootWasHigh = true;
 uint32_t bootDownAt = 0;
 bool bootLongHandled = false;
 bool inFlight = false;
+MFRC522 rfid(kRfidSsPin, kRfidRstPin);
+HardwareSerial uart2(2);
+PN532_HSU pn532Hsu(uart2, kPn532RxPin, kPn532TxPin);
+PN532 pn532(pn532Hsu);
+bool rfidOk = false;
+bool pn532UartOk = false;
+bool pn532I2cOk = false;
+String lastRfidUid;
+uint32_t lastRfidMs = 0;
 
 String apSsid() {
   uint8_t mac[6];
@@ -67,20 +94,41 @@ String deviceId() {
   return String(buf);
 }
 
+const char *readerTag() {
+  if (rfidOk) return "522";
+  if (pn532UartOk || pn532I2cOk) return "532";
+  return "--";
+}
+
+void drawFwRight(uint8_t y) {
+  u8g2.setFont(u8g2_font_5x8_tf);
+  char fw[16];
+  snprintf(fw, sizeof(fw), "%s FW %d", readerTag(), kFwVersion);
+  u8g2.drawStr(128 - static_cast<int>(strlen(fw)) * 5, y, fw);
+}
+
 void draw() {
   u8g2.clearBuffer();
   u8g2.setFont(u8g2_font_6x13_tf);
   u8g2.drawStr(0, 14, line1.c_str());
   u8g2.drawStr(0, 32, line2.c_str());
-  if (mode == Mode::Portal) {
+  if (otaPercent >= 0) {
+    u8g2.drawFrame(0, 40, 128, 10);
+    int w = (otaPercent * 126) / 100;
+    if (w > 0) u8g2.drawBox(1, 41, w, 8);
+    drawFwRight(56);
+  } else if (mode == Mode::Portal) {
     u8g2.setFont(u8g2_font_5x8_tf);
-    String hint = "http://192.168.4.1";
-    u8g2.drawStr(0, 48, hint.c_str());
+    u8g2.drawStr(0, 48, "http://192.168.4.1");
     String pw = "WLAN-PW " + apPass();
     u8g2.drawStr(0, 60, pw.c_str());
+    drawFwRight(60);
   } else if (mode == Mode::Station) {
     u8g2.setFont(u8g2_font_5x8_tf);
     u8g2.drawStr(0, 56, WiFi.localIP().toString().c_str());
+    drawFwRight(56);
+  } else {
+    drawFwRight(56);
   }
   u8g2.sendBuffer();
 }
@@ -136,7 +184,7 @@ String htmlPage() {
   page += F("'><label>Test-UID (ohne RFID)</label><input name='uid' value='");
   page += testUid;
   page += F("'><button type='submit'>Speichern und verbinden</button></form>");
-  page += F("<p>BOOT kurz: buchen. BOOT 4&nbsp;s halten: wieder dieses Portal.</p></body></html>");
+  page += F("<p>Einen Leser anschliessen (RC522 oder Grove NFC). BOOT kurz: Test-UID. BOOT 4&nbsp;s halten: wieder dieses Portal.</p></body></html>");
   return page;
 }
 
@@ -249,7 +297,8 @@ HttpResult httpCall(const char *method, const String &path, const String &payloa
 
 bool otaFromUrl(const String &url) {
   if (url.isEmpty()) return false;
-  show("Update...", String("FW ") + kFwVersion);
+  otaPercent = 0;
+  show("Update...", "Laden...");
   HTTPClient http;
   WiFiClient client;
   WiFiClientSecure secure;
@@ -267,6 +316,7 @@ bool otaFromUrl(const String &url) {
     begun = http.begin(client, url);
   }
   if (!begun) {
+    otaPercent = -1;
     show("Update fehlgeschl", "HTTP", 4000);
     return false;
   }
@@ -277,19 +327,60 @@ bool otaFromUrl(const String &url) {
   int code = http.GET();
   if (code != 200) {
     http.end();
+    otaPercent = -1;
     showHttpError(code);
     return false;
   }
   int len = http.getSize();
   if (!Update.begin(len > 0 ? static_cast<size_t>(len) : UPDATE_SIZE_UNKNOWN)) {
     http.end();
+    otaPercent = -1;
     show("Update fehlgeschl", "Flash", 4000);
     return false;
   }
+  show("Flashen...", len > 0 ? "0 %" : "...");
   WiFiClient *stream = http.getStreamPtr();
-  size_t written = Update.writeStream(*stream);
-  bool ok = Update.end() && (len <= 0 || written == static_cast<size_t>(len));
+  uint8_t buf[1024];
+  size_t written = 0;
+  int lastPct = -1;
+  uint32_t lastDraw = 0;
+  uint32_t idleSince = millis();
+  bool writeOk = true;
+  while (writeOk) {
+    size_t avail = stream->available();
+    if (avail) {
+      idleSince = millis();
+      size_t n = avail > sizeof(buf) ? sizeof(buf) : avail;
+      int rd = stream->readBytes(buf, n);
+      if (rd <= 0) break;
+      if (Update.write(buf, static_cast<size_t>(rd)) != static_cast<size_t>(rd)) {
+        writeOk = false;
+        break;
+      }
+      written += static_cast<size_t>(rd);
+      if (len > 0) {
+        int pct = static_cast<int>((written * 100) / static_cast<size_t>(len));
+        if (pct > 100) pct = 100;
+        if (pct != lastPct && millis() - lastDraw >= 120) {
+          lastPct = pct;
+          lastDraw = millis();
+          otaPercent = pct;
+          show("Flashen...", String(pct) + " %");
+        }
+        if (written >= static_cast<size_t>(len)) break;
+      } else if (millis() - lastDraw >= 200) {
+        lastDraw = millis();
+        show("Flashen...", String(written / 1024) + " kB");
+      }
+    } else {
+      if (!http.connected() && !stream->available()) break;
+      if (millis() - idleSince > 8000) break;
+      delay(1);
+    }
+  }
+  bool ok = writeOk && Update.end() && (len <= 0 || written == static_cast<size_t>(len));
   http.end();
+  otaPercent = -1;
   if (!ok) {
     show("Update fehlgeschl", "Schreiben", 4000);
     return false;
@@ -387,6 +478,240 @@ void idleScreen() {
   if (mode == Mode::Station) show("Bereit", "Chip halten");
 }
 
+String uidHex() {
+  String s;
+  s.reserve(static_cast<unsigned>(rfid.uid.size) * 2 + 1);
+  for (byte i = 0; i < rfid.uid.size; i++) {
+    if (rfid.uid.uidByte[i] < 0x10) s += '0';
+    s += String(rfid.uid.uidByte[i], HEX);
+  }
+  s.toUpperCase();
+  return s;
+}
+
+void initRc522() {
+  SPI.begin();
+  rfid.PCD_Init();
+  rfid.PCD_SetAntennaGain(MFRC522::RxGain_max);
+  delay(40);
+  byte ver = rfid.PCD_ReadRegister(MFRC522::VersionReg);
+  rfidOk = (ver != 0 && ver != 0xFF);
+  if (rfidOk) {
+    Serial.printf("RC522 Version 0x%02X\n", ver);
+  } else {
+    Serial.println("RC522 nicht erkannt");
+  }
+}
+
+void handleRfid() {
+  if (!rfidOk || inFlight || mode != Mode::Station) return;
+  if (!rfid.PICC_IsNewCardPresent() || !rfid.PICC_ReadCardSerial()) return;
+  String uid = uidHex();
+  byte sak = rfid.uid.sak;
+  rfid.PICC_HaltA();
+  rfid.PCD_StopCrypto1();
+  if (uid.isEmpty()) return;
+  if (uid == lastRfidUid && millis() - lastRfidMs < kRfidCooldownMs) return;
+  lastRfidUid = uid;
+  lastRfidMs = millis();
+  Serial.printf("RFID %s SAK=0x%02X\n", uid.c_str(), sak);
+  punch(uid);
+}
+
+bool probePn532Hsu() {
+  pn532.begin();
+  uint32_t ver = pn532.getFirmwareVersion();
+  if (!ver) {
+    Serial.println("PN532 HSU: keine Firmware (Konstruktor RX=17 TX=16)");
+    return false;
+  }
+  Serial.printf("PN532 HSU OK  IC=0x%02lx ver %lu.%lu\n",
+                (unsigned long)((ver >> 24) & 0xFF),
+                (unsigned long)((ver >> 16) & 0xFF),
+                (unsigned long)((ver >> 8) & 0xFF));
+  pn532.SAMConfig();
+  return true;
+}
+
+bool pn532I2cReady(uint32_t timeoutMs) {
+  uint32_t start = millis();
+  while (millis() - start < timeoutMs) {
+    if (Wire.requestFrom(kPn532I2cAddr, static_cast<uint8_t>(1)) >= 1) {
+      int b = Wire.read();
+      if (b >= 0 && (b & 1)) return true;
+    }
+    delay(5);
+  }
+  return false;
+}
+
+bool pn532I2cSend(const uint8_t *data, uint8_t len) {
+  uint8_t cmdlen = static_cast<uint8_t>(len + 1);
+  Wire.beginTransmission(kPn532I2cAddr);
+  uint8_t checksum = static_cast<uint8_t>(0x00 + 0x00 + 0xFF);
+  Wire.write(static_cast<uint8_t>(0x00));
+  Wire.write(static_cast<uint8_t>(0x00));
+  Wire.write(static_cast<uint8_t>(0xFF));
+  Wire.write(cmdlen);
+  Wire.write(static_cast<uint8_t>(~cmdlen + 1));
+  Wire.write(static_cast<uint8_t>(0xD4));
+  checksum = static_cast<uint8_t>(checksum + 0xD4);
+  for (uint8_t i = 0; i < len; i++) {
+    Wire.write(data[i]);
+    checksum = static_cast<uint8_t>(checksum + data[i]);
+  }
+  Wire.write(static_cast<uint8_t>(~checksum));
+  Wire.write(static_cast<uint8_t>(0x00));
+  if (Wire.endTransmission() != 0) return false;
+  if (!pn532I2cReady(200)) return false;
+  uint8_t got = Wire.requestFrom(kPn532I2cAddr, static_cast<uint8_t>(8));
+  if (got < 7) return false;
+  Wire.read();
+  uint8_t ack[6];
+  for (uint8_t i = 0; i < 6; i++) ack[i] = static_cast<uint8_t>(Wire.read());
+  const uint8_t expect[6] = {0x00, 0x00, 0xFF, 0x00, 0xFF, 0x00};
+  return memcmp(ack, expect, 6) == 0;
+}
+
+bool pn532I2cReadResponse(uint8_t *out, uint8_t outMax, uint8_t *outLen, uint32_t timeoutMs) {
+  if (!pn532I2cReady(timeoutMs)) return false;
+  uint8_t got = Wire.requestFrom(kPn532I2cAddr, static_cast<uint8_t>(24));
+  if (got < 8) return false;
+  Wire.read();
+  uint8_t buf[22];
+  uint8_t n = 0;
+  while (Wire.available() && n < sizeof(buf)) buf[n++] = static_cast<uint8_t>(Wire.read());
+  int start = -1;
+  for (uint8_t i = 0; i + 2 < n; i++) {
+    if (buf[i] == 0x00 && buf[i + 1] == 0x00 && buf[i + 2] == 0xFF) {
+      start = i + 3;
+      break;
+    }
+    if (buf[i] == 0x00 && buf[i + 1] == 0xFF) {
+      start = i + 2;
+      break;
+    }
+  }
+  if (start < 0 || start + 2 > static_cast<int>(n)) return false;
+  uint8_t length = buf[start];
+  if (static_cast<uint8_t>(length + buf[start + 1]) != 0 || length < 2 || length > outMax) return false;
+  if (start + 2 + length > static_cast<int>(n)) return false;
+  memcpy(out, buf + start + 2, length);
+  *outLen = length;
+  return true;
+}
+
+bool probePn532I2c() {
+  Wire.beginTransmission(kPn532I2cAddr);
+  uint8_t err = Wire.endTransmission();
+  if (err != 0) {
+    Serial.println("I2C 0x24: kein ACK (normal im UART-Modus)");
+    return false;
+  }
+  Serial.println("I2C 0x24: ACK, GetFirmwareVersion...");
+  delay(40);
+  const uint8_t cmd[] = {0x02};
+  if (!pn532I2cSend(cmd, 1)) {
+    Serial.println("I2C PN532: kein ACK auf Befehl");
+    return false;
+  }
+  uint8_t resp[16];
+  uint8_t n = 0;
+  if (!pn532I2cReadResponse(resp, sizeof(resp), &n, 250)) return false;
+  if (n >= 3 && resp[0] == 0xD5 && resp[1] == 0x03 && resp[2] == 0x32) {
+    Serial.printf("PN532 I2C OK  ver %u.%u\n", static_cast<unsigned>(resp[3]), static_cast<unsigned>(resp[4]));
+    return true;
+  }
+  return false;
+}
+
+bool pn532I2cSamConfig() {
+  const uint8_t cmd[] = {0x14, 0x01, 0x01, 0x00};
+  if (!pn532I2cSend(cmd, 4)) return false;
+  uint8_t resp[8];
+  uint8_t n = 0;
+  return pn532I2cReadResponse(resp, sizeof(resp), &n, 200) && n >= 2 && resp[0] == 0xD5 && resp[1] == 0x15;
+}
+
+void offerPn532Uid(const uint8_t *resp, uint8_t n) {
+  if (n < 9 || resp[0] != 0xD5 || resp[1] != 0x4B || resp[2] < 1) return;
+  uint8_t uidLen = resp[7];
+  if (uidLen < 4 || uidLen > 10 || static_cast<uint8_t>(8 + uidLen) > n) return;
+  String uid;
+  uid.reserve(uidLen * 2u + 1u);
+  for (uint8_t i = 0; i < uidLen; i++) {
+    if (resp[8 + i] < 0x10) uid += '0';
+    uid += String(resp[8 + i], HEX);
+  }
+  uid.toUpperCase();
+  if (uid == lastRfidUid && millis() - lastRfidMs < kRfidCooldownMs) return;
+  lastRfidUid = uid;
+  lastRfidMs = millis();
+  Serial.print("PN532 ");
+  Serial.println(uid);
+  punch(uid);
+}
+
+void handlePn532() {
+  if (inFlight || mode != Mode::Station) return;
+  if (pn532I2cOk) {
+    const uint8_t cmd[] = {0x4A, 0x01, 0x00};
+    if (!pn532I2cSend(cmd, 3)) return;
+    uint8_t resp[32];
+    uint8_t n = 0;
+    if (!pn532I2cReadResponse(resp, sizeof(resp), &n, 120)) return;
+    offerPn532Uid(resp, n);
+    return;
+  }
+  if (!pn532UartOk) return;
+  uint8_t uid[10];
+  uint8_t uidLen = sizeof(uid);
+  if (!pn532.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLen, 120)) return;
+  if (uidLen < 4) return;
+  String hex;
+  hex.reserve(uidLen * 2u + 1u);
+  for (uint8_t i = 0; i < uidLen; i++) {
+    if (uid[i] < 0x10) hex += '0';
+    hex += String(uid[i], HEX);
+  }
+  hex.toUpperCase();
+  if (hex == lastRfidUid && millis() - lastRfidMs < kRfidCooldownMs) return;
+  lastRfidUid = hex;
+  lastRfidMs = millis();
+  Serial.print("PN532 ");
+  Serial.println(hex);
+  punch(hex);
+}
+
+void initUartReader() {
+  pn532UartOk = false;
+  Serial.println("PN532 HSU: Gelb->GPIO17 (ESP32 RX)  Weiss->GPIO16 (ESP32 TX)  3,3V  kein Teiler");
+  if (probePn532Hsu()) {
+    pn532UartOk = true;
+    Serial.println("UART: PN532");
+    return;
+  }
+  uart2.end();
+  Serial.println("UART: kein PN532");
+}
+
+void initReaders() {
+  pn532I2cOk = false;
+  initRc522();
+  initUartReader();
+  if (!pn532UartOk && probePn532I2c()) {
+    pn532I2cOk = true;
+    if (!pn532I2cSamConfig()) Serial.println("PN532 I2C SAM-Config fehlgeschlagen, Leser trotzdem aktiv");
+  }
+  Serial.printf("Leser %s\n", readerTag());
+  if (pn532UartOk || pn532I2cOk) {
+    show("PN532 OK", pn532I2cOk ? "I2C" : "UART", 2000);
+  } else if (!rfidOk) {
+    show("kein PN532", "Gelb 17 Weiss 16", 4000);
+    delay(3500);
+  }
+}
+
 void handleSerial() {
   if (!Serial.available()) return;
   String cmd = Serial.readStringUntil('\n');
@@ -398,6 +723,14 @@ void handleSerial() {
     if (sp > 0) uid = cmd.substring(sp + 1);
     uid.trim();
     punch(uid);
+    return;
+  }
+  if (cmd == "PROBE" || cmd == "LESER") {
+    initReaders();
+    Serial.printf("SPI-RC522 %s  UART-%s  I2C-%s\n", rfidOk ? "ja" : "nein",
+                  pn532UartOk ? "532" : "-",
+                  pn532I2cOk ? "532" : "-");
+    show("Leser", readerTag(), 3000);
   }
 }
 
@@ -408,6 +741,7 @@ void setup() {
   pinMode(kBootPin, INPUT_PULLUP);
   u8g2.begin();
   loadPrefs();
+  initReaders();
   configTzTime("CET-1CEST,M3.5.0,M10.5.0/3", "pool.ntp.org");
   if (wifiSsid.isEmpty()) {
     startPortal();
@@ -455,6 +789,8 @@ void loop() {
     startSta();
     return;
   }
+  handleRfid();
+  if (pn532UartOk || pn532I2cOk) handlePn532();
   if (!lastHello || millis() - lastHello >= kHelloMs) hello();
   idleScreen();
 }

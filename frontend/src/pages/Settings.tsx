@@ -564,7 +564,7 @@ function EspCard() {
             Mit PlatformIO oder Arduino IDE bauen, dann die <code className="text-xs">firmware.bin</code> hochladen.
             Geräte mit älterer Versionsnummer holen sie selbst (alle 30&nbsp;s). Aktuell auf dem Server:{" "}
             {esp.firmware_uploaded ? `Version ${esp.firmware_version}` : "keine Datei"}. Die im Gerät eingebaute Version
-            ist 2.
+            ist 10.
           </p>
           <div className="grid grid-cols-3 gap-2">
             <label className="col-span-2 block text-xs text-muted">

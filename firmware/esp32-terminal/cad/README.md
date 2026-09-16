@@ -7,7 +7,7 @@ Zwei Teile, kein zusammengebautes Modell. In OpenSCAD siehst du bei `teil = 0` *
    ┌─────────────────┐                 ┌─────────────────┐
    │                 │  Öffnung oben   │     [OLED]      │  Fenster
    │  == ESP32 == USB│                 │                 │
-   │                 │                 │  (später RFID)  │
+   │                 │                 │   RC522 (3,3V)   │
    └─────────────────┘                 └─────────────────┘
 ```
 
@@ -19,4 +19,4 @@ Zwei Teile, kein zusammengebautes Modell. In OpenSCAD siehst du bei `teil = 0` *
    - Deckel: so liegen lassen (große Fläche auf dem Bett).
 5. ESP32 in die zwei Leisten legen, USB zum Schlitz. OLED von innen in die Mulde am Deckel, Display durchs Fenster. Deckel draufdrücken (Lippe).
 
-RFID: in V1 leer lassen. Später das Modul unter die freie Deckelhälfte kleben und ggf. die Mulde anpassen.
+RFID-Leser unter die freie Deckelhälfte, **Antenne nach außen** (nicht gegen das ESP32-Blech). Nur **3,3 V**. Pinbelegung: [`../README.md`](../README.md#anschluss). RC522 etwa 40×60 mm, passt in den Innenraum (70×88 mm). Grove NFC (PN532) statt RC522, nicht beide. 125 kHz-Grove wurde getestet und verworfen.
