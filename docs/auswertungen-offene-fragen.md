@@ -39,7 +39,7 @@ Aktuell zählen Nachtstunden die gestempelten Intervalle **ohne** Auto-Pause. So
 
 ## 8. Journal-PDF
 
-Erledigt in dieser Stufe: das Journal hat denselben PDF-Export wie die anderen Auswertungen (nicht nur Browserdruck).
+Erledigt in dieser Stufe: Sammel-PDF für alle Mitarbeitenden oder eine Auswahl, je Person eine Seite zur Aushändigung.
 
 ## 9. Geburtstage / Einwilligung
 

@@ -97,32 +97,54 @@ export type FlexBalance = {
   total_delta_hours: number;
 };
 
-export type SickDaysRow = {
+export type AbsenceDaysRow = {
   user_id: number;
   display_name: string;
-  sick_days: number;
+  period_days: number;
+  year_days: number;
+  sick_days?: number;
 };
 
 export type MonthBalanceRow = {
   user_id: number;
   display_name: string;
-  work_hours: number;
-  soll_hours: number;
-  delta_hours: number;
-  carry_hours: number;
-  total_hours: number;
-  sick_days: number;
-  vacation_days: number;
-  vacation_planned_days: number;
+  flex_prev: number;
+  flex_month: number;
+  flex_total: number;
+  vacation_prev: number;
+  vacation_month: number;
+  vacation_total: number;
+  vacation_future: number;
+  sick_prev: number;
+  sick_month: number;
+  sick_total: number;
 };
 
 export type JubileeEvent = {
   user_id: number;
   display_name: string;
   date: string;
+  origin_date: string;
   kind: string;
   label: string;
   years: number;
+};
+
+export type JournalLine = {
+  type: "day" | "week" | "month";
+  label: string;
+  booking: string;
+  work_hours: number;
+  soll_hours: number;
+  delta_hours: number;
+};
+
+export type JournalReport = {
+  user_id: number;
+  display_name: string;
+  month: string;
+  month_label: string;
+  rows: JournalLine[];
 };
 
 export type NightHoursRow = {
@@ -526,8 +548,12 @@ export const api = {
   balances: (month: string) =>
     request<{ month: string; people: FlexBalance[] }>(`/api/hr/balances?month=${month}`),
   sickDays: (from: string, to: string, userIds?: number[] | null) =>
-    request<{ from: string; to: string; people: SickDaysRow[] }>(
+    request<{ from: string; to: string; year: number; people: AbsenceDaysRow[] }>(
       `/api/hr/reports/sick-days?${reportQuery({ from, to, user_ids: userIdsQuery(userIds) })}`,
+    ),
+  vacationDays: (from: string, to: string, userIds?: number[] | null) =>
+    request<{ from: string; to: string; year: number; people: AbsenceDaysRow[] }>(
+      `/api/hr/reports/vacation-days?${reportQuery({ from, to, user_ids: userIdsQuery(userIds) })}`,
     ),
   monthBalances: (month: string, asOf: string) =>
     request<{ month: string; as_of: string; note: string; people: MonthBalanceRow[] }>(
@@ -539,6 +565,10 @@ export const api = {
     ),
   nightHours: (month: string) =>
     request<{ month: string; people: NightHoursRow[] }>(`/api/hr/reports/night-hours?month=${month}`),
+  journals: (month: string, userIds?: number[] | null) =>
+    request<{ month: string; people: JournalReport[] }>(
+      `/api/hr/reports/journal?${reportQuery({ month, user_ids: userIdsQuery(userIds) })}`,
+    ),
   downloadExportCsv: async (month: string, userId?: number) => {
     const q = new URLSearchParams({ month });
     if (userId) q.set("user_id", String(userId));
@@ -553,6 +583,16 @@ export const api = {
     downloadFile(
       `/api/hr/reports/sick-days.pdf?${reportQuery({ from, to, user_ids: userIdsQuery(userIds) })}`,
       `krankheitstage-${from}-${to}.pdf`,
+    ),
+  downloadVacationDaysCsv: (from: string, to: string, userIds?: number[] | null) =>
+    downloadFile(
+      `/api/hr/reports/vacation-days.csv?${reportQuery({ from, to, user_ids: userIdsQuery(userIds) })}`,
+      `urlaubstage-${from}-${to}.csv`,
+    ),
+  downloadVacationDaysPdf: (from: string, to: string, userIds?: number[] | null) =>
+    downloadFile(
+      `/api/hr/reports/vacation-days.pdf?${reportQuery({ from, to, user_ids: userIdsQuery(userIds) })}`,
+      `urlaubstage-${from}-${to}.pdf`,
     ),
   downloadMonthBalancesCsv: (month: string, asOf: string) =>
     downloadFile(
@@ -569,9 +609,12 @@ export const api = {
   downloadJubileesPdf: (year: number, half: number) =>
     downloadFile(`/api/hr/reports/jubilees.pdf?year=${year}&half=${half}`, `jubilaeen-${year}-hj${half}.pdf`),
   downloadNightHoursCsv: (month: string) =>
-    downloadFile(`/api/hr/reports/night-hours.csv?month=${month}`, `nachtstunden-${month}.csv`),
+    downloadFile(`/api/hr/reports/night-hours.csv?month=${month}`, `lohnarten-${month}.csv`),
   downloadNightHoursPdf: (month: string) =>
-    downloadFile(`/api/hr/reports/night-hours.pdf?month=${month}`, `nachtstunden-${month}.pdf`),
-  downloadJournalPdf: (userId: number, month: string) =>
-    downloadFile(`/api/hr/reports/journal.pdf?user_id=${userId}&month=${month}`, `journal-${month}.pdf`),
+    downloadFile(`/api/hr/reports/night-hours.pdf?month=${month}`, `lohnarten-${month}.pdf`),
+  downloadJournalPdf: (month: string, userIds?: number[] | null) =>
+    downloadFile(
+      `/api/hr/reports/journal.pdf?${reportQuery({ month, user_ids: userIdsQuery(userIds) })}`,
+      `journale-${month}.pdf`,
+    ),
 };

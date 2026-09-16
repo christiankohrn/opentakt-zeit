@@ -18,7 +18,7 @@ Opentakt Zeit ist das erste Produkt unter dem Namen Opentakt. Weitere Anwendunge
 - Stempeln in der PWA (Kommen, Pause, Gehen), inkl. Offline-Warteschlange
 - Eigenes Zeiten-Konto mit Monats- und Gesamtsaldo (Gleitzeit)
 - Personal: Stammdaten, Arbeitsmodelle ab Datum, Ein-/Austritt
-- Auswertungen für Personal (Krankheitstage, Monatssalden, Jubiläen, Nachtstunden, Journal)
+- Auswertungen für Personal (Krankheitstage, Urlaubstage, Monatssalden, Jubiläen, Lohnarten, Journale)
 - Plausibilität (fehlendes Gehen, Pausen, 10-Stunden-Grenze, …)
 - Abwesenheiten, Feiertage je Bundesland, betriebsfreie Tage
 - Datafox MasterIV über HTTP (Transponder), optional Polling per DFCom, optional ohne Web-Login

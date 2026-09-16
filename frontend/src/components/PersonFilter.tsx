@@ -39,19 +39,21 @@ export default function PersonFilter({
         ? "Alle Mitarbeitenden"
         : selected.length === 0
           ? "Keine Mitarbeitenden"
-          : `${selected.length} von ${allIds.length}`;
+          : selected.length === 1
+            ? users.find((u) => u.id === selected[0])?.display_name || "1 Person"
+            : `${selected.length} von ${allIds.length}`;
 
   return (
-    <div className="relative" ref={box}>
+    <div className="relative w-[13.5rem] shrink-0" ref={box}>
       <button
         type="button"
-        className="rounded-lg border border-line bg-card px-2 py-1 text-sm"
+        className="w-full truncate rounded-lg border border-line bg-card px-2 py-1 text-left text-sm"
         onClick={() => setOpen((value) => !value)}
       >
         {label}
       </button>
       {open ? (
-        <div className="absolute right-0 z-20 mt-1 max-h-64 w-64 overflow-y-auto rounded-xl border border-line bg-card p-2 shadow-lg">
+        <div className="absolute left-0 z-20 mt-1 max-h-64 w-64 overflow-y-auto rounded-xl border border-line bg-card p-2 shadow-lg">
           <div className="mb-2 flex gap-3 px-1 text-xs">
             <button type="button" className="text-present" onClick={() => onChange(null)}>
               Alle

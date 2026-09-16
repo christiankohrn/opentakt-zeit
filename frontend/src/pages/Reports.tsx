@@ -4,27 +4,32 @@ const REPORTS = [
   {
     to: "/auswertungen/krankheit",
     title: "Krankheitstage",
-    text: "Krankheitstage je Person im gewählten Zeitraum, Standard ganzes Jahr und alle Mitarbeitenden.",
+    text: "Krankheitstage je Person im gewählten Zeitraum und im Kalenderjahr insgesamt.",
+  },
+  {
+    to: "/auswertungen/urlaub",
+    title: "Urlaubstage",
+    text: "Gebuchte Urlaubstage je Person im gewählten Zeitraum und im Kalenderjahr insgesamt.",
   },
   {
     to: "/auswertungen/salden",
     title: "Monatssalden",
-    text: "Ist, Soll, Diff, Vortrag, Gesamt, Krankheit, Urlaub genommen und geplant — mit Stichtag.",
+    text: "Saldenstand zum Stichtag: Zeitkonto, Urlaub und Krankheit mit Vormonat, Monat und Gesamt.",
   },
   {
     to: "/auswertungen/jubilaeen",
     title: "Jubiläen",
-    text: "Geburtstage, Eintrittstage und 10/25/40-Jahr-Jubiläen im Halbjahr.",
+    text: "Geburtstage, Eintrittstage und 10/25/40-Jahr-Jubiläen im Halbjahr, inkl. Ursprungsdatum.",
   },
   {
-    to: "/auswertungen/nacht",
-    title: "Nachtstunden",
-    text: "Arbeitszeit in den Fenstern 20–24, 0–4 und 4–6 Uhr aus Stempelintervallen.",
+    to: "/auswertungen/lohnarten",
+    title: "Lohnarten",
+    text: "Nachtstunden als Lohnarten 1 (20–24), 2 (0–4) und 3 (4–6), optional Summe aus 1 und 3.",
   },
   {
     to: "/auswertungen/journal",
-    title: "Journal",
-    text: "Monatliche Stempel- und Abwesenheitsliste einer Person, mit Wochen- und Monatssummen, als PDF.",
+    title: "Journale",
+    text: "Monatliche Stempel- und Abwesenheitslisten für alle oder ausgewählte Personen, als Sammel-PDF.",
   },
 ];
 

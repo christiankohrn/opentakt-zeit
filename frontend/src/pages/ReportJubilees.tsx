@@ -1,13 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, type JubileeEvent } from "../api";
-import { payrollHalf, payrollYear } from "../reportPeriod";
-
-function formatDate(iso: string) {
-  const d = new Date(iso + "T12:00:00");
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
-}
+import ReportToolbar, { ExportButtons } from "../components/ReportToolbar";
+import { formatDeDate, payrollHalf, payrollYear } from "../reportPeriod";
 
 export default function ReportJubilees() {
   const [params, setParams] = useSearchParams();
@@ -41,41 +36,32 @@ export default function ReportJubilees() {
       <Link to="/auswertungen" className="text-sm text-muted">
         ← Auswertungen
       </Link>
-      <div className="mt-2 flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-start lg:justify-between">
-        <h1 className="text-xl font-medium">Jubiläen</h1>
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            type="number"
-            min={1990}
-            max={2100}
-            value={year}
-            onChange={(e) => setFilter(Number(e.target.value), half)}
-            className="w-24 rounded-lg border border-line bg-card px-2 py-1 text-sm"
+      <ReportToolbar
+        title="Jubiläen"
+        actions={
+          <ExportButtons
+            onCsv={() => void api.downloadJubileesCsv(year, half)}
+            onPdf={() => void api.downloadJubileesPdf(year, half)}
           />
-          <select
-            value={half}
-            onChange={(e) => setFilter(year, Number(e.target.value))}
-            className="rounded-lg border border-line bg-card px-2 py-1 text-sm"
-          >
-            <option value={1}>1. Halbjahr</option>
-            <option value={2}>2. Halbjahr</option>
-          </select>
-          <button
-            type="button"
-            className="rounded-lg border border-line bg-card px-3 py-1 text-sm"
-            onClick={() => void api.downloadJubileesCsv(year, half)}
-          >
-            CSV
-          </button>
-          <button
-            type="button"
-            className="rounded-lg border border-present bg-present px-3 py-1 text-sm text-white"
-            onClick={() => void api.downloadJubileesPdf(year, half)}
-          >
-            PDF
-          </button>
-        </div>
-      </div>
+        }
+      >
+        <input
+          type="number"
+          min={1990}
+          max={2100}
+          value={year}
+          onChange={(e) => setFilter(Number(e.target.value), half)}
+          className="w-24 shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
+        />
+        <select
+          value={half}
+          onChange={(e) => setFilter(year, Number(e.target.value))}
+          className="shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
+        >
+          <option value={1}>1. Halbjahr</option>
+          <option value={2}>2. Halbjahr</option>
+        </select>
+      </ReportToolbar>
       <p className="mt-2 text-sm text-muted">
         Geburtstage, Eintrittstage und 10/25/40-Jahr-Jubiläen. Ohne Geburtstag erscheinen nur Eintritt und Jubiläen.
       </p>
@@ -84,12 +70,13 @@ export default function ReportJubilees() {
       <ul className="mt-4 space-y-2 md:hidden">
         {events.map((row) => (
           <li key={`${row.user_id}-${row.kind}-${row.date}`} className="rounded-2xl border border-line bg-card px-4 py-3">
-            <p className="text-xs text-muted">{formatDate(row.date)}</p>
+            <p className="text-xs text-muted">{formatDeDate(row.date)}</p>
             <Link to={`/personal/${row.user_id}`} className="font-medium text-present">
               {row.display_name}
             </Link>
             <p className="text-sm">
               {row.label} · {row.years} Jahre
+              {row.origin_date ? ` · ${formatDeDate(row.origin_date)}` : ""}
             </p>
           </li>
         ))}
@@ -102,12 +89,13 @@ export default function ReportJubilees() {
               <th className="px-4 py-3 font-medium">Name</th>
               <th className="px-4 py-3 font-medium">Art</th>
               <th className="px-4 py-3 font-medium text-right">Jahre</th>
+              <th className="px-4 py-3 font-medium">Geboren/Eintritt</th>
             </tr>
           </thead>
           <tbody>
             {events.map((row) => (
               <tr key={`${row.user_id}-${row.kind}-${row.date}`} className="border-t border-line bg-card">
-                <td className="px-4 py-2.5 tabular-nums">{formatDate(row.date)}</td>
+                <td className="px-4 py-2.5 tabular-nums">{formatDeDate(row.date)}</td>
                 <td className="px-4 py-2.5">
                   <Link to={`/personal/${row.user_id}`} className="font-medium text-present">
                     {row.display_name}
@@ -115,6 +103,7 @@ export default function ReportJubilees() {
                 </td>
                 <td className="px-4 py-2.5">{row.label}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums">{row.years}</td>
+                <td className="px-4 py-2.5 tabular-nums">{row.origin_date ? formatDeDate(row.origin_date) : "—"}</td>
               </tr>
             ))}
           </tbody>

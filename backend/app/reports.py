@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.auth import as_local, now_utc
-from app.balance import days_in_range, hired_on, month_days
+from app.balance import days_in_range, hired_on, is_employed, month_days
 from app.models import Absence, Punch, User
 from app.timecalc import punches_window_for_month, work_intervals
 
@@ -17,7 +17,7 @@ NIGHT_WINDOWS = (
     ("hours_0_4", time(0, 0), time(4, 0)),
     ("hours_4_6", time(4, 0), time(6, 0)),
 )
-VACATION_NOTE = "Urlaubstage nach dem Stichtag stehen in der Spalte „Urlaub geplant“."
+VACATION_NOTE = "Urlaub „inkl. Zukunft“ enthält gebuchte Tage nach dem Stichtag im Kalenderjahr."
 PUNCH_LABELS = {
     "in": "Kommen",
     "out": "Gehen",
@@ -144,28 +144,54 @@ def _in_period(day: date, start: date, end: date) -> bool:
     return start <= day <= end
 
 
+def _count_absence_days(user: User, absences: list[Absence], start: date, end: date) -> int:
+    overlap = employment_overlap(user, start, end)
+    if overlap is None:
+        return 0
+    lo, hi = overlap
+    return sum(1 for row in absences if row.user_id == user.id and lo <= row.day <= hi)
+
+
+def absence_days_report(
+    db: Session,
+    kind: str,
+    start: date,
+    end: date,
+    user_ids: set[int] | None = None,
+) -> list[dict]:
+    people = people_in_range(db, start, end, user_ids)
+    year_start, year_end = year_bounds(start.year)
+    if end.year != start.year:
+        year_end = year_bounds(end.year)[1]
+    absences = list(
+        db.scalars(select(Absence).where(Absence.kind == kind, Absence.day >= year_start, Absence.day <= max(end, year_end)))
+    )
+    rows = []
+    for user in people:
+        period_days = _count_absence_days(user, absences, start, end)
+        year_days = _count_absence_days(user, absences, year_start, year_end)
+        rows.append(
+            {
+                "user_id": user.id,
+                "display_name": user.display_name,
+                "period_days": period_days,
+                "year_days": year_days,
+                "sick_days": period_days,
+            }
+        )
+    return rows
+
+
 def sick_days_report(
     db: Session, start: date, end: date, user_ids: set[int] | None = None
 ) -> list[dict]:
-    people = people_in_range(db, start, end, user_ids)
-    absences = list(
-        db.scalars(select(Absence).where(Absence.kind == "sick", Absence.day >= start, Absence.day <= end))
-    )
-    counts: dict[int, int] = {user.id: 0 for user in people}
-    by_user: dict[int, User] = {user.id: user for user in people}
-    for row in absences:
-        user = by_user.get(row.user_id)
-        if user is None:
-            continue
-        overlap = employment_overlap(user, start, end)
-        if overlap is None:
-            continue
-        lo, hi = overlap
-        if lo <= row.day <= hi:
-            counts[user.id] += 1
-    return [
-        {"user_id": user.id, "display_name": user.display_name, "sick_days": counts[user.id]} for user in people
-    ]
+    return absence_days_report(db, "sick", start, end, user_ids)
+
+
+def vacation_days_report(
+    db: Session, start: date, end: date, user_ids: set[int] | None = None
+) -> list[dict]:
+    return absence_days_report(db, "vacation", start, end, user_ids)
 
 
 def month_balances_report(
@@ -178,53 +204,56 @@ def month_balances_report(
     today = today or as_local(now_utc()).date()
     as_of = as_of or today
     hours_until = min(as_of, today)
+    prev_last = start - timedelta(days=1)
+    year_start, year_end = year_bounds(start.year)
     people = people_in_range(db, start, last)
     rows = []
     for user in people:
         overlap = employment_overlap(user, start, last)
         if overlap is None:
             continue
-        lo, hi = overlap
         hire = hired_on(user)
-        hist_last = max(last, hours_until)
+        hist_last = max(last, hours_until, year_end)
         if hire > hist_last:
             continue
         days = days_in_range(db, user, hire, hist_last)
-        work = soll = delta = carry = 0.0
-        sick_days = vacation_days = vacation_planned_days = 0
+        flex_prev = flex_month = 0.0
+        vac_prev = vac_ytd = vac_year = 0
+        sick_prev = sick_ytd = 0
         for summary in days:
             day = date.fromisoformat(str(summary["date"]))
             kind = ((summary.get("absence") or {}) or {}).get("kind") or ""
-            if day < start:
-                if day <= hours_until:
-                    carry += float(summary["delta_hours"] or 0)
+            if day < start and day <= hours_until:
+                flex_prev += float(summary["delta_hours"] or 0)
+            elif start <= day <= last and day <= hours_until and is_employed(user, day):
+                flex_month += float(summary["delta_hours"] or 0)
+            if not is_employed(user, day) or day < year_start or day > year_end:
                 continue
-            if day > last:
-                continue
-            if lo <= day <= hi:
-                if kind == "sick":
-                    sick_days += 1
-                elif kind == "vacation":
-                    if day <= as_of:
-                        vacation_days += 1
-                    else:
-                        vacation_planned_days += 1
-                if day <= hours_until:
-                    work += float(summary["work_hours"] or 0)
-                    soll += float(summary["soll_hours"] or 0)
-                    delta += float(summary["delta_hours"] or 0)
+            if kind == "vacation":
+                vac_year += 1
+                if day <= prev_last:
+                    vac_prev += 1
+                if day <= as_of:
+                    vac_ytd += 1
+            elif kind == "sick":
+                if day <= prev_last:
+                    sick_prev += 1
+                if day <= as_of:
+                    sick_ytd += 1
         rows.append(
             {
                 "user_id": user.id,
                 "display_name": user.display_name,
-                "work_hours": round(work, 2),
-                "soll_hours": round(soll, 2),
-                "delta_hours": round(delta, 1),
-                "carry_hours": round(carry, 1),
-                "total_hours": round(carry + delta, 1),
-                "sick_days": sick_days,
-                "vacation_days": vacation_days,
-                "vacation_planned_days": vacation_planned_days,
+                "flex_prev": round(flex_prev, 1),
+                "flex_month": round(flex_month, 1),
+                "flex_total": round(flex_prev + flex_month, 1),
+                "vacation_prev": vac_prev,
+                "vacation_month": vac_ytd - vac_prev,
+                "vacation_total": vac_ytd,
+                "vacation_future": vac_year,
+                "sick_prev": sick_prev,
+                "sick_month": sick_ytd - sick_prev,
+                "sick_total": sick_ytd,
             }
         )
     return rows
@@ -243,6 +272,7 @@ def jubilees_report(db: Session, year: int, half: int) -> list[dict]:
                         "user_id": user.id,
                         "display_name": user.display_name,
                         "date": birthday.isoformat(),
+                        "origin_date": user.birthday.isoformat(),
                         "kind": "birthday",
                         "label": "Geburtstag",
                         "years": year - user.birthday.year,
@@ -257,6 +287,7 @@ def jubilees_report(db: Session, year: int, half: int) -> list[dict]:
                         "user_id": user.id,
                         "display_name": user.display_name,
                         "date": anniversary.isoformat(),
+                        "origin_date": hire.isoformat(),
                         "kind": "hire",
                         "label": "Eintritt",
                         "years": year - hire.year,
@@ -270,6 +301,7 @@ def jubilees_report(db: Session, year: int, half: int) -> list[dict]:
                             "user_id": user.id,
                             "display_name": user.display_name,
                             "date": when.isoformat(),
+                            "origin_date": hire.isoformat(),
                             "kind": f"jubilee_{mark}",
                             "label": f"Jubiläum {mark}",
                             "years": mark,
@@ -392,3 +424,8 @@ def journal_report(db: Session, user: User, month: str) -> dict:
         "month_label": format_month_label(month),
         "rows": rows,
     }
+
+
+def journal_people(db: Session, month: str, user_ids: set[int] | None = None) -> list[User]:
+    start, last = month_bounds(month)
+    return people_in_range(db, start, last, user_ids)

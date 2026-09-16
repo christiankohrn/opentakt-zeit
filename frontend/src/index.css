@@ -150,18 +150,18 @@ input[type="date"]::-webkit-date-and-time-value {
   line-height: 2.35rem;
 }
 
-.month-compact {
-  width: auto;
-  max-width: 13rem;
-  min-width: 11.25rem;
+input[type="month"].month-compact {
+  width: 11.5rem;
+  min-width: 11.5rem;
+  max-width: 11.5rem;
   min-height: 2.25rem;
   padding-block: 0.2rem;
 }
 
-.date-compact {
-  width: auto;
-  max-width: 13.5rem;
-  min-width: 11.25rem;
+input[type="date"].date-compact {
+  width: 11.5rem;
+  min-width: 11.5rem;
+  max-width: 11.5rem;
   min-height: 2.25rem;
   display: inline-flex;
   align-items: center;

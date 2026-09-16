@@ -91,13 +91,26 @@ class ReportPDF(FPDF):
             text = text[:-1]
         return text + ellipsis
 
-    def _column_header(self, headers: list[str], widths: list[float], aligns: list[str]):
-        self.set_font(self.font_name, "B", 8)
+    def _column_header(
+        self,
+        headers: list[str],
+        widths: list[float],
+        aligns: list[str],
+        groups: list[tuple[str, int]] | None = None,
+    ):
+        self.set_font(self.font_name, "B", 7)
         self.set_fill_color(*NAVY)
         self.set_text_color(255, 255, 255)
         self.set_draw_color(*NAVY)
+        if groups:
+            index = 0
+            for title, span in groups:
+                width = sum(widths[index : index + span])
+                self.cell(width, 6, self._fit(title, width), border=0, fill=True, align="C")
+                index += span
+            self.ln()
         for title, width, align in zip(headers, widths, aligns):
-            self.cell(width, 7, self._fit(title, width), border=0, fill=True, align=align)
+            self.cell(width, 6.5, self._fit(title, width), border=0, fill=True, align=align)
         self.ln()
 
     def table(
@@ -105,18 +118,20 @@ class ReportPDF(FPDF):
         columns: list[tuple[str, float, str]],
         rows: list[list[str]],
         totals: list[str] | None = None,
+        groups: list[tuple[str, int]] | None = None,
+        note: str | None = None,
     ):
         usable = self.epw
-        widths = [max(12.0, usable * share) for _, share, _ in columns]
+        widths = [max(10.0, usable * share) for _, share, _ in columns]
         widths[0] += usable - sum(widths)
         aligns = [align for _, _, align in columns]
         headers = [title for title, _, _ in columns]
-        self._column_header(headers, widths, aligns)
+        self._column_header(headers, widths, aligns, groups)
         self.set_draw_color(*LINE)
         for index, row in enumerate(rows):
             if self.will_page_break(6.2):
                 self.add_page()
-                self._column_header(headers, widths, aligns)
+                self._column_header(headers, widths, aligns, groups)
             fill = index % 2 == 1
             self.set_font(self.font_name, "", 8)
             self.set_text_color(*NAVY)
@@ -127,18 +142,19 @@ class ReportPDF(FPDF):
         if totals:
             if self.will_page_break(7):
                 self.add_page()
-                self._column_header(headers, widths, aligns)
+                self._column_header(headers, widths, aligns, groups)
             self.set_font(self.font_name, "B", 8)
             self.set_fill_color(*NAVY)
             self.set_text_color(255, 255, 255)
             for value, width, align in zip(totals, widths, aligns):
                 self.cell(width, 7, self._fit(str(value), width), border=0, fill=True, align=align)
             self.ln()
-        if self.note:
+        footer_note = self.note if note is None else note
+        if footer_note:
             self.ln(3)
             self.set_font(self.font_name, "", 8)
             self.set_text_color(*MUTED)
-            self.multi_cell(self.epw, 4, self.note)
+            self.multi_cell(self.epw, 4, footer_note)
 
     def bytes(self) -> bytes:
         return bytes(self.output())
@@ -154,7 +170,8 @@ def table_pdf(
     totals: list[str] | None = None,
     landscape: bool = False,
     note: str = "",
+    groups: list[tuple[str, int]] | None = None,
 ) -> bytes:
     pdf = ReportPDF(title=title, subtitle=subtitle, org=org, landscape=landscape, note=note)
-    pdf.table(columns, rows, totals)
+    pdf.table(columns, rows, totals, groups=groups)
     return pdf.bytes()

@@ -75,18 +75,26 @@ def test_sick_days_includes_zeros_and_skips_unemployed(client):
         json={"kind": "sick", "start": "2026-03-02", "end": "2026-03-04"},
     )
     assert added.status_code == 200, added.text
+    january = client.post(
+        f"/api/hr/users/{sick['id']}/absences",
+        json={"kind": "sick", "start": "2026-01-08", "end": "2026-01-08"},
+    )
+    assert january.status_code == 200, january.text
     res = client.get("/api/hr/reports/sick-days?year=2026")
     assert res.status_code == 200, res.text
-    by_name = {row["display_name"]: row["sick_days"] for row in res.json()["people"]}
-    assert by_name["Anna Krank"] == 3
-    assert by_name["Ben Gesund"] == 0
+    by_name = {row["display_name"]: row for row in res.json()["people"]}
+    assert by_name["Anna Krank"]["period_days"] == 4
+    assert by_name["Anna Krank"]["year_days"] == 4
+    assert by_name["Anna Krank"]["sick_days"] == 4
+    assert by_name["Ben Gesund"]["period_days"] == 0
+    assert by_name["Ben Gesund"]["year_days"] == 0
     assert "Alina Alt" not in by_name
     assert "Zara Zukunft" not in by_name
     csv_res = client.get("/api/hr/reports/sick-days.csv?year=2026")
     assert csv_res.status_code == 200
     text = csv_res.text
-    assert "Krankheitstage" in text
-    assert "Anna Krank;3" in text
+    assert "Zeitraum" in text
+    assert "Anna Krank;4;4" in text
     assert zero["id"]
 
     filtered = client.get(
@@ -95,12 +103,39 @@ def test_sick_days_includes_zeros_and_skips_unemployed(client):
     assert filtered.status_code == 200, filtered.text
     names = [row["display_name"] for row in filtered.json()["people"]]
     assert names == ["Anna Krank"]
-    assert filtered.json()["people"][0]["sick_days"] == 3
+    assert filtered.json()["people"][0]["period_days"] == 3
+    assert filtered.json()["people"][0]["year_days"] == 4
 
     empty = client.get("/api/hr/reports/sick-days?from=2026-01-01&to=2026-12-31&user_ids=")
     assert empty.status_code == 200
     assert empty.json()["people"] == []
     assert_pdf(client.get("/api/hr/reports/sick-days.pdf?from=2026-01-01&to=2026-12-31"))
+
+
+def test_vacation_days_period_and_year(client):
+    login(client)
+    person = create_person(client, "urlaub-eva", "Eva Urlaub", hired_on="2025-01-01")
+    booked = client.post(
+        f"/api/hr/users/{person['id']}/absences",
+        json={"kind": "vacation", "start": "2026-02-02", "end": "2026-02-03"},
+    )
+    assert booked.status_code == 200, booked.text
+    later = client.post(
+        f"/api/hr/users/{person['id']}/absences",
+        json={"kind": "vacation", "start": "2026-08-10", "end": "2026-08-10"},
+    )
+    assert later.status_code == 200, later.text
+    res = client.get(
+        f"/api/hr/reports/vacation-days?from=2026-02-01&to=2026-02-28&user_ids={person['id']}"
+    )
+    assert res.status_code == 200, res.text
+    row = res.json()["people"][0]
+    assert row["period_days"] == 2
+    assert row["year_days"] == 3
+    csv_res = client.get("/api/hr/reports/vacation-days.csv?year=2026")
+    assert csv_res.status_code == 200
+    assert "Eva Urlaub;3;3" in csv_res.text
+    assert_pdf(client.get("/api/hr/reports/vacation-days.pdf?year=2026"))
 
 
 def test_month_balances_count_future_vacation(client):
@@ -116,26 +151,36 @@ def test_month_balances_count_future_vacation(client):
         json={"kind": "sick", "start": "2026-09-03", "end": "2026-09-03"},
     )
     assert sick.status_code == 200, sick.text
+    earlier = client.post(
+        f"/api/hr/users/{person['id']}/absences",
+        json={"kind": "vacation", "start": "2026-04-02", "end": "2026-04-02"},
+    )
+    assert earlier.status_code == 200, earlier.text
     db = SessionLocal()
     try:
         rows = month_balances_report(db, "2026-09", as_of=date(2026, 9, 15), today=date(2026, 9, 15))
     finally:
         db.close()
     clara = next(row for row in rows if row["user_id"] == person["id"])
-    assert clara["vacation_days"] == 0
-    assert clara["vacation_planned_days"] == 1
-    assert clara["sick_days"] == 1
+    assert clara["vacation_prev"] == 1
+    assert clara["vacation_month"] == 0
+    assert clara["vacation_total"] == 1
+    assert clara["vacation_future"] == 2
+    assert clara["sick_prev"] == 0
+    assert clara["sick_month"] == 1
+    assert clara["sick_total"] == 1
     http = client.get("/api/hr/reports/month-balances?month=2026-09&as_of=2026-09-15")
     assert http.status_code == 200
     found = next(row for row in http.json()["people"] if row["user_id"] == person["id"])
-    assert found["vacation_days"] == 0
-    assert found["vacation_planned_days"] == 1
-    assert isinstance(found["carry_hours"], (int, float))
-    assert isinstance(found["total_hours"], (int, float))
-    assert "Urlaub geplant" in http.json()["note"]
+    assert found["vacation_prev"] == 1
+    assert found["vacation_future"] == 2
+    assert found["sick_month"] == 1
+    assert isinstance(found["flex_prev"], (int, float))
+    assert isinstance(found["flex_total"], (int, float))
+    assert "inkl. Zukunft" in http.json()["note"]
     csv_res = client.get("/api/hr/reports/month-balances.csv?month=2026-09&as_of=2026-09-15")
-    assert "Vortrag" in csv_res.text
-    assert "Urlaub geplant" in csv_res.text
+    assert "Zeitkonto Vormonat" in csv_res.text
+    assert "Urlaub inkl. Zukunft" in csv_res.text
     assert_pdf(client.get("/api/hr/reports/month-balances.pdf?month=2026-09&as_of=2026-09-15"))
 
     db = SessionLocal()
@@ -144,8 +189,9 @@ def test_month_balances_count_future_vacation(client):
     finally:
         db.close()
     clara_later = next(row for row in later if row["user_id"] == person["id"])
-    assert clara_later["vacation_days"] == 1
-    assert clara_later["vacation_planned_days"] == 0
+    assert clara_later["vacation_month"] == 1
+    assert clara_later["vacation_total"] == 2
+    assert clara_later["vacation_future"] == 2
 
 
 def test_jubilees_birthday_and_ten_year(client):
@@ -163,6 +209,7 @@ def test_jubilees_birthday_and_ten_year(client):
     events = hj1.json()["events"]
     birthday = next(row for row in events if row["user_id"] == person["id"] and row["kind"] == "birthday")
     assert birthday["date"] == "2026-03-12"
+    assert birthday["origin_date"] == "1990-03-12"
     assert birthday["years"] == 36
     assert not any(row["user_id"] == none["id"] and row["kind"] == "birthday" for row in events)
 
@@ -172,9 +219,11 @@ def test_jubilees_birthday_and_ten_year(client):
     assert not any(row["user_id"] == person["id"] and row["kind"] == "birthday" for row in later)
     ten = next(row for row in later if row["user_id"] == person["id"] and row["kind"] == "jubilee_10")
     assert ten["date"] == "2026-09-01"
+    assert ten["origin_date"] == "2016-09-01"
     assert ten["years"] == 10
     hire = next(row for row in later if row["user_id"] == person["id"] and row["kind"] == "hire")
     assert hire["date"] == "2026-09-01"
+    assert hire["origin_date"] == "2016-09-01"
     assert hire["years"] == 10
     db = SessionLocal()
     try:
@@ -182,6 +231,8 @@ def test_jubilees_birthday_and_ten_year(client):
     finally:
         db.close()
     assert any(row["kind"] == "jubilee_10" and row["user_id"] == person["id"] for row in rows)
+    csv_res = client.get("/api/hr/reports/jubilees.csv?year=2026&half=2")
+    assert "Geboren/Eintritt" in csv_res.text
     assert_pdf(client.get("/api/hr/reports/jubilees.pdf?year=2026&half=2"))
 
 
@@ -210,9 +261,37 @@ def test_night_hours_overnight_shift(client):
     assert abs(row["hours_1_plus_3"] - 4.0) < 0.05
     csv_res = client.get("/api/hr/reports/night-hours.csv?month=2026-08")
     assert csv_res.status_code == 200
-    assert "20-24" in csv_res.text
-    assert_pdf(client.get("/api/hr/reports/night-hours.pdf?month=2026-08"))
-    assert_pdf(client.get(f"/api/hr/reports/journal.pdf?user_id={erika['id']}&month=2026-08"))
+    assert "Summe aus 1 und 3" in csv_res.text
+    assert "1 (20-24)" in csv_res.text
+    pdf = client.get("/api/hr/reports/night-hours.pdf?month=2026-08")
+    assert_pdf(pdf)
+    assert b"lohnarten" in pdf.headers["content-disposition"].encode() or "lohnarten" in pdf.headers["content-disposition"]
+
+
+def test_journals_batch_pdf(client):
+    login(client)
+    people = users_by_name(client)
+    erika = people["erika"]
+    maxx = people["mitarbeiter"]
+    for person in (erika, maxx):
+        patched = client.patch(f"/api/hr/users/{person['id']}/account", json={"hired_on": "2026-01-01"})
+        assert patched.status_code == 200, patched.text
+    listing = client.get("/api/hr/reports/journal?month=2026-08")
+    assert listing.status_code == 200, listing.text
+    names = [row["display_name"] for row in listing.json()["people"]]
+    assert len(names) >= 2
+    selected = client.get(
+        f"/api/hr/reports/journal.pdf?month=2026-08&user_ids={erika['id']},{maxx['id']}"
+    )
+    assert_pdf(selected)
+    assert "journale-2026-08.pdf" in selected.headers["content-disposition"]
+    everyone = client.get("/api/hr/reports/journal.pdf?month=2026-08")
+    assert_pdf(everyone)
+    empty = client.get("/api/hr/reports/journal.pdf?month=2026-08&user_ids=")
+    assert empty.status_code == 400
+    one = client.get(f"/api/hr/reports/journal.pdf?user_id={erika['id']}&month=2026-08")
+    assert_pdf(one)
+    assert "journal-2026-08.pdf" in one.headers["content-disposition"]
 
 
 def test_work_intervals_split_overnight():

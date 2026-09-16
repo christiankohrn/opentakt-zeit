@@ -6,27 +6,51 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response, StreamingResponse
-from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import select
+from sqlalchemy.orm import Session, selectinload
 
 from app.auth import as_local, current_user, now_utc, require_hr
 from app.config import get_config
 from app.database import get_db
 from app.models import User
-from app.pdf import de_date, de_num, table_pdf
+from app.pdf import ReportPDF, de_date, de_num, table_pdf
 from app.reports import (
     VACATION_NOTE,
     format_de_date,
     format_month_label,
+    journal_people,
     journal_report,
     jubilees_report,
     month_balances_report,
     night_hours_report,
     sick_days_report,
+    vacation_days_report,
     year_bounds,
 )
 
 router = APIRouter(prefix="/hr/reports", tags=["reports"])
+
+JOURNAL_COLUMNS = [
+    ("Tag", 0.16, "L"),
+    ("Buchung", 0.48, "L"),
+    ("Ist", 0.12, "R"),
+    ("Soll", 0.12, "R"),
+    ("Konto", 0.12, "R"),
+]
+BALANCE_GROUPS = [("Name", 1), ("Zeitkonto", 3), ("Urlaub", 4), ("Krankheit", 3)]
+BALANCE_COLUMNS = [
+    ("Name", 0.16, "L"),
+    ("Vormonat", 0.08, "R"),
+    ("Monat", 0.08, "R"),
+    ("Gesamt", 0.08, "R"),
+    ("Vormonat", 0.07, "R"),
+    ("Aktuell", 0.07, "R"),
+    ("Gesamt", 0.07, "R"),
+    ("inkl. Zukunft", 0.09, "R"),
+    ("Vormonat", 0.07, "R"),
+    ("Aktuell", 0.07, "R"),
+    ("Gesamt", 0.08, "R"),
+]
 
 
 def _actor(request: Request, db: Session) -> User:
@@ -90,6 +114,58 @@ def _period(year: int | None, from_day: date | None, to_day: date | None) -> tup
     return year_bounds(year)
 
 
+def _absence_export(kind: str, start: date, end: date, people: list[dict], want_pdf: bool, want_csv: bool):
+    title = "Krankheitstage" if kind == "sick" else "Urlaubstage"
+    slug = "krankheitstage" if kind == "sick" else "urlaubstage"
+    year_label = f"Jahr {start.year}" if start.year == end.year else f"{start.year}–{end.year}"
+    subtitle = f"{format_de_date(start)} – {format_de_date(end)} · {year_label}"
+    if want_pdf:
+        period_sum = sum(row["period_days"] for row in people)
+        year_sum = sum(row["year_days"] for row in people)
+        return _pdf_response(
+            f"{slug}-{start.isoformat()}-{end.isoformat()}.pdf",
+            table_pdf(
+                title=title,
+                subtitle=subtitle,
+                org=_org(),
+                columns=[("Name", 0.5, "L"), ("Zeitraum", 0.25, "R"), ("Jahr", 0.25, "R")],
+                rows=[[row["display_name"], str(row["period_days"]), str(row["year_days"])] for row in people],
+                totals=["Summe", str(period_sum), str(year_sum)] if people else None,
+            ),
+        )
+    if want_csv:
+        return _csv_response(
+            f"{slug}-{start.isoformat()}-{end.isoformat()}.csv",
+            ["Name", "Zeitraum", "Jahr"],
+            [[row["display_name"], row["period_days"], row["year_days"]] for row in people],
+        )
+    return {
+        "from": start.isoformat(),
+        "to": end.isoformat(),
+        "year": start.year,
+        "people": people,
+    }
+
+
+def _journal_table_rows(report: dict) -> list[list[str]]:
+    rows: list[list[str]] = []
+    for row in report["rows"]:
+        if row["type"] == "day":
+            work = de_num(row["work_hours"], 2) if row["work_hours"] else "-"
+        else:
+            work = de_num(row["work_hours"], 2)
+        rows.append(
+            [
+                row["label"],
+                row["booking"],
+                work,
+                de_num(row["soll_hours"], 2),
+                de_num(row["delta_hours"], 2, signed=True),
+            ]
+        )
+    return rows
+
+
 @router.get("/sick-days")
 @router.get("/sick-days.csv")
 @router.get("/sick-days.pdf")
@@ -105,27 +181,25 @@ def sick_days(
     _actor(request, db)
     start, end = _period(year, from_day, to_day)
     people = sick_days_report(db, start, end, _parse_user_ids(user_ids))
-    subtitle = f"{format_de_date(start)} – {format_de_date(end)}"
-    if _want_pdf(request, format):
-        total = sum(row["sick_days"] for row in people)
-        return _pdf_response(
-            f"krankheitstage-{start.isoformat()}-{end.isoformat()}.pdf",
-            table_pdf(
-                title="Krankheitstage",
-                subtitle=subtitle,
-                org=_org(),
-                columns=[("Name", 0.7, "L"), ("Krankheitstage", 0.3, "R")],
-                rows=[[row["display_name"], str(row["sick_days"])] for row in people],
-                totals=["Summe", str(total)] if people else None,
-            ),
-        )
-    if _want_csv(request, format):
-        return _csv_response(
-            f"krankheitstage-{start.isoformat()}-{end.isoformat()}.csv",
-            ["Name", "Krankheitstage"],
-            [[row["display_name"], row["sick_days"]] for row in people],
-        )
-    return {"from": start.isoformat(), "to": end.isoformat(), "people": people}
+    return _absence_export("sick", start, end, people, _want_pdf(request, format), _want_csv(request, format))
+
+
+@router.get("/vacation-days")
+@router.get("/vacation-days.csv")
+@router.get("/vacation-days.pdf")
+def vacation_days(
+    request: Request,
+    db: Session = Depends(get_db),
+    year: int | None = Query(None, ge=1990, le=2100),
+    from_day: date | None = Query(None, alias="from"),
+    to_day: date | None = Query(None, alias="to"),
+    user_ids: str | None = Query(None),
+    format: str | None = Query(None, alias="format"),
+):
+    _actor(request, db)
+    start, end = _period(year, from_day, to_day)
+    people = vacation_days_report(db, start, end, _parse_user_ids(user_ids))
+    return _absence_export("vacation", start, end, people, _want_pdf(request, format), _want_csv(request, format))
 
 
 @router.get("/month-balances")
@@ -141,19 +215,33 @@ def month_balances(
     _actor(request, db)
     stichtag = as_of or as_local(now_utc()).date()
     people = month_balances_report(db, month, as_of=stichtag)
-    subtitle = f"{format_month_label(month)}, Stichtag {format_de_date(stichtag)}"
-    csv_headers = ["Name", "Ist", "Soll", "Diff", "Vortrag", "Gesamt", "Krank", "Urlaub", "Urlaub geplant"]
+    subtitle = f"Stand {format_de_date(stichtag)} · {format_month_label(month)}"
+    csv_headers = [
+        "Name",
+        "Zeitkonto Vormonat",
+        "Zeitkonto Monat",
+        "Zeitkonto Gesamt",
+        "Urlaub Vormonat",
+        "Urlaub aktuell",
+        "Urlaub Gesamt",
+        "Urlaub inkl. Zukunft",
+        "Krankheit Vormonat",
+        "Krankheit aktuell",
+        "Krankheit Gesamt",
+    ]
     csv_rows = [
         [
             row["display_name"],
-            de_num(row["work_hours"], 2),
-            de_num(row["soll_hours"], 2),
-            de_num(row["delta_hours"], 1, signed=True),
-            de_num(row["carry_hours"], 1, signed=True),
-            de_num(row["total_hours"], 1, signed=True),
-            row["sick_days"],
-            row["vacation_days"],
-            row["vacation_planned_days"],
+            de_num(row["flex_prev"], 1, signed=True),
+            de_num(row["flex_month"], 1, signed=True),
+            de_num(row["flex_total"], 1, signed=True),
+            row["vacation_prev"],
+            row["vacation_month"],
+            row["vacation_total"],
+            row["vacation_future"],
+            row["sick_prev"],
+            row["sick_month"],
+            row["sick_total"],
         ]
         for row in people
     ]
@@ -162,14 +250,16 @@ def month_balances(
         if people:
             totals = [
                 "Summe",
-                de_num(sum(row["work_hours"] for row in people), 2),
-                de_num(sum(row["soll_hours"] for row in people), 2),
-                de_num(sum(row["delta_hours"] for row in people), 1, signed=True),
-                de_num(sum(row["carry_hours"] for row in people), 1, signed=True),
-                de_num(sum(row["total_hours"] for row in people), 1, signed=True),
-                str(sum(row["sick_days"] for row in people)),
-                str(sum(row["vacation_days"] for row in people)),
-                str(sum(row["vacation_planned_days"] for row in people)),
+                de_num(sum(row["flex_prev"] for row in people), 1, signed=True),
+                de_num(sum(row["flex_month"] for row in people), 1, signed=True),
+                de_num(sum(row["flex_total"] for row in people), 1, signed=True),
+                str(sum(row["vacation_prev"] for row in people)),
+                str(sum(row["vacation_month"] for row in people)),
+                str(sum(row["vacation_total"] for row in people)),
+                str(sum(row["vacation_future"] for row in people)),
+                str(sum(row["sick_prev"] for row in people)),
+                str(sum(row["sick_month"] for row in people)),
+                str(sum(row["sick_total"] for row in people)),
             ]
         return _pdf_response(
             f"salden-{month}-stichtag-{stichtag.isoformat()}.pdf",
@@ -179,28 +269,21 @@ def month_balances(
                 org=_org(),
                 landscape=True,
                 note=VACATION_NOTE,
-                columns=[
-                    ("Name", 0.18, "L"),
-                    ("Ist", 0.09, "R"),
-                    ("Soll", 0.09, "R"),
-                    ("Diff", 0.09, "R"),
-                    ("Vortrag", 0.1, "R"),
-                    ("Gesamt", 0.1, "R"),
-                    ("Krank", 0.09, "R"),
-                    ("Urlaub", 0.1, "R"),
-                    ("Urlaub geplant", 0.16, "R"),
-                ],
+                groups=BALANCE_GROUPS,
+                columns=BALANCE_COLUMNS,
                 rows=[
                     [
                         row["display_name"],
-                        de_num(row["work_hours"], 2),
-                        de_num(row["soll_hours"], 2),
-                        de_num(row["delta_hours"], 1, signed=True),
-                        de_num(row["carry_hours"], 1, signed=True),
-                        de_num(row["total_hours"], 1, signed=True),
-                        str(row["sick_days"]),
-                        str(row["vacation_days"]),
-                        str(row["vacation_planned_days"]),
+                        de_num(row["flex_prev"], 1, signed=True),
+                        de_num(row["flex_month"], 1, signed=True),
+                        de_num(row["flex_total"], 1, signed=True),
+                        str(row["vacation_prev"]),
+                        str(row["vacation_month"]),
+                        str(row["vacation_total"]),
+                        str(row["vacation_future"]),
+                        str(row["sick_prev"]),
+                        str(row["sick_month"]),
+                        str(row["sick_total"]),
                     ]
                     for row in people
                 ],
@@ -239,19 +322,32 @@ def jubilees(
                 subtitle=subtitle,
                 org=_org(),
                 columns=[
-                    ("Datum", 0.18, "L"),
-                    ("Name", 0.42, "L"),
-                    ("Art", 0.28, "L"),
-                    ("Jahre", 0.12, "R"),
+                    ("Datum", 0.16, "L"),
+                    ("Name", 0.32, "L"),
+                    ("Art", 0.2, "L"),
+                    ("Jahre", 0.1, "R"),
+                    ("Geboren/Eintritt", 0.22, "L"),
                 ],
-                rows=[[de_date(row["date"]), row["display_name"], row["label"], str(row["years"])] for row in events],
+                rows=[
+                    [
+                        de_date(row["date"]),
+                        row["display_name"],
+                        row["label"],
+                        str(row["years"]),
+                        de_date(row["origin_date"]) if row.get("origin_date") else "-",
+                    ]
+                    for row in events
+                ],
             ),
         )
     if _want_csv(request, format):
         return _csv_response(
             f"jubilaeen-{year}-hj{half}.csv",
-            ["Name", "Datum", "Art", "Jahre"],
-            [[row["display_name"], row["date"], row["label"], row["years"]] for row in events],
+            ["Name", "Datum", "Art", "Jahre", "Geboren/Eintritt"],
+            [
+                [row["display_name"], row["date"], row["label"], row["years"], row.get("origin_date") or ""]
+                for row in events
+            ],
         )
     return {"year": year, "half": half, "events": events}
 
@@ -279,17 +375,17 @@ def night_hours(
                 de_num(sum(row["hours_1_plus_3"] for row in people), 2),
             ]
         return _pdf_response(
-            f"nachtstunden-{month}.pdf",
+            f"lohnarten-{month}.pdf",
             table_pdf(
-                title="Nachtstunden",
+                title="Lohnarten",
                 subtitle=subtitle,
                 org=_org(),
                 columns=[
-                    ("Name", 0.36, "L"),
-                    ("20–24", 0.16, "R"),
-                    ("0–4", 0.16, "R"),
-                    ("4–6", 0.16, "R"),
-                    ("1+3", 0.16, "R"),
+                    ("Name", 0.32, "L"),
+                    ("1 (20–24)", 0.17, "R"),
+                    ("2 (0–4)", 0.17, "R"),
+                    ("3 (4–6)", 0.17, "R"),
+                    ("Summe aus 1 und 3", 0.17, "R"),
                 ],
                 rows=[
                     [
@@ -302,13 +398,13 @@ def night_hours(
                     for row in people
                 ],
                 totals=totals,
-                note="Arbeitsintervalle aus Stempeln. Auto-Pause wird nicht abgezogen. 1+3 = 20–24 plus 4–6.",
+                note="Nachtfenster als Lohnarten 1–3 aus Stempelintervallen. Auto-Pause wird nicht abgezogen.",
             ),
         )
     if _want_csv(request, format):
         return _csv_response(
-            f"nachtstunden-{month}.csv",
-            ["Name", "20-24", "0-4", "4-6", "1+3"],
+            f"lohnarten-{month}.csv",
+            ["Name", "1 (20-24)", "2 (0-4)", "3 (4-6)", "Summe aus 1 und 3"],
             [
                 [
                     row["display_name"],
@@ -323,47 +419,41 @@ def night_hours(
     return {"month": month, "people": people}
 
 
+@router.get("/journal")
 @router.get("/journal.pdf")
 def journal(
     request: Request,
     db: Session = Depends(get_db),
-    user_id: int = Query(...),
     month: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
+    user_id: int | None = Query(None),
+    user_ids: str | None = Query(None),
 ):
     _actor(request, db)
-    user = db.scalar(select(User).options(selectinload(User.work_model)).where(User.id == user_id))
-    if not user:
-        raise HTTPException(404, "Nicht gefunden")
-    report = journal_report(db, user, month)
-    rows: list[list[str]] = []
-    for row in report["rows"]:
-        if row["type"] == "day":
-                work = de_num(row["work_hours"], 2) if row["work_hours"] else "-"
-        else:
-            work = de_num(row["work_hours"], 2)
-        rows.append(
-            [
-                row["label"],
-                row["booking"],
-                work,
-                de_num(row["soll_hours"], 2),
-                de_num(row["delta_hours"], 2, signed=True),
-            ]
-        )
-    safe_name = "".join(ch if ch.isalnum() else "-" for ch in report["display_name"]).strip("-")
-    return _pdf_response(
-        f"journal-{safe_name}-{month}.pdf",
-        table_pdf(
-            title=f"Journal {report['display_name']}",
-            subtitle=report["month_label"],
+    ids = _parse_user_ids(user_ids)
+    if user_id is not None:
+        ids = {user_id}
+    people = journal_people(db, month, ids)
+    if user_id is not None and not people:
+        user = db.scalar(select(User).options(selectinload(User.work_model)).where(User.id == user_id))
+        if not user:
+            raise HTTPException(404, "Nicht gefunden")
+        people = [user]
+    reports = [journal_report(db, user, month) for user in people]
+    if _want_pdf(request, None) or request.url.path.endswith(".pdf"):
+        if not reports:
+            raise HTTPException(400, "Keine Personen für das Journal")
+        first = reports[0]
+        pdf = ReportPDF(
+            title=f"Journal {first['display_name']}",
+            subtitle=first["month_label"],
             org=_org(),
-            columns=[
-                ("Tag", 0.16, "L"),
-                ("Buchung", 0.48, "L"),
-                ("Ist", 0.12, "R"),
-                ("Soll", 0.12, "R"),
-                ("Konto", 0.12, "R"),
-            ],
-            rows=rows,
-        ),
-    )
+        )
+        pdf.table(JOURNAL_COLUMNS, _journal_table_rows(first), note="")
+        for report in reports[1:]:
+            pdf.report_title = f"Journal {report['display_name']}"
+            pdf.report_subtitle = report["month_label"]
+            pdf.add_page()
+            pdf.table(JOURNAL_COLUMNS, _journal_table_rows(report), note="")
+        filename = f"journale-{month}.pdf" if len(reports) != 1 else f"journal-{month}.pdf"
+        return _pdf_response(filename, pdf.bytes())
+    return {"month": month, "people": reports}

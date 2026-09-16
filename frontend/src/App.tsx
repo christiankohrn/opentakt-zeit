@@ -13,6 +13,7 @@ import ReportJournal from "./pages/ReportJournal";
 import ReportJubilees from "./pages/ReportJubilees";
 import ReportNightHours from "./pages/ReportNightHours";
 import ReportSickDays from "./pages/ReportSickDays";
+import ReportVacation from "./pages/ReportVacation";
 import Reports from "./pages/Reports";
 import Account from "./pages/Account";
 import ForgotPassword from "./pages/ForgotPassword";
@@ -79,9 +80,11 @@ const router = createBrowserRouter([
           { path: "personal/:id/tag/:date", element: <HrDay /> },
           { path: "auswertungen", element: <Reports /> },
           { path: "auswertungen/krankheit", element: <ReportSickDays /> },
+          { path: "auswertungen/urlaub", element: <ReportVacation /> },
           { path: "auswertungen/salden", element: <ReportBalances /> },
           { path: "auswertungen/jubilaeen", element: <ReportJubilees /> },
-          { path: "auswertungen/nacht", element: <ReportNightHours /> },
+          { path: "auswertungen/lohnarten", element: <ReportNightHours /> },
+          { path: "auswertungen/nacht", element: <Navigate to="/auswertungen/lohnarten" replace /> },
           { path: "auswertungen/journal", element: <ReportJournal /> },
           { path: "modelle", element: <HrModels /> },
           { path: "feiertage", element: <HrCalendar /> },

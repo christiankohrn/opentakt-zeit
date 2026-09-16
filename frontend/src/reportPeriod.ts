@@ -41,6 +41,15 @@ export function formatDeDate(iso: string) {
   return `${day}.${month}.${year}`;
 }
 
+export function parseUserIds(raw: string | null): number[] | null {
+  if (raw === null) return null;
+  if (raw === "") return [];
+  return raw
+    .split(",")
+    .map((part) => Number(part))
+    .filter((id) => Number.isInteger(id) && id > 0);
+}
+
 export function monthLabel(month: string) {
   const d = new Date(`${month}-01T12:00:00`);
   if (Number.isNaN(d.getTime())) return month;
