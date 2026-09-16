@@ -22,7 +22,7 @@ Soll ein Kalendertag bei mehr als 30 Ist-Stunden gekappt werden (Anzeige, Konto,
 
 ## 3. Weitere Buchungsarten
 
-TopZeit nutzt u. a. Berufsschule, Sonderurlaub, Raucherpause, Dienstgang. Welche davon brauchen wir, und wie wirken sie auf Soll, Ist und Konto (bezahlt / unbezahlt / nur Vermerk)?
+Offen sind u. a. Berufsschule, Sonderurlaub, Raucherpause, Dienstgang. Welche davon brauchen wir, und wie wirken sie auf Soll, Ist und Konto (bezahlt / unbezahlt / nur Vermerk)?
 
 ## 4. Abteilungen
 
@@ -42,7 +42,7 @@ Aktuell zählen Nachtstunden die gestempelten Intervalle **ohne** Auto-Pause. So
 
 ## 8. Journal-PDF
 
-Erledigt in dieser Stufe: Sammel-PDF für alle Mitarbeitenden oder eine Auswahl, je Person eine Seite zur Aushändigung.
+Erledigt in dieser Stufe: Sammel-PDF für alle Mitarbeitenden oder eine Auswahl. Pro Person eine Seite (Tage und Konten zusammen).
 
 ## 9. Geburtstage / Einwilligung
 

@@ -22,3 +22,7 @@ Die Dienstnamen heißen intern weiter `zeiterfassung`:
 - Sudo nur für systemctl, journalctl, certbot und `deploy/update.sh`
 
 Seed-Logins liegen einmalig in `/etc/zeiterfassung/seed-once.txt` (nicht ins Git).
+
+## Texte
+
+Keine Produktnamen anderer Software in PRs, UI, Commit-Messages oder neuer Dokumentation. Nicht vergleichen, nicht erwähnen.
