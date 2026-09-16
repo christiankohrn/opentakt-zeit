@@ -110,6 +110,7 @@ class ReportPDF(FPDF):
         widths: list[float],
         aligns: list[str],
         groups: list[tuple[str, int]] | None = None,
+        height: float = 6.5,
     ):
         self.set_font(self.font_name, "B", 7)
         self.set_fill_color(*NAVY)
@@ -123,7 +124,7 @@ class ReportPDF(FPDF):
                 index += span
             self.ln()
         for title, width, align in zip(headers, widths, aligns):
-            self.cell(width, 6.5, self._fit(title, width), border=0, fill=True, align=align)
+            self.cell(width, height, self._fit(title, width), border=0, fill=True, align=align)
         self.ln()
 
     def table(
@@ -133,30 +134,35 @@ class ReportPDF(FPDF):
         totals: list[str] | None = None,
         groups: list[tuple[str, int]] | None = None,
         note: str | None = None,
+        row_height: float | None = None,
+        allow_break: bool = True,
     ):
+        row_h = 6.2 if row_height is None else row_height
+        head_h = 6.5 if row_h >= 5.8 else max(5.0, row_h + 0.5)
+        body_font = 8 if row_h >= 5.2 else 7
         usable = self.epw
         widths = [max(10.0, usable * share) for _, share, _ in columns]
         widths[0] += usable - sum(widths)
         aligns = [align for _, _, align in columns]
         headers = [title for title, _, _ in columns]
-        self._column_header(headers, widths, aligns, groups)
+        self._column_header(headers, widths, aligns, groups, height=head_h)
         self.set_draw_color(*LINE)
         for index, row in enumerate(rows):
-            if self.will_page_break(6.2):
+            if allow_break and self.will_page_break(row_h):
                 self.add_page()
-                self._column_header(headers, widths, aligns, groups)
+                self._column_header(headers, widths, aligns, groups, height=head_h)
             fill = index % 2 == 1
-            self.set_font(self.font_name, "", 8)
+            self.set_font(self.font_name, "", body_font)
             self.set_text_color(*NAVY)
             self.set_fill_color(*(ROW_ALT if fill else (255, 255, 255)))
             for value, width, align in zip(row, widths, aligns):
-                self.cell(width, 6.2, self._fit(str(value), width), border="B", fill=True, align=align)
+                self.cell(width, row_h, self._fit(str(value), width), border="B", fill=True, align=align)
             self.ln()
         if totals:
-            if self.will_page_break(7):
+            if allow_break and self.will_page_break(7):
                 self.add_page()
-                self._column_header(headers, widths, aligns, groups)
-            self.set_font(self.font_name, "B", 8)
+                self._column_header(headers, widths, aligns, groups, height=head_h)
+            self.set_font(self.font_name, "B", body_font)
             self.set_fill_color(*NAVY)
             self.set_text_color(255, 255, 255)
             for value, width, align in zip(totals, widths, aligns):
@@ -164,12 +170,12 @@ class ReportPDF(FPDF):
             self.ln()
         footer_note = self.note if note is None else note
         if footer_note:
-            self.ln(3)
-            self.set_font(self.font_name, "", 8)
+            self.ln(2 if row_h < 5.8 else 3)
+            self.set_font(self.font_name, "", 7 if row_h < 5.8 else 8)
             self.set_text_color(*MUTED)
-            self.multi_cell(self.epw, 4, footer_note)
+            self.multi_cell(self.epw, 3.6 if row_h < 5.8 else 4, footer_note)
 
-    def accounts_table(self, rows: list[list[str]], note: str = ""):
+    def accounts_table(self, rows: list[list[str]], note: str = "", compact: bool = False):
         columns = [
             ("Salden", 0.28, "L"),
             ("Vormonat", 0.18, "R"),
@@ -177,13 +183,38 @@ class ReportPDF(FPDF):
             ("Verplant", 0.18, "R"),
             ("Rest / Neu", 0.18, "R"),
         ]
-        if self.will_page_break(6.5 * (2 + len(rows)) + 10):
+        if not compact and self.will_page_break(6.5 * (2 + len(rows)) + 10):
             self.add_page()
-        self.ln(4)
-        self.set_font(self.font_name, "B", 10)
+        self.ln(2 if compact else 4)
+        self.set_font(self.font_name, "B", 9 if compact else 10)
         self.set_text_color(*NAVY)
-        self.cell(self.epw, 6, "Konten", new_x="LMARGIN", new_y="NEXT")
-        self.table(columns, rows, note=note)
+        self.cell(self.epw, 5 if compact else 6, "Konten", new_x="LMARGIN", new_y="NEXT")
+        self.table(
+            columns,
+            rows,
+            note=note,
+            row_height=5.0 if compact else None,
+            allow_break=not compact,
+        )
+
+    def journal_person(
+        self,
+        day_columns: list[tuple[str, float, str]],
+        day_rows: list[list[str]],
+        account_rows: list[list[str]],
+        note: str = "",
+    ):
+        """Pack the day table and Konten footer onto the current page."""
+        n_day = max(len(day_rows), 1)
+        n_acc = max(len(account_rows), 1)
+        acc_row_h = 5.0
+        day_head = 5.4
+        acc_head = 5.4
+        reserve = day_head + 2.0 + 5.0 + acc_head + n_acc * acc_row_h + (9.0 if note else 0.0) + 1.5
+        avail = self.page_break_trigger - self.get_y() - reserve
+        row_h = min(6.0, max(3.6, avail / n_day))
+        self.table(day_columns, day_rows, note="", row_height=row_h, allow_break=False)
+        self.accounts_table(account_rows, note=note, compact=True)
 
     def bytes(self) -> bytes:
         return bytes(self.output())

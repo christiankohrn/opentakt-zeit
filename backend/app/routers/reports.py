@@ -469,14 +469,22 @@ def journal(
             subtitle=first["month_label"],
             org=_org(),
         )
-        pdf.table(JOURNAL_COLUMNS, _journal_table_rows(first), note="")
-        pdf.accounts_table(_journal_account_rows(first), note=JOURNAL_ACCOUNT_NOTE)
+        pdf.journal_person(
+            JOURNAL_COLUMNS,
+            _journal_table_rows(first),
+            _journal_account_rows(first),
+            note=JOURNAL_ACCOUNT_NOTE,
+        )
         for report in reports[1:]:
             pdf.report_title = f"Journal {report['display_name']}"
             pdf.report_subtitle = report["month_label"]
             pdf.add_page()
-            pdf.table(JOURNAL_COLUMNS, _journal_table_rows(report), note="")
-            pdf.accounts_table(_journal_account_rows(report), note=JOURNAL_ACCOUNT_NOTE)
+            pdf.journal_person(
+                JOURNAL_COLUMNS,
+                _journal_table_rows(report),
+                _journal_account_rows(report),
+                note=JOURNAL_ACCOUNT_NOTE,
+            )
         filename = f"journale-{month}.pdf" if len(reports) != 1 else f"journal-{month}.pdf"
         return _pdf_response(filename, pdf.bytes())
     return {"month": month, "people": reports}

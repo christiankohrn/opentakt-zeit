@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
@@ -45,6 +46,10 @@ def assert_pdf(res):
     assert res.content.startswith(b"%PDF")
     assert "pdf" in res.headers["content-type"]
     assert len(res.content) > 400
+
+
+def pdf_page_count(content: bytes) -> int:
+    return len(re.findall(rb"/Type\s*/Page(?!s)", content))
 
 
 def test_employee_cannot_read_reports(client):
@@ -287,13 +292,16 @@ def test_journals_batch_pdf(client):
     )
     assert_pdf(selected)
     assert "journale-2026-08.pdf" in selected.headers["content-disposition"]
+    assert pdf_page_count(selected.content) == 2
     everyone = client.get("/api/hr/reports/journal.pdf?month=2026-08")
     assert_pdf(everyone)
+    assert pdf_page_count(everyone.content) == len(names)
     empty = client.get("/api/hr/reports/journal.pdf?month=2026-08&user_ids=")
     assert empty.status_code == 400
     one = client.get(f"/api/hr/reports/journal.pdf?user_id={erika['id']}&month=2026-08")
     assert_pdf(one)
     assert "journal-2026-08.pdf" in one.headers["content-disposition"]
+    assert pdf_page_count(one.content) == 1
 
 
 def test_journal_accounts_resturlaub_and_planned(client):
@@ -334,7 +342,32 @@ def test_journal_accounts_resturlaub_and_planned(client):
     missing = empty.json()["people"][0]["accounts"]
     assert missing["vacation_remaining"] is None
     assert missing["vacation_remaining_prev"] is None
-    assert_pdf(client.get(f"/api/hr/reports/journal.pdf?month=2026-08&user_ids={person['id']}"))
+    pdf = client.get(f"/api/hr/reports/journal.pdf?month=2026-08&user_ids={person['id']}")
+    assert_pdf(pdf)
+    assert pdf_page_count(pdf.content) == 1
+
+
+def test_journal_pdf_fits_31_day_month_on_one_page():
+    from app.pdf import ReportPDF
+
+    pdf = ReportPDF(title="Journal Probe", subtitle="August 2026", org="Org")
+    columns = [
+        ("Tag", 0.16, "L"),
+        ("Buchung", 0.48, "L"),
+        ("Ist", 0.12, "R"),
+        ("Soll", 0.12, "R"),
+        ("Konto", 0.12, "R"),
+    ]
+    booking = "Kommen 08:00 · Pause Beginn 12:00 · Pause Ende 12:30 · Gehen 16:30"
+    rows = [[f"{day:02d}.08.", booking, "8,00", "8,00", "0,00"] for day in range(1, 32)]
+    rows.extend([["Woche", "", "40,00", "40,00", "0,00"] for _ in range(6)])
+    rows.append(["Monat", "", "176,00", "176,00", "0,00"])
+    accounts = [
+        ["Zeitkonto", "1,0", "2,0", "-", "3,0"],
+        ["Urlaubskonto", "27", "0", "3", "24"],
+    ]
+    pdf.journal_person(columns, rows, accounts, note="Resturlaub = Jahresanspruch - genommen - verplant.")
+    assert pdf_page_count(pdf.bytes()) == 1
 
 
 def test_work_intervals_split_overnight():
