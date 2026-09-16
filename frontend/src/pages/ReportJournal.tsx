@@ -1,10 +1,53 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { api, type JournalReport, type User } from "../api";
+import { api, type JournalAccounts, type JournalReport, type User } from "../api";
 import PersonFilter from "../components/PersonFilter";
 import ReportToolbar, { ExportButtons } from "../components/ReportToolbar";
 import { formatHours, signedHours } from "../labels";
 import { monthLabel, parseUserIds, payrollMonth } from "../reportPeriod";
+
+function formatDays(value: number | null | undefined, signed = false) {
+  if (value === null || value === undefined) return "—";
+  const sign = signed && value > 0 ? "+" : "";
+  return `${sign}${String(value).replace(".", ",")}`;
+}
+
+function AccountFooter({ accounts }: { accounts: JournalAccounts }) {
+  return (
+    <div className="mt-4 overflow-x-auto rounded-2xl border border-line print:border-0">
+      <table className="w-full text-left text-sm">
+        <thead className="bg-card text-xs uppercase tracking-wider text-muted">
+          <tr>
+            <th className="px-4 py-3 font-medium">Salden</th>
+            <th className="px-4 py-3 font-medium text-right">Vormonat</th>
+            <th className="px-4 py-3 font-medium text-right">Aktuell</th>
+            <th className="px-4 py-3 font-medium text-right">Verplant</th>
+            <th className="px-4 py-3 font-medium text-right">Rest / Neu</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr className="border-t border-line bg-card">
+            <td className="px-4 py-2.5 font-medium">Zeitkonto</td>
+            <td className="px-4 py-2.5 text-right tabular-nums">{signedHours(accounts.flex_prev)}</td>
+            <td className="px-4 py-2.5 text-right tabular-nums">{signedHours(accounts.flex_month)}</td>
+            <td className="px-4 py-2.5 text-right tabular-nums">—</td>
+            <td className="px-4 py-2.5 text-right tabular-nums">{signedHours(accounts.flex_total)}</td>
+          </tr>
+          <tr className="border-t border-line bg-card">
+            <td className="px-4 py-2.5 font-medium">Urlaubskonto</td>
+            <td className="px-4 py-2.5 text-right tabular-nums">{formatDays(accounts.vacation_remaining_prev)}</td>
+            <td className="px-4 py-2.5 text-right tabular-nums">{formatDays(-accounts.vacation_month, true)}</td>
+            <td className="px-4 py-2.5 text-right tabular-nums">{formatDays(accounts.vacation_planned)}</td>
+            <td className="px-4 py-2.5 text-right tabular-nums">{formatDays(accounts.vacation_remaining)}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p className="px-4 py-2 text-xs text-muted">
+        Resturlaub = Jahresanspruch − genommen − verplant. Ohne Anspruch am Stammsatz bleibt Resturlaub leer.
+      </p>
+    </div>
+  );
+}
 
 export default function ReportJournal() {
   const [params, setParams] = useSearchParams();
@@ -110,6 +153,7 @@ export default function ReportJournal() {
               </tbody>
             </table>
           </div>
+          {journal.accounts ? <AccountFooter accounts={journal.accounts} /> : null}
         </section>
       ))}
     </div>

@@ -29,6 +29,19 @@ def de_num(value: float, digits: int = 1, signed: bool = False) -> str:
     return text
 
 
+def de_days(value: float | int | None, signed: bool = False) -> str:
+    if value is None:
+        return "-"
+    number = float(value)
+    if abs(number - round(number)) < 0.05:
+        text = str(int(round(number)))
+    else:
+        text = f"{number:.1f}".replace(".", ",")
+    if signed and number > 0:
+        return f"+{text}"
+    return text
+
+
 def _font_pair() -> tuple[Path, Path] | None:
     if FONT_REGULAR.is_file() and FONT_BOLD.is_file():
         return FONT_REGULAR, FONT_BOLD
@@ -155,6 +168,22 @@ class ReportPDF(FPDF):
             self.set_font(self.font_name, "", 8)
             self.set_text_color(*MUTED)
             self.multi_cell(self.epw, 4, footer_note)
+
+    def accounts_table(self, rows: list[list[str]], note: str = ""):
+        columns = [
+            ("Salden", 0.28, "L"),
+            ("Vormonat", 0.18, "R"),
+            ("Aktuell", 0.18, "R"),
+            ("Verplant", 0.18, "R"),
+            ("Rest / Neu", 0.18, "R"),
+        ]
+        if self.will_page_break(6.5 * (2 + len(rows)) + 10):
+            self.add_page()
+        self.ln(4)
+        self.set_font(self.font_name, "B", 10)
+        self.set_text_color(*NAVY)
+        self.cell(self.epw, 6, "Konten", new_x="LMARGIN", new_y="NEXT")
+        self.table(columns, rows, note=note)
 
     def bytes(self) -> bytes:
         return bytes(self.output())

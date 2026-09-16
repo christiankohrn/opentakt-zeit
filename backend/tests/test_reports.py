@@ -280,6 +280,8 @@ def test_journals_batch_pdf(client):
     assert listing.status_code == 200, listing.text
     names = [row["display_name"] for row in listing.json()["people"]]
     assert len(names) >= 2
+    assert "accounts" in listing.json()["people"][0]
+    assert "flex_total" in listing.json()["people"][0]["accounts"]
     selected = client.get(
         f"/api/hr/reports/journal.pdf?month=2026-08&user_ids={erika['id']},{maxx['id']}"
     )
@@ -292,6 +294,47 @@ def test_journals_batch_pdf(client):
     one = client.get(f"/api/hr/reports/journal.pdf?user_id={erika['id']}&month=2026-08")
     assert_pdf(one)
     assert "journal-2026-08.pdf" in one.headers["content-disposition"]
+
+
+def test_journal_accounts_resturlaub_and_planned(client):
+    login(client)
+    person = create_person(
+        client,
+        "konto-finn",
+        "Finn Konto",
+        hired_on="2025-01-01",
+        vacation_days_year=30,
+    )
+    earlier = client.post(
+        f"/api/hr/users/{person['id']}/absences",
+        json={"kind": "vacation", "start": "2026-02-02", "end": "2026-02-03"},
+    )
+    assert earlier.status_code == 200, earlier.text
+    current = client.post(
+        f"/api/hr/users/{person['id']}/absences",
+        json={"kind": "vacation", "start": "2026-08-10", "end": "2026-08-10"},
+    )
+    assert current.status_code == 200, current.text
+    later = client.post(
+        f"/api/hr/users/{person['id']}/absences",
+        json={"kind": "vacation", "start": "2026-09-28", "end": "2026-09-28"},
+    )
+    assert later.status_code == 200, later.text
+    res = client.get(f"/api/hr/reports/journal?month=2026-08&user_ids={person['id']}")
+    assert res.status_code == 200, res.text
+    accounts = res.json()["people"][0]["accounts"]
+    assert accounts["vacation_month"] == 1
+    assert accounts["vacation_planned"] == 1
+    assert accounts["vacation_remaining_prev"] == 28
+    assert accounts["vacation_remaining"] == 26
+    assert accounts["vacation_allowance"] == 30
+    none = create_person(client, "ohne-anspruch", "Ohne Anspruch", hired_on="2025-01-01")
+    empty = client.get(f"/api/hr/reports/journal?month=2026-08&user_ids={none['id']}")
+    assert empty.status_code == 200, empty.text
+    missing = empty.json()["people"][0]["accounts"]
+    assert missing["vacation_remaining"] is None
+    assert missing["vacation_remaining_prev"] is None
+    assert_pdf(client.get(f"/api/hr/reports/journal.pdf?month=2026-08&user_ids={person['id']}"))
 
 
 def test_work_intervals_split_overnight():

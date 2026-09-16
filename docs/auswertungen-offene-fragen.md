@@ -6,7 +6,10 @@ Nicht enthalten in der ersten Stufe (und bewusst nicht vorab gebaut):
 
 ## 1. Urlaubskonto
 
-Wie wird der Jahresanspruch geführt?
+Journale rechnen Resturlaub vorerst mit einem einfachen Feld **Urlaubstage/Jahr** am Stammsatz:
+Resturlaub = Anspruch − genommen (bis Monatsende/heute) − verplant.
+
+Offen bleibt:
 
 - Gutschrift immer am 1.1. in voller Höhe, oder anteilig bei Eintritt unter Jahr?
 - Teilzeit: Anspruch proportional zur Soll-Woche, oder fester Tagewert unabhängig vom Modell?

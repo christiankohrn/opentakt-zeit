@@ -18,6 +18,7 @@ NIGHT_WINDOWS = (
     ("hours_4_6", time(4, 0), time(6, 0)),
 )
 VACATION_NOTE = "Urlaub „inkl. Zukunft“ enthält gebuchte Tage nach dem Stichtag im Kalenderjahr."
+JOURNAL_ACCOUNT_NOTE = "Resturlaub = Jahresanspruch − genommen − verplant. Anspruch am Stammsatz unter Urlaubstage/Jahr."
 PUNCH_LABELS = {
     "in": "Kommen",
     "out": "Gehen",
@@ -194,6 +195,77 @@ def vacation_days_report(
     return absence_days_report(db, "vacation", start, end, user_ids)
 
 
+def person_month_snapshot(
+    db: Session,
+    user: User,
+    month: str,
+    as_of: date | None = None,
+    today: date | None = None,
+) -> dict | None:
+    start, last = month_bounds(month)
+    today = today or as_local(now_utc()).date()
+    as_of = as_of or today
+    hours_until = min(as_of, today)
+    prev_last = start - timedelta(days=1)
+    year_start, year_end = year_bounds(start.year)
+    overlap = employment_overlap(user, start, last)
+    if overlap is None:
+        return None
+    hire = hired_on(user)
+    hist_last = max(last, hours_until, year_end)
+    if hire > hist_last:
+        return None
+    days = days_in_range(db, user, hire, hist_last)
+    flex_prev = flex_month = 0.0
+    vac_prev = vac_ytd = vac_year = 0
+    sick_prev = sick_ytd = 0
+    for summary in days:
+        day = date.fromisoformat(str(summary["date"]))
+        kind = ((summary.get("absence") or {}) or {}).get("kind") or ""
+        if day < start and day <= hours_until:
+            flex_prev += float(summary["delta_hours"] or 0)
+        elif start <= day <= last and day <= hours_until and is_employed(user, day):
+            flex_month += float(summary["delta_hours"] or 0)
+        if not is_employed(user, day) or day < year_start or day > year_end:
+            continue
+        if kind == "vacation":
+            vac_year += 1
+            if day <= prev_last:
+                vac_prev += 1
+            if day <= as_of:
+                vac_ytd += 1
+        elif kind == "sick":
+            if day <= prev_last:
+                sick_prev += 1
+            if day <= as_of:
+                sick_ytd += 1
+    vac_month = vac_ytd - vac_prev
+    vac_planned = vac_year - vac_ytd
+    allowance = user.vacation_days_year
+    remaining_prev = remaining = None
+    if allowance is not None:
+        remaining_prev = round(float(allowance) - vac_prev, 1)
+        remaining = round(float(allowance) - vac_ytd - vac_planned, 1)
+    return {
+        "user_id": user.id,
+        "display_name": user.display_name,
+        "flex_prev": round(flex_prev, 1),
+        "flex_month": round(flex_month, 1),
+        "flex_total": round(flex_prev + flex_month, 1),
+        "vacation_prev": vac_prev,
+        "vacation_month": vac_month,
+        "vacation_total": vac_ytd,
+        "vacation_future": vac_year,
+        "vacation_planned": vac_planned,
+        "vacation_allowance": allowance,
+        "vacation_remaining_prev": remaining_prev,
+        "vacation_remaining": remaining,
+        "sick_prev": sick_prev,
+        "sick_month": sick_ytd - sick_prev,
+        "sick_total": sick_ytd,
+    }
+
+
 def month_balances_report(
     db: Session,
     month: str,
@@ -201,61 +273,12 @@ def month_balances_report(
     today: date | None = None,
 ) -> list[dict]:
     start, last = month_bounds(month)
-    today = today or as_local(now_utc()).date()
-    as_of = as_of or today
-    hours_until = min(as_of, today)
-    prev_last = start - timedelta(days=1)
-    year_start, year_end = year_bounds(start.year)
     people = people_in_range(db, start, last)
     rows = []
     for user in people:
-        overlap = employment_overlap(user, start, last)
-        if overlap is None:
-            continue
-        hire = hired_on(user)
-        hist_last = max(last, hours_until, year_end)
-        if hire > hist_last:
-            continue
-        days = days_in_range(db, user, hire, hist_last)
-        flex_prev = flex_month = 0.0
-        vac_prev = vac_ytd = vac_year = 0
-        sick_prev = sick_ytd = 0
-        for summary in days:
-            day = date.fromisoformat(str(summary["date"]))
-            kind = ((summary.get("absence") or {}) or {}).get("kind") or ""
-            if day < start and day <= hours_until:
-                flex_prev += float(summary["delta_hours"] or 0)
-            elif start <= day <= last and day <= hours_until and is_employed(user, day):
-                flex_month += float(summary["delta_hours"] or 0)
-            if not is_employed(user, day) or day < year_start or day > year_end:
-                continue
-            if kind == "vacation":
-                vac_year += 1
-                if day <= prev_last:
-                    vac_prev += 1
-                if day <= as_of:
-                    vac_ytd += 1
-            elif kind == "sick":
-                if day <= prev_last:
-                    sick_prev += 1
-                if day <= as_of:
-                    sick_ytd += 1
-        rows.append(
-            {
-                "user_id": user.id,
-                "display_name": user.display_name,
-                "flex_prev": round(flex_prev, 1),
-                "flex_month": round(flex_month, 1),
-                "flex_total": round(flex_prev + flex_month, 1),
-                "vacation_prev": vac_prev,
-                "vacation_month": vac_ytd - vac_prev,
-                "vacation_total": vac_ytd,
-                "vacation_future": vac_year,
-                "sick_prev": sick_prev,
-                "sick_month": sick_ytd - sick_prev,
-                "sick_total": sick_ytd,
-            }
-        )
+        snapshot = person_month_snapshot(db, user, month, as_of=as_of, today=today)
+        if snapshot:
+            rows.append(snapshot)
     return rows
 
 
@@ -373,6 +396,7 @@ def night_hours_report(db: Session, month: str, now: datetime | None = None) -> 
 
 def journal_report(db: Session, user: User, month: str) -> dict:
     year, mon = (int(part) for part in month.split("-"))
+    _start, last = month_bounds(month)
     days = month_days(db, user, year, mon)
     rows: list[dict] = []
     week_work = week_soll = week_delta = 0.0
@@ -417,12 +441,32 @@ def journal_report(db: Session, user: User, month: str) -> dict:
             "delta_hours": round(month_delta, 2),
         }
     )
+    snapshot = person_month_snapshot(db, user, month, as_of=min(last, as_local(now_utc()).date())) or {
+        "flex_prev": 0.0,
+        "flex_month": 0.0,
+        "flex_total": 0.0,
+        "vacation_month": 0,
+        "vacation_planned": 0,
+        "vacation_allowance": user.vacation_days_year,
+        "vacation_remaining_prev": None,
+        "vacation_remaining": None,
+    }
     return {
         "user_id": user.id,
         "display_name": user.display_name,
         "month": month,
         "month_label": format_month_label(month),
         "rows": rows,
+        "accounts": {
+            "flex_prev": snapshot["flex_prev"],
+            "flex_month": snapshot["flex_month"],
+            "flex_total": snapshot["flex_total"],
+            "vacation_month": snapshot["vacation_month"],
+            "vacation_planned": snapshot["vacation_planned"],
+            "vacation_allowance": snapshot["vacation_allowance"],
+            "vacation_remaining_prev": snapshot["vacation_remaining_prev"],
+            "vacation_remaining": snapshot["vacation_remaining"],
+        },
     }
 
 

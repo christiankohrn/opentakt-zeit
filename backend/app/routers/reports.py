@@ -13,8 +13,9 @@ from app.auth import as_local, current_user, now_utc, require_hr
 from app.config import get_config
 from app.database import get_db
 from app.models import User
-from app.pdf import ReportPDF, de_date, de_num, table_pdf
+from app.pdf import ReportPDF, de_date, de_days, de_num, table_pdf
 from app.reports import (
+    JOURNAL_ACCOUNT_NOTE,
     VACATION_NOTE,
     format_de_date,
     format_month_label,
@@ -145,6 +146,26 @@ def _absence_export(kind: str, start: date, end: date, people: list[dict], want_
         "year": start.year,
         "people": people,
     }
+
+
+def _journal_account_rows(report: dict) -> list[list[str]]:
+    accounts = report.get("accounts") or {}
+    return [
+        [
+            "Zeitkonto",
+            de_num(accounts.get("flex_prev") or 0, 1, signed=True),
+            de_num(accounts.get("flex_month") or 0, 1, signed=True),
+            "-",
+            de_num(accounts.get("flex_total") or 0, 1, signed=True),
+        ],
+        [
+            "Urlaubskonto",
+            de_days(accounts.get("vacation_remaining_prev")),
+            de_days(-(accounts.get("vacation_month") or 0), signed=True),
+            de_days(accounts.get("vacation_planned") or 0),
+            de_days(accounts.get("vacation_remaining")),
+        ],
+    ]
 
 
 def _journal_table_rows(report: dict) -> list[list[str]]:
@@ -449,11 +470,13 @@ def journal(
             org=_org(),
         )
         pdf.table(JOURNAL_COLUMNS, _journal_table_rows(first), note="")
+        pdf.accounts_table(_journal_account_rows(first), note=JOURNAL_ACCOUNT_NOTE)
         for report in reports[1:]:
             pdf.report_title = f"Journal {report['display_name']}"
             pdf.report_subtitle = report["month_label"]
             pdf.add_page()
             pdf.table(JOURNAL_COLUMNS, _journal_table_rows(report), note="")
+            pdf.accounts_table(_journal_account_rows(report), note=JOURNAL_ACCOUNT_NOTE)
         filename = f"journale-{month}.pdf" if len(reports) != 1 else f"journal-{month}.pdf"
         return _pdf_response(filename, pdf.bytes())
     return {"month": month, "people": reports}

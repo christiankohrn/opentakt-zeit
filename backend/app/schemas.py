@@ -27,6 +27,7 @@ class UserOut(BaseModel):
     hired_on: Optional[date] = None
     left_on: Optional[date] = None
     birthday: Optional[date] = None
+    vacation_days_year: Optional[float] = None
     totp_enabled: bool = False
     passkey_count: int = 0
     security_setup_required: Optional[str] = None
@@ -109,6 +110,7 @@ class UserWrite(BaseModel):
     hired_on: Optional[date] = None
     left_on: Optional[date] = None
     birthday: Optional[date] = None
+    vacation_days_year: Optional[float] = Field(default=None, ge=0, le=366)
     send_access_mail: bool = False
 
 
@@ -161,6 +163,7 @@ class UserAccountIn(BaseModel):
     hired_on: Optional[date] = None
     left_on: Optional[date] = None
     birthday: Optional[date] = None
+    vacation_days_year: Optional[float] = Field(default=None, ge=0, le=366)
 
 
 class PasswordChangeIn(BaseModel):

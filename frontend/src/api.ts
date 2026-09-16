@@ -25,6 +25,7 @@ export type User = {
   hired_on: string | null;
   left_on: string | null;
   birthday: string | null;
+  vacation_days_year: number | null;
   totp_enabled?: boolean;
   passkey_count?: number;
   security_setup_required?: string | null;
@@ -139,12 +140,24 @@ export type JournalLine = {
   delta_hours: number;
 };
 
+export type JournalAccounts = {
+  flex_prev: number;
+  flex_month: number;
+  flex_total: number;
+  vacation_month: number;
+  vacation_planned: number;
+  vacation_allowance: number | null;
+  vacation_remaining_prev: number | null;
+  vacation_remaining: number | null;
+};
+
 export type JournalReport = {
   user_id: number;
   display_name: string;
   month: string;
   month_label: string;
   rows: JournalLine[];
+  accounts: JournalAccounts;
 };
 
 export type NightHoursRow = {
@@ -448,6 +461,7 @@ export const api = {
       hired_on?: string | null;
       left_on?: string | null;
       birthday?: string | null;
+      vacation_days_year?: number | null;
     },
   ) => request<User>(`/api/hr/users/${id}/account`, { method: "PATCH", body: JSON.stringify(body) }),
   models: () => request<WorkModel[]>("/api/hr/work-models"),

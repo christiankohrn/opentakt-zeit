@@ -72,6 +72,7 @@ export default function HrUserMonth() {
     hired_on: "",
     left_on: "",
     birthday: "",
+    vacation_days_year: "",
   });
   const [accountMsg, setAccountMsg] = useState("");
   const [accountErrors, setAccountErrors] = useState<UserFieldErrors>({});
@@ -102,6 +103,7 @@ export default function HrUserMonth() {
       hired_on: r.user.hired_on ?? "",
       left_on: r.user.left_on ?? "",
       birthday: r.user.birthday ?? "",
+      vacation_days_year: r.user.vacation_days_year != null ? String(r.user.vacation_days_year) : "",
     }));
   }
 
@@ -134,6 +136,7 @@ export default function HrUserMonth() {
         account.hired_on !== (user.hired_on ?? "") ||
         account.left_on !== (user.left_on ?? "") ||
         account.birthday !== (user.birthday ?? "") ||
+        account.vacation_days_year !== (user.vacation_days_year != null ? String(user.vacation_days_year) : "") ||
         account.password.trim() !== ""),
   );
   const accessDirty = Boolean(
@@ -201,6 +204,7 @@ export default function HrUserMonth() {
                 hired_on: string | null;
                 left_on: string | null;
                 birthday: string | null;
+                vacation_days_year: number | null;
               } = {
                 username: account.username,
                 display_name: account.display_name,
@@ -208,6 +212,7 @@ export default function HrUserMonth() {
                 hired_on: account.hired_on || null,
                 left_on: account.left_on || null,
                 birthday: account.birthday || null,
+                vacation_days_year: account.vacation_days_year.trim() === "" ? null : Number(account.vacation_days_year.replace(",", ".")),
               };
               if (isAdmin) {
                 body.role = account.role;
@@ -229,6 +234,7 @@ export default function HrUserMonth() {
                 hired_on: next.hired_on ?? "",
                 left_on: next.left_on ?? "",
                 birthday: next.birthday ?? "",
+                vacation_days_year: next.vacation_days_year != null ? String(next.vacation_days_year) : "",
               });
               setAccountMsg("Benutzer gespeichert.");
               await reload();
@@ -345,6 +351,18 @@ export default function HrUserMonth() {
               className="mt-1 h-10 w-full rounded-lg border border-line bg-bg px-2 text-sm"
               value={account.birthday}
               onChange={(e) => patchAccount({ birthday: e.target.value })}
+            />
+          </label>
+          <label className="block min-w-0 overflow-hidden text-xs text-muted">
+            Urlaubstage/Jahr
+            <input
+              type="number"
+              min={0}
+              max={366}
+              step={0.5}
+              className="mt-1 h-10 w-full rounded-lg border border-line bg-bg px-2 text-sm"
+              value={account.vacation_days_year}
+              onChange={(e) => patchAccount({ vacation_days_year: e.target.value })}
             />
           </label>
           {isAdmin ? (
