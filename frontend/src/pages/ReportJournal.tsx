@@ -43,7 +43,7 @@ function AccountFooter({ accounts }: { accounts: JournalAccounts }) {
         </tbody>
       </table>
       <p className="px-4 py-2 text-xs text-muted">
-        Resturlaub = Jahresanspruch − genommen − verplant. Ohne Anspruch am Stammsatz bleibt Resturlaub leer.
+        Resturlaub = Jahresanspruch - genommen - verplant. Ohne Anspruch am Stammsatz bleibt Resturlaub leer.
       </p>
     </div>
   );

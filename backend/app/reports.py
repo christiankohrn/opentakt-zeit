@@ -18,7 +18,7 @@ NIGHT_WINDOWS = (
     ("hours_4_6", time(4, 0), time(6, 0)),
 )
 VACATION_NOTE = "Urlaub „inkl. Zukunft“ enthält gebuchte Tage nach dem Stichtag im Kalenderjahr."
-JOURNAL_ACCOUNT_NOTE = "Resturlaub = Jahresanspruch − genommen − verplant. Anspruch am Stammsatz unter Urlaubstage/Jahr."
+JOURNAL_ACCOUNT_NOTE = "Resturlaub = Jahresanspruch - genommen - verplant. Anspruch am Stammsatz unter Urlaubstage/Jahr."
 PUNCH_LABELS = {
     "in": "Kommen",
     "out": "Gehen",
