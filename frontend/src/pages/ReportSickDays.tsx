@@ -1,29 +1,58 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { api, type SickDaysRow } from "../api";
-import { payrollYear } from "../reportPeriod";
+import { api, type SickDaysRow, type User } from "../api";
+import PersonFilter from "../components/PersonFilter";
+import { formatDeDate, payrollYear, yearRange } from "../reportPeriod";
+
+function parseUserIds(raw: string | null): number[] | null {
+  if (raw === null) return null;
+  if (raw === "") return [];
+  return raw
+    .split(",")
+    .map((part) => Number(part))
+    .filter((id) => Number.isInteger(id) && id > 0);
+}
 
 export default function ReportSickDays() {
   const [params, setParams] = useSearchParams();
   const year = Number(params.get("year") || payrollYear());
+  const range = yearRange(year);
+  const from = params.get("from") || range.from;
+  const to = params.get("to") || range.to;
+  const userIdsKey = params.get("user_ids");
+  const selectedIds = parseUserIds(userIdsKey);
+  const [users, setUsers] = useState<User[]>([]);
   const [people, setPeople] = useState<SickDaysRow[]>([]);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!params.get("year")) {
-      setParams({ year: String(year) }, { replace: true });
+    api.users().then(setUsers).catch((err: Error) => setError(err.message));
+  }, []);
+
+  useEffect(() => {
+    if (!params.get("from") || !params.get("to")) {
+      const next: Record<string, string> = { from, to };
+      const ids = params.get("user_ids");
+      if (ids !== null) next.user_ids = ids;
+      setParams(next, { replace: true });
     }
-  }, [params, setParams, year]);
+  }, [from, params, setParams, to]);
 
   useEffect(() => {
     api
-      .sickDays(year)
+      .sickDays(from, to, parseUserIds(userIdsKey))
       .then((r) => {
         setPeople(r.people);
         setError("");
       })
       .catch((err: Error) => setError(err.message));
-  }, [year]);
+  }, [from, to, userIdsKey]);
+
+  function setFilter(nextFrom: string, nextTo: string, ids: number[] | null) {
+    const query: Record<string, string> = { from: nextFrom, to: nextTo };
+    if (ids !== null) query.user_ids = ids.join(",");
+    setParams(query);
+  }
 
   const total = people.reduce((sum, row) => sum + row.sick_days, 0);
 
@@ -34,22 +63,40 @@ export default function ReportSickDays() {
       </Link>
       <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-medium">Krankheitstage</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <input
-            type="number"
-            min={1990}
-            max={2100}
-            value={year}
-            onChange={(e) => setParams({ year: e.target.value })}
-            className="w-24 rounded-lg border border-line bg-card px-2 py-1 text-sm"
+            type="date"
+            value={from}
+            onChange={(e) => setFilter(e.target.value, to, selectedIds)}
+            className="rounded-lg border border-line bg-card px-2 py-1 text-sm"
           />
-          <button type="button" className="text-sm text-present" onClick={() => void api.downloadSickDaysCsv(year)}>
+          <span className="text-sm text-muted">bis</span>
+          <input
+            type="date"
+            value={to}
+            onChange={(e) => setFilter(from, e.target.value, selectedIds)}
+            className="rounded-lg border border-line bg-card px-2 py-1 text-sm"
+          />
+          <PersonFilter users={users} selectedIds={selectedIds} onChange={(ids) => setFilter(from, to, ids)} />
+          <button
+            type="button"
+            className="rounded-lg border border-line bg-card px-3 py-1 text-sm"
+            onClick={() => void api.downloadSickDaysCsv(from, to, selectedIds)}
+          >
             CSV
+          </button>
+          <button
+            type="button"
+            className="rounded-lg border border-present bg-present px-3 py-1 text-sm text-white"
+            onClick={() => void api.downloadSickDaysPdf(from, to, selectedIds)}
+          >
+            PDF
           </button>
         </div>
       </div>
       <p className="mt-2 text-sm text-muted">
-        Kalenderjahr {year}. {people.length} Personen, {total} Krankheitstage insgesamt. Auch 0 Tage.
+        {formatDeDate(from)} – {formatDeDate(to)}. Standard: ganzes Jahr, alle Mitarbeitenden. {people.length} Personen,{" "}
+        {total} Krankheitstage insgesamt. Auch 0 Tage.
       </p>
       {error ? <p className="mt-3 text-sm text-danger">{error}</p> : null}
       <ul className="mt-4 space-y-2 md:hidden">

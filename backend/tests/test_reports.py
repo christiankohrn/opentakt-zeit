@@ -40,6 +40,13 @@ def create_person(client, username: str, display_name: str, **extra):
     return res.json()
 
 
+def assert_pdf(res):
+    assert res.status_code == 200, res.text
+    assert res.content.startswith(b"%PDF")
+    assert "pdf" in res.headers["content-type"]
+    assert len(res.content) > 400
+
+
 def test_employee_cannot_read_reports(client):
     login(client)
     create_person(
@@ -53,6 +60,8 @@ def test_employee_cannot_read_reports(client):
     login(client, "report-emp", "Geheim-99x")
     res = client.get("/api/hr/reports/sick-days?year=2026")
     assert res.status_code == 403
+    pdf = client.get("/api/hr/reports/sick-days.pdf?year=2026")
+    assert pdf.status_code == 403
 
 
 def test_sick_days_includes_zeros_and_skips_unemployed(client):
@@ -80,6 +89,19 @@ def test_sick_days_includes_zeros_and_skips_unemployed(client):
     assert "Anna Krank;3" in text
     assert zero["id"]
 
+    filtered = client.get(
+        f"/api/hr/reports/sick-days?from=2026-03-01&to=2026-03-31&user_ids={sick['id']}"
+    )
+    assert filtered.status_code == 200, filtered.text
+    names = [row["display_name"] for row in filtered.json()["people"]]
+    assert names == ["Anna Krank"]
+    assert filtered.json()["people"][0]["sick_days"] == 3
+
+    empty = client.get("/api/hr/reports/sick-days?from=2026-01-01&to=2026-12-31&user_ids=")
+    assert empty.status_code == 200
+    assert empty.json()["people"] == []
+    assert_pdf(client.get("/api/hr/reports/sick-days.pdf?from=2026-01-01&to=2026-12-31"))
+
 
 def test_month_balances_count_future_vacation(client):
     login(client)
@@ -96,16 +118,34 @@ def test_month_balances_count_future_vacation(client):
     assert sick.status_code == 200, sick.text
     db = SessionLocal()
     try:
-        rows = month_balances_report(db, "2026-09", today=date(2026, 9, 15))
+        rows = month_balances_report(db, "2026-09", as_of=date(2026, 9, 15), today=date(2026, 9, 15))
     finally:
         db.close()
     clara = next(row for row in rows if row["user_id"] == person["id"])
-    assert clara["vacation_days"] == 1
+    assert clara["vacation_days"] == 0
+    assert clara["vacation_planned_days"] == 1
     assert clara["sick_days"] == 1
-    http = client.get("/api/hr/reports/month-balances?month=2026-09")
+    http = client.get("/api/hr/reports/month-balances?month=2026-09&as_of=2026-09-15")
     assert http.status_code == 200
     found = next(row for row in http.json()["people"] if row["user_id"] == person["id"])
-    assert found["vacation_days"] == 1
+    assert found["vacation_days"] == 0
+    assert found["vacation_planned_days"] == 1
+    assert isinstance(found["carry_hours"], (int, float))
+    assert isinstance(found["total_hours"], (int, float))
+    assert "Urlaub geplant" in http.json()["note"]
+    csv_res = client.get("/api/hr/reports/month-balances.csv?month=2026-09&as_of=2026-09-15")
+    assert "Vortrag" in csv_res.text
+    assert "Urlaub geplant" in csv_res.text
+    assert_pdf(client.get("/api/hr/reports/month-balances.pdf?month=2026-09&as_of=2026-09-15"))
+
+    db = SessionLocal()
+    try:
+        later = month_balances_report(db, "2026-09", as_of=date(2026, 9, 30), today=date(2026, 9, 15))
+    finally:
+        db.close()
+    clara_later = next(row for row in later if row["user_id"] == person["id"])
+    assert clara_later["vacation_days"] == 1
+    assert clara_later["vacation_planned_days"] == 0
 
 
 def test_jubilees_birthday_and_ten_year(client):
@@ -142,6 +182,7 @@ def test_jubilees_birthday_and_ten_year(client):
     finally:
         db.close()
     assert any(row["kind"] == "jubilee_10" and row["user_id"] == person["id"] for row in rows)
+    assert_pdf(client.get("/api/hr/reports/jubilees.pdf?year=2026&half=2"))
 
 
 def test_night_hours_overnight_shift(client):
@@ -170,6 +211,8 @@ def test_night_hours_overnight_shift(client):
     csv_res = client.get("/api/hr/reports/night-hours.csv?month=2026-08")
     assert csv_res.status_code == 200
     assert "20-24" in csv_res.text
+    assert_pdf(client.get("/api/hr/reports/night-hours.pdf?month=2026-08"))
+    assert_pdf(client.get(f"/api/hr/reports/journal.pdf?user_id={erika['id']}&month=2026-08"))
 
 
 def test_work_intervals_split_overnight():

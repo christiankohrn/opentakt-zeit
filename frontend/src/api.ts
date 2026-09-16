@@ -109,8 +109,11 @@ export type MonthBalanceRow = {
   work_hours: number;
   soll_hours: number;
   delta_hours: number;
+  carry_hours: number;
+  total_hours: number;
   sick_days: number;
   vacation_days: number;
+  vacation_planned_days: number;
 };
 
 export type JubileeEvent = {
@@ -213,7 +216,21 @@ export class ApiError extends Error {
 
 export const AUTH_EVENT = "ze:unauthorized";
 
-async function downloadCsv(path: string, filename: string) {
+function reportQuery(params: Record<string, string | number | null | undefined>) {
+  const q = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null) continue;
+    q.set(key, String(value));
+  }
+  return q.toString();
+}
+
+function userIdsQuery(userIds: number[] | null | undefined) {
+  if (userIds === null || userIds === undefined) return undefined;
+  return userIds.join(",");
+}
+
+async function downloadFile(path: string, filename: string) {
   const res = await fetch(path, { credentials: "include", cache: "no-store" });
   if (!res.ok) {
     const text = await res.text();
@@ -508,10 +525,14 @@ export const api = {
     request(`/api/hr/users/${userId}/corrections`, { method: "POST", body: JSON.stringify(body) }),
   balances: (month: string) =>
     request<{ month: string; people: FlexBalance[] }>(`/api/hr/balances?month=${month}`),
-  sickDays: (year: number) =>
-    request<{ year: number; people: SickDaysRow[] }>(`/api/hr/reports/sick-days?year=${year}`),
-  monthBalances: (month: string) =>
-    request<{ month: string; people: MonthBalanceRow[] }>(`/api/hr/reports/month-balances?month=${month}`),
+  sickDays: (from: string, to: string, userIds?: number[] | null) =>
+    request<{ from: string; to: string; people: SickDaysRow[] }>(
+      `/api/hr/reports/sick-days?${reportQuery({ from, to, user_ids: userIdsQuery(userIds) })}`,
+    ),
+  monthBalances: (month: string, asOf: string) =>
+    request<{ month: string; as_of: string; note: string; people: MonthBalanceRow[] }>(
+      `/api/hr/reports/month-balances?${reportQuery({ month, as_of: asOf })}`,
+    ),
   jubilees: (year: number, half: number) =>
     request<{ year: number; half: number; events: JubileeEvent[] }>(
       `/api/hr/reports/jubilees?year=${year}&half=${half}`,
@@ -521,14 +542,36 @@ export const api = {
   downloadExportCsv: async (month: string, userId?: number) => {
     const q = new URLSearchParams({ month });
     if (userId) q.set("user_id", String(userId));
-    await downloadCsv(`/api/hr/export.csv?${q}`, `zeiten-${month}.csv`);
+    await downloadFile(`/api/hr/export.csv?${q}`, `zeiten-${month}.csv`);
   },
-  downloadSickDaysCsv: (year: number) =>
-    downloadCsv(`/api/hr/reports/sick-days.csv?year=${year}`, `krankheitstage-${year}.csv`),
-  downloadMonthBalancesCsv: (month: string) =>
-    downloadCsv(`/api/hr/reports/month-balances.csv?month=${month}`, `salden-${month}.csv`),
+  downloadSickDaysCsv: (from: string, to: string, userIds?: number[] | null) =>
+    downloadFile(
+      `/api/hr/reports/sick-days.csv?${reportQuery({ from, to, user_ids: userIdsQuery(userIds) })}`,
+      `krankheitstage-${from}-${to}.csv`,
+    ),
+  downloadSickDaysPdf: (from: string, to: string, userIds?: number[] | null) =>
+    downloadFile(
+      `/api/hr/reports/sick-days.pdf?${reportQuery({ from, to, user_ids: userIdsQuery(userIds) })}`,
+      `krankheitstage-${from}-${to}.pdf`,
+    ),
+  downloadMonthBalancesCsv: (month: string, asOf: string) =>
+    downloadFile(
+      `/api/hr/reports/month-balances.csv?${reportQuery({ month, as_of: asOf })}`,
+      `salden-${month}-stichtag-${asOf}.csv`,
+    ),
+  downloadMonthBalancesPdf: (month: string, asOf: string) =>
+    downloadFile(
+      `/api/hr/reports/month-balances.pdf?${reportQuery({ month, as_of: asOf })}`,
+      `salden-${month}-stichtag-${asOf}.pdf`,
+    ),
   downloadJubileesCsv: (year: number, half: number) =>
-    downloadCsv(`/api/hr/reports/jubilees.csv?year=${year}&half=${half}`, `jubilaeen-${year}-hj${half}.csv`),
+    downloadFile(`/api/hr/reports/jubilees.csv?year=${year}&half=${half}`, `jubilaeen-${year}-hj${half}.csv`),
+  downloadJubileesPdf: (year: number, half: number) =>
+    downloadFile(`/api/hr/reports/jubilees.pdf?year=${year}&half=${half}`, `jubilaeen-${year}-hj${half}.pdf`),
   downloadNightHoursCsv: (month: string) =>
-    downloadCsv(`/api/hr/reports/night-hours.csv?month=${month}`, `nachtstunden-${month}.csv`),
+    downloadFile(`/api/hr/reports/night-hours.csv?month=${month}`, `nachtstunden-${month}.csv`),
+  downloadNightHoursPdf: (month: string) =>
+    downloadFile(`/api/hr/reports/night-hours.pdf?month=${month}`, `nachtstunden-${month}.pdf`),
+  downloadJournalPdf: (userId: number, month: string) =>
+    downloadFile(`/api/hr/reports/journal.pdf?user_id=${userId}&month=${month}`, `journal-${month}.pdf`),
 };

@@ -120,8 +120,20 @@ export default function ReportJournal() {
             onChange={(e) => setFilter(userParam, e.target.value)}
             className="month-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
           />
-          <button type="button" className="text-sm text-present" onClick={() => window.print()}>
+          <button
+            type="button"
+            className="rounded-lg border border-line bg-card px-3 py-1 text-sm"
+            onClick={() => window.print()}
+          >
             Drucken
+          </button>
+          <button
+            type="button"
+            className="rounded-lg border border-present bg-present px-3 py-1 text-sm text-white disabled:opacity-40"
+            disabled={!userParam}
+            onClick={() => void api.downloadJournalPdf(Number(userParam), month)}
+          >
+            PDF
           </button>
         </div>
       </div>

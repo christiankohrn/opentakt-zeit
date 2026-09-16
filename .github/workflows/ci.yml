@@ -18,7 +18,10 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install
-        run: pip install -r requirements.txt
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fonts-dejavu-core
+          pip install -r requirements.txt
       - name: Pytest
         run: python -m pytest
 

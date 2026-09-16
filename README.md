@@ -24,7 +24,7 @@ Opentakt Zeit ist das erste Produkt unter dem Namen Opentakt. Weitere Anwendunge
 - Datafox MasterIV über HTTP (Transponder), optional Polling per DFCom, optional ohne Web-Login
 - Optionales ESP32-Terminal (eigene JSON-API, OLED-Displaytexte in den Einstellungen)
 - Optional LDAP und SMTP (Feierabend-Erinnerung)
-- CSV-Export, tägliche SQLite-Backups, Dark Mode
+- CSV- und PDF-Export der Auswertungen, tägliche SQLite-Backups, Dark Mode
 
 ## Schnellstart (Entwicklung)
 

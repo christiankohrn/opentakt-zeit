@@ -62,10 +62,17 @@ export default function ReportJubilees() {
           </select>
           <button
             type="button"
-            className="text-sm text-present"
+            className="rounded-lg border border-line bg-card px-3 py-1 text-sm"
             onClick={() => void api.downloadJubileesCsv(year, half)}
           >
             CSV
+          </button>
+          <button
+            type="button"
+            className="rounded-lg border border-present bg-present px-3 py-1 text-sm text-white"
+            onClick={() => void api.downloadJubileesPdf(year, half)}
+          >
+            PDF
           </button>
         </div>
       </div>

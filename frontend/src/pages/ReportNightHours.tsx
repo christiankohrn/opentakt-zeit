@@ -55,8 +55,19 @@ export default function ReportNightHours() {
             onChange={(e) => setMonth(e.target.value)}
             className="month-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
           />
-          <button type="button" className="text-sm text-present" onClick={() => void api.downloadNightHoursCsv(month)}>
+          <button
+            type="button"
+            className="rounded-lg border border-line bg-card px-3 py-1 text-sm"
+            onClick={() => void api.downloadNightHoursCsv(month)}
+          >
             CSV
+          </button>
+          <button
+            type="button"
+            className="rounded-lg border border-present bg-present px-3 py-1 text-sm text-white"
+            onClick={() => void api.downloadNightHoursPdf(month)}
+          >
+            PDF
           </button>
         </div>
       </div>

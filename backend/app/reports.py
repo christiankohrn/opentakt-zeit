@@ -7,17 +7,44 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.auth import as_local, now_utc
-from app.balance import hired_on, summarize_user_day
-from app.holidays import calendar_map
+from app.balance import days_in_range, hired_on, month_days
 from app.models import Absence, Punch, User
 from app.timecalc import punches_window_for_month, work_intervals
-from app.workmodels import load_timelines
 
 JUBILEE_YEARS = (10, 25, 40)
 NIGHT_WINDOWS = (
     ("hours_20_24", time(20, 0), None),
     ("hours_0_4", time(0, 0), time(4, 0)),
     ("hours_4_6", time(4, 0), time(6, 0)),
+)
+VACATION_NOTE = "Urlaubstage nach dem Stichtag stehen in der Spalte „Urlaub geplant“."
+PUNCH_LABELS = {
+    "in": "Kommen",
+    "out": "Gehen",
+    "break_start": "Pause Beginn",
+    "break_end": "Pause Ende",
+}
+ABSENCE_LABELS = {
+    "vacation": "Urlaub",
+    "sick": "Krankheit",
+    "holiday": "Feiertag",
+    "company_off": "Betriebsfrei",
+    "other": "Abwesend",
+}
+WEEKDAYS = ("Mo", "Di", "Mi", "Do", "Fr", "Sa", "So")
+MONTHS = (
+    "Januar",
+    "Februar",
+    "März",
+    "April",
+    "Mai",
+    "Juni",
+    "Juli",
+    "August",
+    "September",
+    "Oktober",
+    "November",
+    "Dezember",
 )
 
 
@@ -48,9 +75,55 @@ def employment_overlap(user: User, start: date, end: date) -> tuple[date, date] 
     return lo, hi
 
 
-def people_in_range(db: Session, start: date, end: date) -> list[User]:
+def people_in_range(db: Session, start: date, end: date, user_ids: set[int] | None = None) -> list[User]:
     users = list(db.scalars(select(User).options(selectinload(User.work_model)).order_by(User.display_name)))
-    return [user for user in users if employment_overlap(user, start, end)]
+    people = [user for user in users if employment_overlap(user, start, end)]
+    if user_ids is None:
+        return people
+    return [user for user in people if user.id in user_ids]
+
+
+def format_day_label(iso: str) -> str:
+    day = date.fromisoformat(iso)
+    return f"{day.strftime('%d.%m.')} {WEEKDAYS[day.weekday()]}"
+
+
+def format_month_label(month: str) -> str:
+    year, mon = (int(part) for part in month.split("-"))
+    return f"{MONTHS[mon - 1]} {year}"
+
+
+def format_de_date(value: date | str) -> str:
+    if isinstance(value, str):
+        value = date.fromisoformat(value)
+    return value.strftime("%d.%m.%Y")
+
+
+def booking_text(day: dict) -> str:
+    punch_parts: list[str] = []
+    for punch in day.get("punches") or []:
+        if punch.get("voided"):
+            continue
+        label = PUNCH_LABELS.get(punch.get("kind") or "", punch.get("kind") or "")
+        time_text = punch.get("time") or ""
+        place = (punch.get("terminal_name") or "").strip()
+        punch_parts.append(f"{label} {time_text} ({place})" if place else f"{label} {time_text}".strip())
+    punch_line = "  ·  ".join(part for part in punch_parts if part)
+    calendar = day.get("calendar") or {}
+    absence = day.get("absence") or {}
+    label = calendar.get("name") or absence.get("note") or ""
+    if not label and absence.get("kind"):
+        label = ABSENCE_LABELS.get(absence["kind"], absence["kind"])
+    if label and punch_line:
+        return f"{label} · {punch_line}"
+    if label:
+        return label
+    if punch_line:
+        return punch_line
+    if day.get("first_in"):
+        end = day.get("last_out") or ("offen" if day.get("open") else "—")
+        return f"{day['first_in']} – {end}"
+    return "—"
 
 
 def _add_years(day: date, years: int) -> date:
@@ -71,9 +144,10 @@ def _in_period(day: date, start: date, end: date) -> bool:
     return start <= day <= end
 
 
-def sick_days_report(db: Session, year: int) -> list[dict]:
-    start, end = year_bounds(year)
-    people = people_in_range(db, start, end)
+def sick_days_report(
+    db: Session, start: date, end: date, user_ids: set[int] | None = None
+) -> list[dict]:
+    people = people_in_range(db, start, end, user_ids)
     absences = list(
         db.scalars(select(Absence).where(Absence.kind == "sick", Absence.day >= start, Absence.day <= end))
     )
@@ -94,55 +168,51 @@ def sick_days_report(db: Session, year: int) -> list[dict]:
     ]
 
 
-def month_balances_report(db: Session, month: str, today: date | None = None) -> list[dict]:
+def month_balances_report(
+    db: Session,
+    month: str,
+    as_of: date | None = None,
+    today: date | None = None,
+) -> list[dict]:
     start, last = month_bounds(month)
     today = today or as_local(now_utc()).date()
+    as_of = as_of or today
+    hours_until = min(as_of, today)
     people = people_in_range(db, start, last)
-    timelines = load_timelines(db, [user.id for user in people])
-    cal = calendar_map(db, start, last)
-    q_start, q_end = punches_window_for_month(start, last)
     rows = []
     for user in people:
-        punches = list(
-            db.scalars(
-                select(Punch)
-                .where(Punch.user_id == user.id, Punch.server_time >= q_start, Punch.server_time < q_end)
-                .order_by(Punch.server_time)
-            )
-        )
-        absences = {
-            row.day: row
-            for row in db.scalars(
-                select(Absence).where(Absence.user_id == user.id, Absence.day >= start, Absence.day <= last)
-            )
-        }
-        work = soll = delta = 0.0
-        sick_days = vacation_days = 0
         overlap = employment_overlap(user, start, last)
         if overlap is None:
             continue
         lo, hi = overlap
-        cur = start
-        while cur <= last:
-            summary = summarize_user_day(
-                user,
-                punches,
-                cur,
-                timelines.get(user.id, []),
-                absence=absences.get(cur),
-                calendar=cal.get(cur),
-            )
-            if lo <= cur <= hi:
-                kind = (absences.get(cur).kind if absences.get(cur) is not None else "") or ""
+        hire = hired_on(user)
+        hist_last = max(last, hours_until)
+        if hire > hist_last:
+            continue
+        days = days_in_range(db, user, hire, hist_last)
+        work = soll = delta = carry = 0.0
+        sick_days = vacation_days = vacation_planned_days = 0
+        for summary in days:
+            day = date.fromisoformat(str(summary["date"]))
+            kind = ((summary.get("absence") or {}) or {}).get("kind") or ""
+            if day < start:
+                if day <= hours_until:
+                    carry += float(summary["delta_hours"] or 0)
+                continue
+            if day > last:
+                continue
+            if lo <= day <= hi:
                 if kind == "sick":
                     sick_days += 1
                 elif kind == "vacation":
-                    vacation_days += 1
-                if cur <= today:
+                    if day <= as_of:
+                        vacation_days += 1
+                    else:
+                        vacation_planned_days += 1
+                if day <= hours_until:
                     work += float(summary["work_hours"] or 0)
                     soll += float(summary["soll_hours"] or 0)
                     delta += float(summary["delta_hours"] or 0)
-            cur += timedelta(days=1)
         rows.append(
             {
                 "user_id": user.id,
@@ -150,8 +220,11 @@ def month_balances_report(db: Session, month: str, today: date | None = None) ->
                 "work_hours": round(work, 2),
                 "soll_hours": round(soll, 2),
                 "delta_hours": round(delta, 1),
+                "carry_hours": round(carry, 1),
+                "total_hours": round(carry + delta, 1),
                 "sick_days": sick_days,
                 "vacation_days": vacation_days,
+                "vacation_planned_days": vacation_planned_days,
             }
         )
     return rows
@@ -264,3 +337,58 @@ def night_hours_report(db: Session, month: str, now: datetime | None = None) -> 
             }
         )
     return rows
+
+
+def journal_report(db: Session, user: User, month: str) -> dict:
+    year, mon = (int(part) for part in month.split("-"))
+    days = month_days(db, user, year, mon)
+    rows: list[dict] = []
+    week_work = week_soll = week_delta = 0.0
+    month_work = month_soll = month_delta = 0.0
+    for index, day in enumerate(days):
+        rows.append(
+            {
+                "type": "day",
+                "label": format_day_label(str(day["date"])),
+                "booking": booking_text(day),
+                "work_hours": float(day["work_hours"] or 0),
+                "soll_hours": float(day["soll_hours"] or 0),
+                "delta_hours": float(day["delta_hours"] or 0),
+            }
+        )
+        week_work += float(day["work_hours"] or 0)
+        week_soll += float(day["soll_hours"] or 0)
+        week_delta += float(day["delta_hours"] or 0)
+        month_work += float(day["work_hours"] or 0)
+        month_soll += float(day["soll_hours"] or 0)
+        month_delta += float(day["delta_hours"] or 0)
+        nxt = days[index + 1] if index + 1 < len(days) else None
+        if day.get("weekday") == 6 or nxt is None:
+            rows.append(
+                {
+                    "type": "week",
+                    "label": "Woche",
+                    "booking": "",
+                    "work_hours": round(week_work, 2),
+                    "soll_hours": round(week_soll, 2),
+                    "delta_hours": round(week_delta, 2),
+                }
+            )
+            week_work = week_soll = week_delta = 0.0
+    rows.append(
+        {
+            "type": "month",
+            "label": "Monat",
+            "booking": "",
+            "work_hours": round(month_work, 2),
+            "soll_hours": round(month_soll, 2),
+            "delta_hours": round(month_delta, 2),
+        }
+    )
+    return {
+        "user_id": user.id,
+        "display_name": user.display_name,
+        "month": month,
+        "month_label": format_month_label(month),
+        "rows": rows,
+    }

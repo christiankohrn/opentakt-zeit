@@ -4,12 +4,12 @@ const REPORTS = [
   {
     to: "/auswertungen/krankheit",
     title: "Krankheitstage",
-    text: "Krankheitstage je Person im Kalenderjahr, einschließlich Personen ohne Fehltage.",
+    text: "Krankheitstage je Person im gewählten Zeitraum, Standard ganzes Jahr und alle Mitarbeitenden.",
   },
   {
     to: "/auswertungen/salden",
     title: "Monatssalden",
-    text: "Ist, Soll, Monatskonto, Krankheit und Urlaub — inklusive bereits gebuchtem Urlaub in der Zukunft.",
+    text: "Ist, Soll, Diff, Vortrag, Gesamt, Krankheit, Urlaub genommen und geplant — mit Stichtag.",
   },
   {
     to: "/auswertungen/jubilaeen",
@@ -24,7 +24,7 @@ const REPORTS = [
   {
     to: "/auswertungen/journal",
     title: "Journal",
-    text: "Monatliche Stempel- und Abwesenheitsliste einer Person, mit Wochen- und Monatssummen, druckbar.",
+    text: "Monatliche Stempel- und Abwesenheitsliste einer Person, mit Wochen- und Monatssummen, als PDF.",
   },
 ];
 
@@ -32,7 +32,7 @@ export default function Reports() {
   return (
     <div className="pt-2">
       <h1 className="text-xl font-medium">Auswertungen</h1>
-      <p className="mt-2 text-sm text-muted">Berichte für Personal. CSV-Download in jedem Bericht.</p>
+      <p className="mt-2 text-sm text-muted">Berichte für Personal. CSV- und PDF-Export in jedem Bericht.</p>
       <ul className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {REPORTS.map((r) => (
           <li key={r.to}>
