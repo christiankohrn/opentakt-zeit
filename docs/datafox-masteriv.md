@@ -89,9 +89,9 @@ bash /opt/zeiterfassung/deploy/install-dfcom.sh
 
 Das Skript holt das Source-Zip **direkt von datafox.de**, prüft die SHA-256-Summe und ruft `make` auf. Es spiegelt Datafox-Code nicht. Ohne Netz das Zip selbst laden und `DFCOM_ZIP=/pfad/zur.zip` setzen.
 
-Polling (Server holt Buchungen per TCP, typisch Port **8000**) schaltet ein Administrator unter **Einstellungen** ein. Fehlt die `.so`, bleibt HTTP-Stempeln unverändert. Polling braucht, dass der Server die Geräte per TCP erreicht (LAN oder VPN). TopZeit und Opentakt dürfen dieselben Geräte **nicht** gleichzeitig pollen.
+Polling (Server holt Buchungen per TCP, typisch Port **8000**) schaltet ein Administrator unter **Einstellungen** ein. Fehlt die `.so`, bleibt HTTP-Stempeln unverändert. Polling braucht, dass der Server die Geräte per TCP erreicht (LAN oder VPN). Zwei Poller dürfen dieselben Geräte **nicht** gleichzeitig abfragen.
 
-Bestehende MasterIV mit BSS-Setup `bss_PZEMaster_Basic` bleiben unverändert (kein Studio-Rewrite). Opentakt ersetzt den Poller von TopZeit.
+Bestehende MasterIV mit BSS-Setup `bss_PZEMaster_Basic` bleiben unverändert (kein Studio-Rewrite). Opentakt übernimmt das Polling.
 
 ### Was geht beim Polling zum Terminal?
 

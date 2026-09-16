@@ -31,7 +31,7 @@ KIND_ALIASES = {
     "f4": "break_end",
 }
 
-# BSS/TopZeit table Stempelung: Kennzeichen 0 = Kommen, 1 = Gehen (not HTTP fn).
+# BSS table Stempelung: Kennzeichen 0 = Kommen, 1 = Gehen (not HTTP fn).
 STEMPELUNG_KENNZEICHEN = {
     "0": "in",
     "1": "out",

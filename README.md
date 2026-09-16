@@ -22,7 +22,7 @@ Opentakt Zeit ist das erste Produkt unter dem Namen Opentakt. Weitere Anwendunge
 - Plausibilität (fehlendes Gehen, Pausen, 10-Stunden-Grenze, …)
 - Abwesenheiten, Feiertage je Bundesland, betriebsfreie Tage
 - Datafox MasterIV über HTTP (Transponder), optional Polling per DFCom, optional ohne Web-Login
-- Optionales ESP32-Terminal (eigene JSON-API, OLED-Displaytexte in den Einstellungen)
+- Optionales ESP32-Terminal (eigene JSON-API, OLED, RFID RC522 oder Grove NFC; Displaytexte in den Einstellungen)
 - Optional LDAP und SMTP (Feierabend-Erinnerung)
 - CSV- und PDF-Export der Auswertungen, tägliche SQLite-Backups, Dark Mode
 
