@@ -219,6 +219,8 @@ def create_user(payload: UserWrite, request: Request, db: Session = Depends(get_
         web_login=web_login,
         hired_on=payload.hired_on or as_local(now_utc()).date(),
         left_on=payload.left_on,
+        birthday=payload.birthday,
+        vacation_days_year=payload.vacation_days_year,
     )
     _check_employment_dates(user)
     _set_transponder(db, user, payload.transponder_id)
@@ -305,6 +307,10 @@ def patch_user(user_id: int, payload: UserWrite, request: Request, db: Session =
         user.hired_on = payload.hired_on
     if "left_on" in payload.model_fields_set:
         user.left_on = payload.left_on
+    if "birthday" in payload.model_fields_set:
+        user.birthday = payload.birthday
+    if "vacation_days_year" in payload.model_fields_set:
+        user.vacation_days_year = payload.vacation_days_year
     _check_employment_dates(user)
     if privileged:
         bump_session_rev(user)
@@ -406,6 +412,10 @@ def patch_user_account(user_id: int, payload: UserAccountIn, request: Request, d
         user.hired_on = payload.hired_on
     if "left_on" in payload.model_fields_set:
         user.left_on = payload.left_on
+    if "birthday" in payload.model_fields_set:
+        user.birthday = payload.birthday
+    if "vacation_days_year" in payload.model_fields_set:
+        user.vacation_days_year = payload.vacation_days_year
     _check_employment_dates(user)
     _require_password(user.role, user.web_login, None, bool(user.password_hash) or has_open_invite(db, user))
     db.add(

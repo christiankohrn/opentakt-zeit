@@ -13,3 +13,5 @@ segno>=1.6.0
 webauthn>=2.5.0
 pytest>=8.3.0
 tzdata>=2025.1
+fpdf2>=2.8.0
+

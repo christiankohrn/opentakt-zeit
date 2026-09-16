@@ -47,6 +47,8 @@ class User(Base):
     web_login: Mapped[bool] = mapped_column(default=True)
     hired_on: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     left_on: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    birthday: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    vacation_days_year: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     session_rev: Mapped[int] = mapped_column(Integer, default=0)
     totp_secret: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     totp_enabled: Mapped[bool] = mapped_column(default=False)

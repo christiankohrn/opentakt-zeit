@@ -150,18 +150,39 @@ input[type="date"]::-webkit-date-and-time-value {
   line-height: 2.35rem;
 }
 
-.month-compact {
-  width: auto;
-  max-width: 13rem;
-  min-width: 11.25rem;
+input[type="month"].month-compact {
+  width: 11.5rem;
+  min-width: 11.5rem;
+  max-width: 11.5rem;
   min-height: 2.25rem;
   padding-block: 0.2rem;
 }
 
-.month-compact::-webkit-datetime-edit,
-.month-compact::-webkit-datetime-edit-fields-wrapper {
+input[type="date"].date-compact {
+  width: 11.5rem;
+  min-width: 11.5rem;
+  max-width: 11.5rem;
+  min-height: 2.25rem;
+  display: inline-flex;
+  align-items: center;
+  padding-block: 0.2rem;
+}
+
+.date-compact::-webkit-datetime-edit,
+.date-compact::-webkit-datetime-edit-fields-wrapper {
   display: flex;
   align-items: center;
   padding: 0;
   line-height: normal;
+}
+
+@media print {
+  body {
+    background: white;
+    color: black;
+  }
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
 }

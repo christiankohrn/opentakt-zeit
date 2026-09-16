@@ -41,5 +41,6 @@ Neue Logik (Zeitrechnung, Feiertage, Terminal-Parsing, Backups) bitte mit einem 
 - Ein Thema pro PR.
 - Breaking Changes (Config, Datenbankschema, Terminal-Protokoll) deutlich benennen.
 - Screenshots oder kurzes Terminal-Log helfen bei UI- und Deploy-Änderungen.
+- Keine Produktnamen anderer Software in PR-Texten, UI oder neuer Dokumentation.
 
 Mit dem Beitrag akzeptierst du, dass er unter der [AGPL-3.0-or-later](LICENSE) des Projekts steht.

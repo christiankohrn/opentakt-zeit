@@ -66,6 +66,10 @@ def ensure_schema() -> None:
         alters.append("ALTER TABLE users ADD COLUMN hired_on DATE")
     if "left_on" not in cols:
         alters.append("ALTER TABLE users ADD COLUMN left_on DATE")
+    if "birthday" not in cols:
+        alters.append("ALTER TABLE users ADD COLUMN birthday DATE")
+    if "vacation_days_year" not in cols:
+        alters.append("ALTER TABLE users ADD COLUMN vacation_days_year FLOAT")
     if "totp_secret" not in cols:
         alters.append("ALTER TABLE users ADD COLUMN totp_secret VARCHAR(64)")
     if "totp_enabled" not in cols:

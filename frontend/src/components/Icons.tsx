@@ -18,6 +18,15 @@ export function IconCalendar({ className }: IconProps) {
   );
 }
 
+export function IconChart({ className }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <path d="M4 19h16" strokeLinecap="round" />
+      <path d="M7 16v-5M12 16V8M17 16v-8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function IconUsers({ className }: IconProps) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>

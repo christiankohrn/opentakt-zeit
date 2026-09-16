@@ -24,6 +24,8 @@ export type User = {
   web_login: boolean;
   hired_on: string | null;
   left_on: string | null;
+  birthday: string | null;
+  vacation_days_year: number | null;
   totp_enabled?: boolean;
   passkey_count?: number;
   security_setup_required?: string | null;
@@ -94,6 +96,77 @@ export type FlexBalance = {
   soll_hours: number;
   delta_hours: number;
   total_delta_hours: number;
+};
+
+export type AbsenceDaysRow = {
+  user_id: number;
+  display_name: string;
+  period_days: number;
+  year_days: number;
+  sick_days?: number;
+};
+
+export type MonthBalanceRow = {
+  user_id: number;
+  display_name: string;
+  flex_prev: number;
+  flex_month: number;
+  flex_total: number;
+  vacation_prev: number;
+  vacation_month: number;
+  vacation_total: number;
+  vacation_future: number;
+  sick_prev: number;
+  sick_month: number;
+  sick_total: number;
+};
+
+export type JubileeEvent = {
+  user_id: number;
+  display_name: string;
+  date: string;
+  origin_date: string;
+  kind: string;
+  label: string;
+  years: number;
+};
+
+export type JournalLine = {
+  type: "day" | "week" | "month";
+  label: string;
+  booking: string;
+  work_hours: number;
+  soll_hours: number;
+  delta_hours: number;
+};
+
+export type JournalAccounts = {
+  flex_prev: number;
+  flex_month: number;
+  flex_total: number;
+  vacation_month: number;
+  vacation_planned: number;
+  vacation_allowance: number | null;
+  vacation_remaining_prev: number | null;
+  vacation_remaining: number | null;
+};
+
+export type JournalReport = {
+  user_id: number;
+  display_name: string;
+  month: string;
+  month_label: string;
+  rows: JournalLine[];
+  accounts: JournalAccounts;
+};
+
+export type NightHoursRow = {
+  user_id: number;
+  display_name: string;
+  hours_20_24: number;
+  hours_0_4: number;
+  hours_4_6: number;
+  hours_1_plus_3: number;
 };
 
 export type SmtpSettings = {
@@ -177,6 +250,50 @@ export class ApiError extends Error {
 }
 
 export const AUTH_EVENT = "ze:unauthorized";
+
+function reportQuery(params: Record<string, string | number | null | undefined>) {
+  const q = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null) continue;
+    q.set(key, String(value));
+  }
+  return q.toString();
+}
+
+function userIdsQuery(userIds: number[] | null | undefined) {
+  if (userIds === null || userIds === undefined) return undefined;
+  return userIds.join(",");
+}
+
+async function downloadFile(path: string, filename: string) {
+  const res = await fetch(path, { credentials: "include", cache: "no-store" });
+  if (!res.ok) {
+    const text = await res.text();
+    let data: unknown = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = { detail: text };
+    }
+    if (res.status === 401) {
+      window.dispatchEvent(new CustomEvent(AUTH_EVENT, { detail: { path } }));
+    }
+    const detail =
+      typeof data === "object" && data && "detail" in data
+        ? String((data as { detail: unknown }).detail)
+        : res.statusText;
+    throw new ApiError(res.status, detail);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
@@ -343,6 +460,8 @@ export const api = {
       password?: string;
       hired_on?: string | null;
       left_on?: string | null;
+      birthday?: string | null;
+      vacation_days_year?: number | null;
     },
   ) => request<User>(`/api/hr/users/${id}/account`, { method: "PATCH", body: JSON.stringify(body) }),
   models: () => request<WorkModel[]>("/api/hr/work-models"),
@@ -442,35 +561,74 @@ export const api = {
     request(`/api/hr/users/${userId}/corrections`, { method: "POST", body: JSON.stringify(body) }),
   balances: (month: string) =>
     request<{ month: string; people: FlexBalance[] }>(`/api/hr/balances?month=${month}`),
+  sickDays: (from: string, to: string, userIds?: number[] | null) =>
+    request<{ from: string; to: string; year: number; people: AbsenceDaysRow[] }>(
+      `/api/hr/reports/sick-days?${reportQuery({ from, to, user_ids: userIdsQuery(userIds) })}`,
+    ),
+  vacationDays: (from: string, to: string, userIds?: number[] | null) =>
+    request<{ from: string; to: string; year: number; people: AbsenceDaysRow[] }>(
+      `/api/hr/reports/vacation-days?${reportQuery({ from, to, user_ids: userIdsQuery(userIds) })}`,
+    ),
+  monthBalances: (month: string, asOf: string) =>
+    request<{ month: string; as_of: string; note: string; people: MonthBalanceRow[] }>(
+      `/api/hr/reports/month-balances?${reportQuery({ month, as_of: asOf })}`,
+    ),
+  jubilees: (year: number, half: number) =>
+    request<{ year: number; half: number; events: JubileeEvent[] }>(
+      `/api/hr/reports/jubilees?year=${year}&half=${half}`,
+    ),
+  nightHours: (month: string) =>
+    request<{ month: string; people: NightHoursRow[] }>(`/api/hr/reports/night-hours?month=${month}`),
+  journals: (month: string, userIds?: number[] | null) =>
+    request<{ month: string; people: JournalReport[] }>(
+      `/api/hr/reports/journal?${reportQuery({ month, user_ids: userIdsQuery(userIds) })}`,
+    ),
   downloadExportCsv: async (month: string, userId?: number) => {
     const q = new URLSearchParams({ month });
     if (userId) q.set("user_id", String(userId));
-    const res = await fetch(`/api/hr/export.csv?${q}`, { credentials: "include", cache: "no-store" });
-    if (!res.ok) {
-      const text = await res.text();
-      let data: unknown = null;
-      try {
-        data = text ? JSON.parse(text) : null;
-      } catch {
-        data = { detail: text };
-      }
-      if (res.status === 401) {
-        window.dispatchEvent(new CustomEvent(AUTH_EVENT, { detail: { path: "/api/hr/export.csv" } }));
-      }
-      const detail =
-        typeof data === "object" && data && "detail" in data
-          ? String((data as { detail: unknown }).detail)
-          : res.statusText;
-      throw new ApiError(res.status, detail);
-    }
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `zeiten-${month}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+    await downloadFile(`/api/hr/export.csv?${q}`, `zeiten-${month}.csv`);
   },
+  downloadSickDaysCsv: (from: string, to: string, userIds?: number[] | null) =>
+    downloadFile(
+      `/api/hr/reports/sick-days.csv?${reportQuery({ from, to, user_ids: userIdsQuery(userIds) })}`,
+      `krankheitstage-${from}-${to}.csv`,
+    ),
+  downloadSickDaysPdf: (from: string, to: string, userIds?: number[] | null) =>
+    downloadFile(
+      `/api/hr/reports/sick-days.pdf?${reportQuery({ from, to, user_ids: userIdsQuery(userIds) })}`,
+      `krankheitstage-${from}-${to}.pdf`,
+    ),
+  downloadVacationDaysCsv: (from: string, to: string, userIds?: number[] | null) =>
+    downloadFile(
+      `/api/hr/reports/vacation-days.csv?${reportQuery({ from, to, user_ids: userIdsQuery(userIds) })}`,
+      `urlaubstage-${from}-${to}.csv`,
+    ),
+  downloadVacationDaysPdf: (from: string, to: string, userIds?: number[] | null) =>
+    downloadFile(
+      `/api/hr/reports/vacation-days.pdf?${reportQuery({ from, to, user_ids: userIdsQuery(userIds) })}`,
+      `urlaubstage-${from}-${to}.pdf`,
+    ),
+  downloadMonthBalancesCsv: (month: string, asOf: string) =>
+    downloadFile(
+      `/api/hr/reports/month-balances.csv?${reportQuery({ month, as_of: asOf })}`,
+      `salden-${month}-stichtag-${asOf}.csv`,
+    ),
+  downloadMonthBalancesPdf: (month: string, asOf: string) =>
+    downloadFile(
+      `/api/hr/reports/month-balances.pdf?${reportQuery({ month, as_of: asOf })}`,
+      `salden-${month}-stichtag-${asOf}.pdf`,
+    ),
+  downloadJubileesCsv: (year: number, half: number) =>
+    downloadFile(`/api/hr/reports/jubilees.csv?year=${year}&half=${half}`, `jubilaeen-${year}-hj${half}.csv`),
+  downloadJubileesPdf: (year: number, half: number) =>
+    downloadFile(`/api/hr/reports/jubilees.pdf?year=${year}&half=${half}`, `jubilaeen-${year}-hj${half}.pdf`),
+  downloadNightHoursCsv: (month: string) =>
+    downloadFile(`/api/hr/reports/night-hours.csv?month=${month}`, `lohnarten-${month}.csv`),
+  downloadNightHoursPdf: (month: string) =>
+    downloadFile(`/api/hr/reports/night-hours.pdf?month=${month}`, `lohnarten-${month}.pdf`),
+  downloadJournalPdf: (month: string, userIds?: number[] | null) =>
+    downloadFile(
+      `/api/hr/reports/journal.pdf?${reportQuery({ month, user_ids: userIdsQuery(userIds) })}`,
+      `journale-${month}.pdf`,
+    ),
 };
