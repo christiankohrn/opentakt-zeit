@@ -158,8 +158,18 @@ input[type="date"]::-webkit-date-and-time-value {
   padding-block: 0.2rem;
 }
 
-.month-compact::-webkit-datetime-edit,
-.month-compact::-webkit-datetime-edit-fields-wrapper {
+.date-compact {
+  width: auto;
+  max-width: 13.5rem;
+  min-width: 11.25rem;
+  min-height: 2.25rem;
+  display: inline-flex;
+  align-items: center;
+  padding-block: 0.2rem;
+}
+
+.date-compact::-webkit-datetime-edit,
+.date-compact::-webkit-datetime-edit-fields-wrapper {
   display: flex;
   align-items: center;
   padding: 0;

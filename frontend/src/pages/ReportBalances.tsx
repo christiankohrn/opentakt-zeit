@@ -38,7 +38,7 @@ export default function ReportBalances() {
       <Link to="/auswertungen" className="text-sm text-muted">
         ← Auswertungen
       </Link>
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+      <div className="mt-2 flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-start lg:justify-between">
         <h1 className="text-xl font-medium">Monatssalden</h1>
         <div className="flex flex-wrap items-center gap-2">
           <input
@@ -53,7 +53,7 @@ export default function ReportBalances() {
               type="date"
               value={asOf}
               onChange={(e) => setParams({ month, as_of: e.target.value })}
-              className="rounded-lg border border-line bg-card px-2 py-1 text-sm"
+              className="date-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
             />
           </label>
           <button

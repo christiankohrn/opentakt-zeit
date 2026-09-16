@@ -41,7 +41,7 @@ export default function ReportJubilees() {
       <Link to="/auswertungen" className="text-sm text-muted">
         ← Auswertungen
       </Link>
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+      <div className="mt-2 flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-start lg:justify-between">
         <h1 className="text-xl font-medium">Jubiläen</h1>
         <div className="flex flex-wrap items-center gap-2">
           <input

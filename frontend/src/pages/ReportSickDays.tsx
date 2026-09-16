@@ -61,21 +61,21 @@ export default function ReportSickDays() {
       <Link to="/auswertungen" className="text-sm text-muted">
         ← Auswertungen
       </Link>
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+      <div className="mt-2 flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-start lg:justify-between">
         <h1 className="text-xl font-medium">Krankheitstage</h1>
         <div className="flex flex-wrap items-center gap-2">
           <input
             type="date"
             value={from}
             onChange={(e) => setFilter(e.target.value, to, selectedIds)}
-            className="rounded-lg border border-line bg-card px-2 py-1 text-sm"
+            className="date-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
           />
           <span className="text-sm text-muted">bis</span>
           <input
             type="date"
             value={to}
             onChange={(e) => setFilter(from, e.target.value, selectedIds)}
-            className="rounded-lg border border-line bg-card px-2 py-1 text-sm"
+            className="date-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
           />
           <PersonFilter users={users} selectedIds={selectedIds} onChange={(ids) => setFilter(from, to, ids)} />
           <button
