@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import normalize_username
 from app.config import get_config
-from app.models import AuditEvent, User, WorkModel, WorkModelAssignment
+from app.models import AuditEvent, Department, User, WorkModel, WorkModelAssignment
 from app.security import hash_password
 from app.workmodels import BACKFILL_FROM, ensure_initial_assignment
 
@@ -42,6 +42,10 @@ def seed_if_empty(db: Session) -> None:
     )
     db.add(shift)
     db.flush()
+    produktion = Department(name="Produktion")
+    lager = Department(name="Lager")
+    db.add_all([produktion, lager])
+    db.flush()
     users = [
         User(
             username=normalize_username(cfg.seed.admin_username),
@@ -66,6 +70,7 @@ def seed_if_empty(db: Session) -> None:
             password_hash=hash_password(cfg.seed.employee_password),
             role="employee",
             work_model_id=model.id,
+            department_id=produktion.id,
         ),
         User(
             username=normalize_username(cfg.seed.shift_username),
@@ -74,6 +79,7 @@ def seed_if_empty(db: Session) -> None:
             password_hash=hash_password(cfg.seed.shift_password),
             role="employee",
             work_model_id=shift.id,
+            department_id=lager.id,
         ),
     ]
     db.add_all(users)

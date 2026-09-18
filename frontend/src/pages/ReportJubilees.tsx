@@ -1,34 +1,46 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { api, type JubileeEvent } from "../api";
+import { api, type JubileeEvent, type User } from "../api";
+import PersonFilter from "../components/PersonFilter";
 import ReportToolbar, { ExportButtons } from "../components/ReportToolbar";
-import { formatDeDate, payrollHalf, payrollYear } from "../reportPeriod";
+import { formatDeDate, parseUserIds, payrollHalf, payrollYear } from "../reportPeriod";
 
 export default function ReportJubilees() {
   const [params, setParams] = useSearchParams();
   const year = Number(params.get("year") || payrollYear());
   const half = Number(params.get("half") || payrollHalf()) === 2 ? 2 : 1;
+  const userIdsKey = params.get("user_ids");
+  const selectedIds = parseUserIds(userIdsKey);
+  const [users, setUsers] = useState<User[]>([]);
   const [events, setEvents] = useState<JubileeEvent[]>([]);
   const [error, setError] = useState("");
 
   useEffect(() => {
+    api.users().then(setUsers).catch((err: Error) => setError(err.message));
+  }, []);
+
+  useEffect(() => {
     if (!params.get("year") || !params.get("half")) {
-      setParams({ year: String(year), half: String(half) }, { replace: true });
+      const next: Record<string, string> = { year: String(year), half: String(half) };
+      if (userIdsKey !== null) next.user_ids = userIdsKey;
+      setParams(next, { replace: true });
     }
-  }, [half, params, setParams, year]);
+  }, [half, params, setParams, userIdsKey, year]);
 
   useEffect(() => {
     api
-      .jubilees(year, half)
+      .jubilees(year, half, parseUserIds(userIdsKey))
       .then((r) => {
         setEvents(r.events);
         setError("");
       })
       .catch((err: Error) => setError(err.message));
-  }, [half, year]);
+  }, [half, userIdsKey, year]);
 
-  function setFilter(nextYear: number, nextHalf: number) {
-    setParams({ year: String(nextYear), half: String(nextHalf) });
+  function setFilter(nextYear: number, nextHalf: number, ids: number[] | null) {
+    const query: Record<string, string> = { year: String(nextYear), half: String(nextHalf) };
+    if (ids !== null) query.user_ids = ids.join(",");
+    setParams(query);
   }
 
   return (
@@ -40,8 +52,8 @@ export default function ReportJubilees() {
         title="Jubiläen"
         actions={
           <ExportButtons
-            onCsv={() => void api.downloadJubileesCsv(year, half)}
-            onPdf={() => void api.downloadJubileesPdf(year, half)}
+            onCsv={() => void api.downloadJubileesCsv(year, half, selectedIds)}
+            onPdf={() => void api.downloadJubileesPdf(year, half, selectedIds)}
           />
         }
       >
@@ -50,17 +62,18 @@ export default function ReportJubilees() {
           min={1990}
           max={2100}
           value={year}
-          onChange={(e) => setFilter(Number(e.target.value), half)}
+          onChange={(e) => setFilter(Number(e.target.value), half, selectedIds)}
           className="w-24 shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
         />
         <select
           value={half}
-          onChange={(e) => setFilter(year, Number(e.target.value))}
+          onChange={(e) => setFilter(year, Number(e.target.value), selectedIds)}
           className="shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
         >
           <option value={1}>1. Halbjahr</option>
           <option value={2}>2. Halbjahr</option>
         </select>
+        <PersonFilter users={users} selectedIds={selectedIds} onChange={(ids) => setFilter(year, half, ids)} />
       </ReportToolbar>
       <p className="mt-2 text-sm text-muted">
         Geburtstage, Eintrittstage und 10/25/40-Jahr-Jubiläen. Ohne Geburtstag erscheinen nur Eintritt und Jubiläen.

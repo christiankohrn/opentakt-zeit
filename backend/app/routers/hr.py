@@ -15,7 +15,7 @@ from app.auth import HR_ROLES, as_local, bump_session_rev, current_user, local_d
 from app.balance import account_hours, days_in_range, summarize_user_day
 from app.datafox import normalize_badge
 from app.database import get_db
-from app.models import Absence, AuditEvent, DayAcceptance, Punch, User, WorkModel, WorkModelAssignment
+from app.models import Absence, AuditEvent, DayAcceptance, Department, Punch, User, WorkModel, WorkModelAssignment
 from app.schemas import (
     AbsenceRangeIn,
     CalendarIn,
@@ -23,6 +23,8 @@ from app.schemas import (
     CorrectionIn,
     DayAcceptIn,
     DayReplaceIn,
+    DepartmentIn,
+    DepartmentOut,
     OrgSettingsIn,
     OrgSettingsOut,
     SecurityPolicyIn,
@@ -119,9 +121,52 @@ def _attach_accepted(summary: dict, acc: DayAcceptance | None) -> dict:
     return summary
 
 
+def _user_with_rels():
+    return select(User).options(selectinload(User.work_model), selectinload(User.department))
+
+
 def _user_out(user: User) -> UserOut:
     out = UserOut.model_validate(user)
-    return out.model_copy(update={"work_model_name": user.work_model.name if user.work_model else None})
+    return out.model_copy(
+        update={
+            "work_model_name": user.work_model.name if user.work_model else None,
+            "department_name": user.department.name if user.department else None,
+        }
+    )
+
+
+def _department_by_id(db: Session, department_id: int | None) -> Department | None:
+    if department_id is None:
+        return None
+    dept = db.get(Department, department_id)
+    if not dept:
+        raise HTTPException(400, "Abteilung nicht gefunden")
+    return dept
+
+
+def _set_department(db: Session, user: User, department_id: int | None) -> None:
+    dept = _department_by_id(db, department_id)
+    user.department_id = dept.id if dept is not None else None
+    user.department = dept
+
+
+def _norm_dept_name(name: str) -> str:
+    cleaned = " ".join(name.split()).strip()
+    if not cleaned:
+        raise HTTPException(400, "Name der Abteilung fehlt")
+    return cleaned
+
+
+def _dept_name_taken(db: Session, name: str, exclude_id: int | None = None) -> bool:
+    q = select(Department).where(func.lower(Department.name) == name.lower())
+    if exclude_id is not None:
+        q = q.where(Department.id != exclude_id)
+    return db.scalar(q) is not None
+
+
+def _dept_out(db: Session, dept: Department) -> DepartmentOut:
+    count = db.scalar(select(func.count(User.id)).where(User.department_id == dept.id)) or 0
+    return DepartmentOut(id=dept.id, name=dept.name, user_count=int(count))
 
 
 def _clean_transponder(value: str | None) -> str | None:
@@ -180,7 +225,7 @@ def _check_employment_dates(user: User) -> None:
 @router.get("/users", response_model=list[UserOut])
 def list_users(request: Request, db: Session = Depends(get_db)):
     _actor(request, db)
-    users = list(db.scalars(select(User).options(selectinload(User.work_model)).order_by(User.display_name)))
+    users = list(db.scalars(_user_with_rels().order_by(User.display_name)))
     counts = passkey_counts(db, [u.id for u in users])
     return [_user_out(u).model_copy(update={"passkey_count": counts.get(u.id, 0)}) for u in users]
 
@@ -206,6 +251,7 @@ def create_user(payload: UserWrite, request: Request, db: Session = Depends(get_
             raise HTTPException(400, "Mailserver ist nicht eingerichtet")
     else:
         _require_password(payload.role, web_login, payload.password, False)
+    dept = _department_by_id(db, payload.department_id)
     user = User(
         username=username,
         display_name=payload.display_name.strip(),
@@ -213,6 +259,7 @@ def create_user(payload: UserWrite, request: Request, db: Session = Depends(get_
         role=payload.role,
         active=payload.active,
         work_model_id=payload.work_model_id,
+        department_id=dept.id if dept is not None else None,
         auth_source="local",
         password_hash=hash_password(payload.password) if payload.password else None,
         auto_break=payload.auto_break,
@@ -222,6 +269,7 @@ def create_user(payload: UserWrite, request: Request, db: Session = Depends(get_
         birthday=payload.birthday,
         vacation_days_year=payload.vacation_days_year,
     )
+    user.department = dept
     _check_employment_dates(user)
     _set_transponder(db, user, payload.transponder_id)
     db.add(user)
@@ -290,6 +338,8 @@ def patch_user(user_id: int, payload: UserWrite, request: Request, db: Session =
             raise HTTPException(400, str(exc)) from exc
     elif payload.work_model_id is None:
         user.work_model_id = None
+    if "department_id" in payload.model_fields_set:
+        _set_department(db, user, payload.department_id)
     user.auto_break = payload.auto_break
     user.web_login = next_web_login
     if "transponder_id" in payload.model_fields_set:
@@ -372,7 +422,7 @@ ALLOWED_ROLES = {"employee", "supervisor", "hr", "admin"}
 @router.patch("/users/{user_id}/account", response_model=UserOut)
 def patch_user_account(user_id: int, payload: UserAccountIn, request: Request, db: Session = Depends(get_db)):
     actor = _actor(request, db)
-    user = db.scalar(select(User).options(selectinload(User.work_model)).where(User.id == user_id))
+    user = db.scalar(_user_with_rels().where(User.id == user_id))
     if not user:
         raise HTTPException(404, "Nicht gefunden")
     if payload.username is not None:
@@ -416,6 +466,8 @@ def patch_user_account(user_id: int, payload: UserAccountIn, request: Request, d
         user.birthday = payload.birthday
     if "vacation_days_year" in payload.model_fields_set:
         user.vacation_days_year = payload.vacation_days_year
+    if "department_id" in payload.model_fields_set:
+        _set_department(db, user, payload.department_id)
     _check_employment_dates(user)
     _require_password(user.role, user.web_login, None, bool(user.password_hash) or has_open_invite(db, user))
     db.add(
@@ -482,12 +534,88 @@ def create_model(payload: WorkModelIn, request: Request, db: Session = Depends(g
             action="workmodel.create",
             entity_type="work_model",
             entity_id=str(model.id),
-            payload=json.dumps({"name": model.name}),
         )
     )
     db.commit()
     db.refresh(model)
     return model
+
+
+@router.get("/departments", response_model=list[DepartmentOut])
+def list_departments(request: Request, db: Session = Depends(get_db)):
+    _actor(request, db)
+    depts = list(db.scalars(select(Department).order_by(Department.name)))
+    return [_dept_out(db, dept) for dept in depts]
+
+
+@router.post("/departments", response_model=DepartmentOut)
+def create_department(payload: DepartmentIn, request: Request, db: Session = Depends(get_db)):
+    actor = _actor(request, db)
+    name = _norm_dept_name(payload.name)
+    if _dept_name_taken(db, name):
+        raise HTTPException(409, "Abteilung gibt es schon")
+    dept = Department(name=name)
+    db.add(dept)
+    db.flush()
+    db.add(
+        AuditEvent(
+            actor_id=actor.id,
+            action="department.create",
+            entity_type="department",
+            entity_id=str(dept.id),
+            payload=json.dumps({"name": dept.name}),
+        )
+    )
+    db.commit()
+    db.refresh(dept)
+    return _dept_out(db, dept)
+
+
+@router.patch("/departments/{department_id}", response_model=DepartmentOut)
+def patch_department(department_id: int, payload: DepartmentIn, request: Request, db: Session = Depends(get_db)):
+    actor = _actor(request, db)
+    dept = db.get(Department, department_id)
+    if not dept:
+        raise HTTPException(404, "Nicht gefunden")
+    name = _norm_dept_name(payload.name)
+    if _dept_name_taken(db, name, exclude_id=dept.id):
+        raise HTTPException(409, "Abteilung gibt es schon")
+    dept.name = name
+    db.add(
+        AuditEvent(
+            actor_id=actor.id,
+            action="department.update",
+            entity_type="department",
+            entity_id=str(dept.id),
+            payload=json.dumps({"name": dept.name}),
+        )
+    )
+    db.commit()
+    db.refresh(dept)
+    return _dept_out(db, dept)
+
+
+@router.delete("/departments/{department_id}")
+def delete_department(department_id: int, request: Request, db: Session = Depends(get_db)):
+    actor = _actor(request, db)
+    dept = db.get(Department, department_id)
+    if not dept:
+        raise HTTPException(404, "Nicht gefunden")
+    used = db.scalar(select(func.count(User.id)).where(User.department_id == dept.id)) or 0
+    if used:
+        raise HTTPException(409, "Abteilung ist noch zugeordnet")
+    db.add(
+        AuditEvent(
+            actor_id=actor.id,
+            action="department.delete",
+            entity_type="department",
+            entity_id=str(dept.id),
+            payload=json.dumps({"name": dept.name}),
+        )
+    )
+    db.delete(dept)
+    db.commit()
+    return {"ok": True}
 
 
 @router.get("/settings", response_model=OrgSettingsOut)
@@ -763,7 +891,7 @@ def user_days(
     month: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
 ):
     _actor(request, db)
-    user = db.scalar(select(User).options(selectinload(User.work_model)).where(User.id == user_id))
+    user = db.scalar(_user_with_rels().where(User.id == user_id))
     if not user:
         raise HTTPException(404, "Nicht gefunden")
     year, mon = (int(x) for x in month.split("-"))
@@ -1080,7 +1208,7 @@ def balances(
     end = date(year + 1, 1, 1) if mon == 12 else date(year, mon + 1, 1)
     last = end - timedelta(days=1)
     q_start, q_end = punches_window_for_month(start, last)
-    users = list(db.scalars(select(User).options(selectinload(User.work_model)).order_by(User.display_name)))
+    users = list(db.scalars(_user_with_rels().order_by(User.display_name)))
     timelines = load_timelines(db, [u.id for u in users])
     cal = calendar_map(db, start, last)
     today = as_local(now_utc()).date()
@@ -1140,8 +1268,7 @@ def plausibility(
     q_start, q_end = punches_window_for_month(start, last)
     users = list(
         db.scalars(
-            select(User)
-            .options(selectinload(User.work_model))
+            _user_with_rels()
             .where(User.active.is_(True), User.role.in_(("employee", "supervisor")))
             .order_by(User.display_name)
         )
@@ -1193,7 +1320,7 @@ def plausibility(
             continue
         rows.append(
             {
-                "user": UserOut.model_validate(user),
+                "user": _user_out(user),
                 "model_name": user.work_model.name if user.work_model else None,
                 "issue_count": total,
                 "days_with_issues": len(flagged),
@@ -1231,7 +1358,7 @@ def export_csv(
     user_id: int | None = None,
 ):
     _actor(request, db)
-    q = select(User).options(selectinload(User.work_model)).order_by(User.display_name)
+    q = _user_with_rels().order_by(User.display_name)
     if user_id:
         q = q.where(User.id == user_id)
     users = list(db.scalars(q))

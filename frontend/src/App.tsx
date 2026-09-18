@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from "./auth";
 import Layout from "./components/Layout";
 import HrCalendar from "./pages/HrCalendar";
 import HrDay from "./pages/HrDay";
+import HrDepartments from "./pages/HrDepartments";
 import HrModels from "./pages/HrModels";
 import HrPlausibility from "./pages/HrPlausibility";
 import HrUserMonth from "./pages/HrUserMonth";
@@ -87,6 +88,7 @@ const router = createBrowserRouter([
           { path: "auswertungen/nacht", element: <Navigate to="/auswertungen/lohnarten" replace /> },
           { path: "auswertungen/journal", element: <ReportJournal /> },
           { path: "modelle", element: <HrModels /> },
+          { path: "abteilungen", element: <HrDepartments /> },
           { path: "feiertage", element: <HrCalendar /> },
         ],
       },

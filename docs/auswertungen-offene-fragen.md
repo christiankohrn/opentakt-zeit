@@ -26,7 +26,7 @@ Offen sind u. a. Berufsschule, Sonderurlaub, Raucherpause, Dienstgang. Welche da
 
 ## 4. Abteilungen
 
-Sollen Auswertungen nach Abteilung gefiltert und gruppiert werden? Wenn ja: Abteilung am Mitarbeitenden, am Arbeitsmodell, oder eigene Stammdaten mit Gültigkeitszeitraum?
+Erledigt: eigene Stammdaten, optionales Feld am Mitarbeitenden (kein Gültigkeitszeitraum). Auswertungen filtern über den Personenfilter, gruppiert nach Abteilung.
 
 ## 5. Personalnummer (PNR)
 
@@ -62,4 +62,4 @@ Reicht der Modellname in Monatssalden und Journal, oder muss dort die Lohnart-Be
 
 ---
 
-Sobald die Antworten stehen, können Urlaubskonto, Kappe, Buchungsarten, Abteilungen, PNR und Lohnarten in eigenen PRs folgen.
+Sobald die Antworten stehen, können Urlaubskonto, Kappe, Buchungsarten, PNR und Lohnarten in eigenen PRs folgen.

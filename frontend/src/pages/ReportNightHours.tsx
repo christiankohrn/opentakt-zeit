@@ -1,44 +1,48 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { api, type NightHoursRow } from "../api";
+import { api, type NightHoursRow, type User } from "../api";
+import PersonFilter from "../components/PersonFilter";
 import ReportToolbar, { ExportButtons } from "../components/ReportToolbar";
 import { formatHours } from "../labels";
-import { monthLabel, payrollMonth } from "../reportPeriod";
+import { monthLabel, parseUserIds, payrollMonth } from "../reportPeriod";
 
 export default function ReportNightHours() {
   const [params, setParams] = useSearchParams();
   const month = params.get("month") || payrollMonth();
   const showCombined = params.get("plus") !== "0";
+  const userIdsKey = params.get("user_ids");
+  const selectedIds = parseUserIds(userIdsKey);
+  const [users, setUsers] = useState<User[]>([]);
   const [people, setPeople] = useState<NightHoursRow[]>([]);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    api.users().then(setUsers).catch((err: Error) => setError(err.message));
+  }, []);
 
   useEffect(() => {
     if (!params.get("month")) {
       const next: Record<string, string> = { month };
       if (!showCombined) next.plus = "0";
+      if (userIdsKey !== null) next.user_ids = userIdsKey;
       setParams(next, { replace: true });
     }
-  }, [month, params, setParams, showCombined]);
+  }, [month, params, setParams, showCombined, userIdsKey]);
 
   useEffect(() => {
     api
-      .nightHours(month)
+      .nightHours(month, parseUserIds(userIdsKey))
       .then((r) => {
         setPeople(r.people);
         setError("");
       })
       .catch((err: Error) => setError(err.message));
-  }, [month]);
+  }, [month, userIdsKey]);
 
-  function setMonth(next: string) {
-    const query: Record<string, string> = { month: next };
-    if (!showCombined) query.plus = "0";
-    setParams(query);
-  }
-
-  function setCombined(on: boolean) {
-    const query: Record<string, string> = { month };
-    if (!on) query.plus = "0";
+  function setFilter(nextMonth: string, combined: boolean, ids: number[] | null) {
+    const query: Record<string, string> = { month: nextMonth };
+    if (!combined) query.plus = "0";
+    if (ids !== null) query.user_ids = ids.join(",");
     setParams(query);
   }
 
@@ -51,21 +55,22 @@ export default function ReportNightHours() {
         title="Lohnarten"
         actions={
           <ExportButtons
-            onCsv={() => void api.downloadNightHoursCsv(month)}
-            onPdf={() => void api.downloadNightHoursPdf(month)}
+            onCsv={() => void api.downloadNightHoursCsv(month, selectedIds)}
+            onPdf={() => void api.downloadNightHoursPdf(month, selectedIds)}
           />
         }
       >
         <input
           type="month"
           value={month}
-          onChange={(e) => setMonth(e.target.value)}
+          onChange={(e) => setFilter(e.target.value, showCombined, selectedIds)}
           className="month-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
         />
         <label className="flex shrink-0 items-center gap-2 text-sm">
-          <input type="checkbox" checked={showCombined} onChange={(e) => setCombined(e.target.checked)} />
+          <input type="checkbox" checked={showCombined} onChange={(e) => setFilter(month, e.target.checked, selectedIds)} />
           Summe aus 1 und 3
         </label>
+        <PersonFilter users={users} selectedIds={selectedIds} onChange={(ids) => setFilter(month, showCombined, ids)} />
       </ReportToolbar>
       <p className="mt-2 text-sm text-muted">
         {monthLabel(month)}. Lohnarten aus Nachtfenstern: 1 = 20–24, 2 = 0–4, 3 = 4–6 Uhr. Auto-Pause wird nicht

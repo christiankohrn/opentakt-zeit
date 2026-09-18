@@ -231,11 +231,12 @@ def month_balances(
     db: Session = Depends(get_db),
     month: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
     as_of: date | None = Query(None),
+    user_ids: str | None = Query(None),
     format: str | None = Query(None, alias="format"),
 ):
     _actor(request, db)
     stichtag = as_of or as_local(now_utc()).date()
-    people = month_balances_report(db, month, as_of=stichtag)
+    people = month_balances_report(db, month, as_of=stichtag, user_ids=_parse_user_ids(user_ids))
     subtitle = f"Stand {format_de_date(stichtag)} · {format_month_label(month)}"
     csv_headers = [
         "Name",
@@ -329,10 +330,11 @@ def jubilees(
     db: Session = Depends(get_db),
     year: int = Query(..., ge=1990, le=2100),
     half: int = Query(..., ge=1, le=2),
+    user_ids: str | None = Query(None),
     format: str | None = Query(None, alias="format"),
 ):
     _actor(request, db)
-    events = jubilees_report(db, year, half)
+    events = jubilees_report(db, year, half, _parse_user_ids(user_ids))
     half_label = "1. Halbjahr" if half == 1 else "2. Halbjahr"
     subtitle = f"{half_label} {year}"
     if _want_pdf(request, format):
@@ -380,10 +382,11 @@ def night_hours(
     request: Request,
     db: Session = Depends(get_db),
     month: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
+    user_ids: str | None = Query(None),
     format: str | None = Query(None, alias="format"),
 ):
     _actor(request, db)
-    people = night_hours_report(db, month)
+    people = night_hours_report(db, month, user_ids=_parse_user_ids(user_ids))
     subtitle = format_month_label(month)
     if _want_pdf(request, format):
         totals = None

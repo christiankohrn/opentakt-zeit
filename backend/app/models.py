@@ -9,6 +9,16 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
 
+class Department(Base):
+    __tablename__ = "departments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+    users: Mapped[list["User"]] = relationship(back_populates="department")
+
+
 class WorkModel(Base):
     __tablename__ = "work_models"
 
@@ -42,6 +52,7 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(32), default="employee")
     active: Mapped[bool] = mapped_column(default=True)
     work_model_id: Mapped[Optional[int]] = mapped_column(ForeignKey("work_models.id"), nullable=True)
+    department_id: Mapped[Optional[int]] = mapped_column(ForeignKey("departments.id"), nullable=True)
     auto_break: Mapped[bool] = mapped_column(default=False)
     transponder_id: Mapped[Optional[str]] = mapped_column(String(80), unique=True, nullable=True)
     web_login: Mapped[bool] = mapped_column(default=True)
@@ -56,6 +67,7 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
     work_model: Mapped[Optional[WorkModel]] = relationship(back_populates="users")
+    department: Mapped[Optional[Department]] = relationship(back_populates="users")
     model_assignments: Mapped[list["WorkModelAssignment"]] = relationship(
         back_populates="user",
         foreign_keys="WorkModelAssignment.user_id",
