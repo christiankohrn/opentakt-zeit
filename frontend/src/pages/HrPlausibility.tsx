@@ -1,6 +1,6 @@
 import { Link, useSearchParams } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { api } from "../api";
+import { api, type Department } from "../api";
 import { formatDayLabel, warnLabel } from "../labels";
 
 function payrollMonth() {
@@ -16,41 +16,71 @@ export default function HrPlausibility() {
   const [params, setParams] = useSearchParams();
   const month = params.get("month") || payrollMonth();
   const userFilter = params.get("user");
+  const deptFilter = params.get("dept") || "";
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [people, setPeople] = useState<
     Awaited<ReturnType<typeof api.plausibility>>["people"]
   >([]);
 
-  function setMonth(next: string) {
-    const nextParams: Record<string, string> = { month: next };
+  function setFilter(nextMonth: string, nextDept: string) {
+    const nextParams: Record<string, string> = { month: nextMonth };
     if (userFilter) nextParams.user = userFilter;
+    if (nextDept) nextParams.dept = nextDept;
     setParams(nextParams);
   }
+
+  useEffect(() => {
+    api.departments().then(setDepartments).catch(() => setDepartments([]));
+  }, []);
 
   useEffect(() => {
     if (!params.get("month")) {
       const next: Record<string, string> = { month };
       if (userFilter) next.user = userFilter;
+      if (deptFilter) next.dept = deptFilter;
       setParams(next, { replace: true });
     }
-  }, [month, params, setParams, userFilter]);
+  }, [deptFilter, month, params, setParams, userFilter]);
 
   useEffect(() => {
     api.plausibility(month).then((r) => setPeople(r.people));
   }, [month]);
 
-  const visible = userFilter ? people.filter((p) => String(p.user.id) === userFilter) : people;
+  const visible = people.filter((p) => {
+    if (userFilter && String(p.user.id) !== userFilter) return false;
+    if (deptFilter === "none") return !p.user.department_id;
+    if (deptFilter) return String(p.user.department_id) === deptFilter;
+    return true;
+  });
   const filteredName = visible[0]?.user.display_name;
 
   return (
     <div className="pt-2">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-medium">Prüfung</h1>
-        <input
-          type="month"
-          value={month}
-          onChange={(e) => setMonth(e.target.value)}
-          className="month-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          {departments.length > 0 || deptFilter ? (
+            <select
+              className="max-w-xs rounded-lg border border-line bg-card px-2 py-1 text-sm"
+              value={deptFilter}
+              onChange={(e) => setFilter(month, e.target.value)}
+            >
+              <option value="">Alle Abteilungen</option>
+              {departments.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+              <option value="none">Ohne Abteilung</option>
+            </select>
+          ) : null}
+          <input
+            type="month"
+            value={month}
+            onChange={(e) => setFilter(e.target.value, deptFilter)}
+            className="month-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
+          />
+        </div>
       </div>
       <p className="mt-2 text-sm text-muted">
         Unregelmäßigkeiten im Monat: fehlende Buchungen, Pausen, Überlänge, offene Tage.{" "}
@@ -61,7 +91,7 @@ export default function HrPlausibility() {
       {userFilter ? (
         <p className="mt-2 text-sm">
           {filteredName ? `Nur ${filteredName}.` : "Nur diese Person."}{" "}
-          <Link to={`/pruefung?month=${month}`} className="text-present">
+          <Link to={`/pruefung?month=${month}${deptFilter ? `&dept=${deptFilter}` : ""}`} className="text-present">
             Alle anzeigen
           </Link>
         </p>
@@ -82,7 +112,9 @@ export default function HrPlausibility() {
                   >
                     {p.user.display_name}
                   </Link>
-                  <p className="mt-0.5 text-xs text-muted">{p.model_name ?? "ohne Modell"}</p>
+                  <p className="mt-0.5 text-xs text-muted">
+                    {[p.user.department_name, p.model_name ?? "ohne Modell"].filter(Boolean).join(" · ")}
+                  </p>
                 </div>
                 <div
                   className="shrink-0 rounded-xl bg-danger/10 px-2.5 py-1.5 text-right"

@@ -37,7 +37,9 @@ export default function Reports() {
   return (
     <div className="pt-2">
       <h1 className="text-xl font-medium">Auswertungen</h1>
-      <p className="mt-2 text-sm text-muted">Berichte für Personal. CSV- und PDF-Export in jedem Bericht.</p>
+      <p className="mt-2 text-sm text-muted">
+        Berichte für Personal. CSV- und PDF-Export in jedem Bericht. Personenfilter nach Abteilung.
+      </p>
       <ul className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {REPORTS.map((r) => (
           <li key={r.to}>

@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { api, type FlexBalance, type User, type WorkModel } from "../api";
+import { api, type Department, type FlexBalance, type User, type WorkModel } from "../api";
 import { useAuth } from "../auth";
 import FieldError from "../components/FieldError";
 import PasswordField from "../components/PasswordField";
@@ -17,6 +17,7 @@ type UserForm = {
   password: string;
   role: string;
   work_model_id: string;
+  department_id: string;
   transponder_id: string;
   web_login: boolean;
   hired_on: string;
@@ -34,6 +35,7 @@ function emptyUserForm(workModelId: string): UserForm {
     password: "",
     role: "employee",
     work_model_id: workModelId,
+    department_id: "",
     transponder_id: "",
     web_login: true,
     hired_on: isoDate(),
@@ -78,8 +80,10 @@ export default function HrUsers() {
   const isAdmin = me?.role === "admin";
   const [params, setParams] = useSearchParams();
   const month = params.get("month") || payrollMonth();
+  const deptFilter = params.get("dept") || "";
   const [users, setUsers] = useState<User[]>([]);
   const [models, setModels] = useState<WorkModel[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [balances, setBalances] = useState<Record<number, FlexBalance>>({});
   const [open, setOpen] = useState(false);
   const [closeConfirm, setCloseConfirm] = useState(false);
@@ -93,11 +97,23 @@ export default function HrUsers() {
   const blocker = useUnsavedGuard(dirty);
   const sendingMail = Boolean(isAdmin && form.send_access_mail && form.web_login && mailReady);
   const passwordRequired = Boolean(isAdmin && form.web_login && !sendingMail);
+  const visible = users.filter((u) => {
+    if (!deptFilter) return true;
+    if (deptFilter === "none") return !u.department_id;
+    return String(u.department_id) === deptFilter;
+  });
 
   async function load() {
-    const [u, m, b, mail] = await Promise.all([api.users(), api.models(), api.balances(month), api.mailStatus().catch(() => ({ ready: false }))]);
+    const [u, m, d, b, mail] = await Promise.all([
+      api.users(),
+      api.models(),
+      api.departments(),
+      api.balances(month),
+      api.mailStatus().catch(() => ({ ready: false })),
+    ]);
     setUsers(u);
     setModels(m);
+    setDepartments(d);
     setBalances(Object.fromEntries(b.people.map((row) => [row.user_id, row])));
     setMailReady(mail.ready);
     if (m[0] && !form.work_model_id) setForm((f) => ({ ...f, work_model_id: String(m[0].id) }));
@@ -179,6 +195,7 @@ export default function HrUsers() {
         ...form,
         email: form.email.trim() || null,
         work_model_id: form.work_model_id ? Number(form.work_model_id) : null,
+        department_id: form.department_id ? Number(form.department_id) : null,
         transponder_id: form.transponder_id.trim() || null,
         role: isAdmin ? form.role : "employee",
         web_login: isAdmin ? form.web_login : false,
@@ -208,7 +225,11 @@ export default function HrUsers() {
         <input
           type="month"
           value={month}
-          onChange={(e) => setParams({ month: e.target.value })}
+          onChange={(e) => {
+            const next: Record<string, string> = { month: e.target.value };
+            if (deptFilter) next.dept = deptFilter;
+            setParams(next);
+          }}
           className="month-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
         />
       </div>
@@ -219,6 +240,9 @@ export default function HrUsers() {
         <Link to="/modelle" className="text-muted">
           Modelle
         </Link>
+        <Link to="/abteilungen" className="text-muted">
+          Abteilungen
+        </Link>
         <Link to="/feiertage" className="text-muted">
           Feiertage
         </Link>
@@ -226,6 +250,25 @@ export default function HrUsers() {
           {open ? "Schließen" : "Neu"}
         </button>
       </div>
+      {departments.length > 0 || deptFilter ? (
+        <select
+          className="mt-3 max-w-xs rounded-lg border border-line bg-card px-2 py-1 text-sm"
+          value={deptFilter}
+          onChange={(e) => {
+            const next: Record<string, string> = { month };
+            if (e.target.value) next.dept = e.target.value;
+            setParams(next);
+          }}
+        >
+          <option value="">Alle Abteilungen</option>
+          {departments.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.name}
+            </option>
+          ))}
+          <option value="none">Ohne Abteilung</option>
+        </select>
+      ) : null}
       {info ? <p className="mt-2 text-sm text-present">{info}</p> : null}
       {!open && error ? <p className="mt-2 text-sm text-danger">{error}</p> : null}
       {open ? (
@@ -417,6 +460,21 @@ export default function HrUsers() {
           ) : (
             <p className="text-xs text-muted">Neue Personen werden als Mitarbeiter ohne Web-Anmeldung angelegt. Rolle, Passwort und Web-Zugang setzt nur ein Administrator.</p>
           )}
+          <label className="block text-xs text-muted">
+            Abteilung
+            <select
+              className="mt-1 w-full rounded-lg border border-line bg-bg px-3 py-2 text-sm text-ink"
+              value={form.department_id}
+              onChange={(e) => patchForm({ department_id: e.target.value })}
+            >
+              <option value="">Keine Abteilung</option>
+              {departments.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+          </label>
           <select
             className="w-full rounded-lg border border-line bg-bg px-3 py-2"
             value={form.work_model_id}
@@ -436,7 +494,7 @@ export default function HrUsers() {
         </form>
       ) : null}
       <ul className="mt-4 space-y-2 md:hidden">
-        {users.map((u) => {
+        {visible.map((u) => {
           const flex = balances[u.id];
           return (
             <li key={u.id}>
@@ -449,6 +507,7 @@ export default function HrUsers() {
                       {{ employee: "Mitarbeiter", supervisor: "Vorgesetzt", hr: "Personal", admin: "Admin" }[u.role] ??
                         u.role}
                       {u.work_model_name ? ` · ${u.work_model_name}` : ""}
+                      {u.department_name ? ` · ${u.department_name}` : ""}
                       {u.transponder_id ? " · Terminal" : ""}
                       {u.web_login ? "" : " · nur Terminal"}
                       {u.active ? "" : " · inaktiv"}
@@ -476,6 +535,7 @@ export default function HrUsers() {
           <thead className="bg-card text-xs uppercase tracking-wider text-muted">
             <tr>
               <th className="px-4 py-3 font-medium">Name</th>
+              <th className="px-4 py-3 font-medium">Abteilung</th>
               <th className="px-4 py-3 font-medium">Benutzer</th>
               <th className="px-4 py-3 font-medium">Rolle</th>
               <th className="px-4 py-3 font-medium">Modell</th>
@@ -487,7 +547,7 @@ export default function HrUsers() {
             </tr>
           </thead>
           <tbody>
-            {users.map((u) => {
+            {visible.map((u) => {
               const flex = balances[u.id];
               return (
                 <tr key={u.id} className="border-t border-line bg-card">
@@ -496,6 +556,7 @@ export default function HrUsers() {
                       {u.display_name}
                     </Link>
                   </td>
+                  <td className="px-4 py-2.5 text-muted">{u.department_name ?? "—"}</td>
                   <td className="px-4 py-2.5 text-muted">{u.username}</td>
                   <td className="px-4 py-2.5">
                     {{ employee: "Mitarbeiter", supervisor: "Vorgesetzt", hr: "Personal", admin: "Admin" }[u.role] ??

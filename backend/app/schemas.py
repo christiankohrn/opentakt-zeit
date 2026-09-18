@@ -20,6 +20,8 @@ class UserOut(BaseModel):
     active: bool
     work_model_id: Optional[int]
     work_model_name: Optional[str] = None
+    department_id: Optional[int] = None
+    department_name: Optional[str] = None
     auth_source: str
     auto_break: bool = False
     transponder_id: Optional[str] = None
@@ -96,6 +98,18 @@ class WorkModelOut(WorkModelIn):
     model_config = {"from_attributes": True}
 
 
+class DepartmentIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+
+
+class DepartmentOut(BaseModel):
+    id: int
+    name: str
+    user_count: int = 0
+
+    model_config = {"from_attributes": True}
+
+
 class UserWrite(BaseModel):
     username: str
     display_name: str
@@ -104,6 +118,7 @@ class UserWrite(BaseModel):
     role: str = "employee"
     active: bool = True
     work_model_id: Optional[int] = None
+    department_id: Optional[int] = None
     auto_break: bool = False
     transponder_id: Optional[str] = None
     web_login: bool = True
@@ -164,6 +179,7 @@ class UserAccountIn(BaseModel):
     left_on: Optional[date] = None
     birthday: Optional[date] = None
     vacation_days_year: Optional[float] = Field(default=None, ge=0, le=366)
+    department_id: Optional[int] = None
 
 
 class PasswordChangeIn(BaseModel):

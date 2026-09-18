@@ -18,6 +18,8 @@ export type User = {
   active: boolean;
   work_model_id: number | null;
   work_model_name?: string | null;
+  department_id?: number | null;
+  department_name?: string | null;
   auth_source: string;
   auto_break: boolean;
   transponder_id: string | null;
@@ -88,6 +90,12 @@ export type WorkModel = {
   hours_fri: number;
   hours_sat: number;
   hours_sun: number;
+};
+
+export type Department = {
+  id: number;
+  name: string;
+  user_count: number;
 };
 
 export type FlexBalance = {
@@ -462,11 +470,18 @@ export const api = {
       left_on?: string | null;
       birthday?: string | null;
       vacation_days_year?: number | null;
+      department_id?: number | null;
     },
   ) => request<User>(`/api/hr/users/${id}/account`, { method: "PATCH", body: JSON.stringify(body) }),
   models: () => request<WorkModel[]>("/api/hr/work-models"),
   createModel: (body: Record<string, unknown>) =>
     request<WorkModel>("/api/hr/work-models", { method: "POST", body: JSON.stringify(body) }),
+  departments: () => request<Department[]>("/api/hr/departments"),
+  createDepartment: (body: { name: string }) =>
+    request<Department>("/api/hr/departments", { method: "POST", body: JSON.stringify(body) }),
+  patchDepartment: (id: number, body: { name: string }) =>
+    request<Department>(`/api/hr/departments/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  deleteDepartment: (id: number) => request(`/api/hr/departments/${id}`, { method: "DELETE" }),
   userModels: (userId: number) => request<WorkModelAssignment[]>(`/api/hr/users/${userId}/work-models`),
   assignUserModel: (userId: number, body: { work_model_id: number; valid_from: string }) =>
     request<WorkModelAssignment>(`/api/hr/users/${userId}/work-models`, { method: "POST", body: JSON.stringify(body) }),
@@ -569,16 +584,18 @@ export const api = {
     request<{ from: string; to: string; year: number; people: AbsenceDaysRow[] }>(
       `/api/hr/reports/vacation-days?${reportQuery({ from, to, user_ids: userIdsQuery(userIds) })}`,
     ),
-  monthBalances: (month: string, asOf: string) =>
+  monthBalances: (month: string, asOf: string, userIds?: number[] | null) =>
     request<{ month: string; as_of: string; note: string; people: MonthBalanceRow[] }>(
-      `/api/hr/reports/month-balances?${reportQuery({ month, as_of: asOf })}`,
+      `/api/hr/reports/month-balances?${reportQuery({ month, as_of: asOf, user_ids: userIdsQuery(userIds) })}`,
     ),
-  jubilees: (year: number, half: number) =>
+  jubilees: (year: number, half: number, userIds?: number[] | null) =>
     request<{ year: number; half: number; events: JubileeEvent[] }>(
-      `/api/hr/reports/jubilees?year=${year}&half=${half}`,
+      `/api/hr/reports/jubilees?${reportQuery({ year, half, user_ids: userIdsQuery(userIds) })}`,
     ),
-  nightHours: (month: string) =>
-    request<{ month: string; people: NightHoursRow[] }>(`/api/hr/reports/night-hours?month=${month}`),
+  nightHours: (month: string, userIds?: number[] | null) =>
+    request<{ month: string; people: NightHoursRow[] }>(
+      `/api/hr/reports/night-hours?${reportQuery({ month, user_ids: userIdsQuery(userIds) })}`,
+    ),
   journals: (month: string, userIds?: number[] | null) =>
     request<{ month: string; people: JournalReport[] }>(
       `/api/hr/reports/journal?${reportQuery({ month, user_ids: userIdsQuery(userIds) })}`,
@@ -608,24 +625,30 @@ export const api = {
       `/api/hr/reports/vacation-days.pdf?${reportQuery({ from, to, user_ids: userIdsQuery(userIds) })}`,
       `urlaubstage-${from}-${to}.pdf`,
     ),
-  downloadMonthBalancesCsv: (month: string, asOf: string) =>
+  downloadMonthBalancesCsv: (month: string, asOf: string, userIds?: number[] | null) =>
     downloadFile(
-      `/api/hr/reports/month-balances.csv?${reportQuery({ month, as_of: asOf })}`,
+      `/api/hr/reports/month-balances.csv?${reportQuery({ month, as_of: asOf, user_ids: userIdsQuery(userIds) })}`,
       `salden-${month}-stichtag-${asOf}.csv`,
     ),
-  downloadMonthBalancesPdf: (month: string, asOf: string) =>
+  downloadMonthBalancesPdf: (month: string, asOf: string, userIds?: number[] | null) =>
     downloadFile(
-      `/api/hr/reports/month-balances.pdf?${reportQuery({ month, as_of: asOf })}`,
+      `/api/hr/reports/month-balances.pdf?${reportQuery({ month, as_of: asOf, user_ids: userIdsQuery(userIds) })}`,
       `salden-${month}-stichtag-${asOf}.pdf`,
     ),
-  downloadJubileesCsv: (year: number, half: number) =>
-    downloadFile(`/api/hr/reports/jubilees.csv?year=${year}&half=${half}`, `jubilaeen-${year}-hj${half}.csv`),
-  downloadJubileesPdf: (year: number, half: number) =>
-    downloadFile(`/api/hr/reports/jubilees.pdf?year=${year}&half=${half}`, `jubilaeen-${year}-hj${half}.pdf`),
-  downloadNightHoursCsv: (month: string) =>
-    downloadFile(`/api/hr/reports/night-hours.csv?month=${month}`, `lohnarten-${month}.csv`),
-  downloadNightHoursPdf: (month: string) =>
-    downloadFile(`/api/hr/reports/night-hours.pdf?month=${month}`, `lohnarten-${month}.pdf`),
+  downloadJubileesCsv: (year: number, half: number, userIds?: number[] | null) =>
+    downloadFile(
+      `/api/hr/reports/jubilees.csv?${reportQuery({ year, half, user_ids: userIdsQuery(userIds) })}`,
+      `jubilaeen-${year}-hj${half}.csv`,
+    ),
+  downloadJubileesPdf: (year: number, half: number, userIds?: number[] | null) =>
+    downloadFile(
+      `/api/hr/reports/jubilees.pdf?${reportQuery({ year, half, user_ids: userIdsQuery(userIds) })}`,
+      `jubilaeen-${year}-hj${half}.pdf`,
+    ),
+  downloadNightHoursCsv: (month: string, userIds?: number[] | null) =>
+    downloadFile(`/api/hr/reports/night-hours.csv?${reportQuery({ month, user_ids: userIdsQuery(userIds) })}`, `lohnarten-${month}.csv`),
+  downloadNightHoursPdf: (month: string, userIds?: number[] | null) =>
+    downloadFile(`/api/hr/reports/night-hours.pdf?${reportQuery({ month, user_ids: userIdsQuery(userIds) })}`, `lohnarten-${month}.pdf`),
   downloadJournalPdf: (month: string, userIds?: number[] | null) =>
     downloadFile(
       `/api/hr/reports/journal.pdf?${reportQuery({ month, user_ids: userIdsQuery(userIds) })}`,

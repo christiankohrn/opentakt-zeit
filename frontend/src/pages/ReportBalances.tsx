@@ -1,37 +1,49 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { api, type MonthBalanceRow } from "../api";
+import { api, type MonthBalanceRow, type User } from "../api";
+import PersonFilter from "../components/PersonFilter";
 import ReportToolbar, { ExportButtons } from "../components/ReportToolbar";
 import { signedHours } from "../labels";
-import { defaultStichtag, formatDeDate, monthLabel, payrollMonth } from "../reportPeriod";
+import { defaultStichtag, formatDeDate, monthLabel, parseUserIds, payrollMonth } from "../reportPeriod";
 
 export default function ReportBalances() {
   const [params, setParams] = useSearchParams();
   const month = params.get("month") || payrollMonth();
   const asOf = params.get("as_of") || defaultStichtag(month);
+  const userIdsKey = params.get("user_ids");
+  const selectedIds = parseUserIds(userIdsKey);
+  const [users, setUsers] = useState<User[]>([]);
   const [people, setPeople] = useState<MonthBalanceRow[]>([]);
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
+    api.users().then(setUsers).catch((err: Error) => setError(err.message));
+  }, []);
+
+  useEffect(() => {
     if (!params.get("month") || !params.get("as_of")) {
-      setParams({ month, as_of: asOf }, { replace: true });
+      const next: Record<string, string> = { month, as_of: asOf };
+      if (userIdsKey !== null) next.user_ids = userIdsKey;
+      setParams(next, { replace: true });
     }
-  }, [asOf, month, params, setParams]);
+  }, [asOf, month, params, setParams, userIdsKey]);
 
   useEffect(() => {
     api
-      .monthBalances(month, asOf)
+      .monthBalances(month, asOf, parseUserIds(userIdsKey))
       .then((r) => {
         setPeople(r.people);
         setNote(r.note);
         setError("");
       })
       .catch((err: Error) => setError(err.message));
-  }, [asOf, month]);
+  }, [asOf, month, userIdsKey]);
 
-  function setMonth(next: string) {
-    setParams({ month: next, as_of: defaultStichtag(next) });
+  function setFilter(nextMonth: string, nextAsOf: string, ids: number[] | null) {
+    const query: Record<string, string> = { month: nextMonth, as_of: nextAsOf };
+    if (ids !== null) query.user_ids = ids.join(",");
+    setParams(query);
   }
 
   return (
@@ -43,15 +55,15 @@ export default function ReportBalances() {
         title="Monatssalden"
         actions={
           <ExportButtons
-            onCsv={() => void api.downloadMonthBalancesCsv(month, asOf)}
-            onPdf={() => void api.downloadMonthBalancesPdf(month, asOf)}
+            onCsv={() => void api.downloadMonthBalancesCsv(month, asOf, selectedIds)}
+            onPdf={() => void api.downloadMonthBalancesPdf(month, asOf, selectedIds)}
           />
         }
       >
         <input
           type="month"
           value={month}
-          onChange={(e) => setMonth(e.target.value)}
+          onChange={(e) => setFilter(e.target.value, defaultStichtag(e.target.value), selectedIds)}
           className="month-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
         />
         <label className="flex shrink-0 items-center gap-2 text-sm">
@@ -59,10 +71,11 @@ export default function ReportBalances() {
           <input
             type="date"
             value={asOf}
-            onChange={(e) => setParams({ month, as_of: e.target.value })}
+            onChange={(e) => setFilter(month, e.target.value, selectedIds)}
             className="date-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
           />
         </label>
+        <PersonFilter users={users} selectedIds={selectedIds} onChange={(ids) => setFilter(month, asOf, ids)} />
       </ReportToolbar>
       <p className="mt-2 text-sm text-muted">
         Stand {formatDeDate(asOf)} · {monthLabel(month)}. Zeitkonto bis zum früheren von Stichtag und heute. {note}

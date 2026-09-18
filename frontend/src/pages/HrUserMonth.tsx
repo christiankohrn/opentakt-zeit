@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { api, type DaySummary, type User, type WorkModel, type WorkModelAssignment } from "../api";
+import { api, type DaySummary, type Department, type User, type WorkModel, type WorkModelAssignment } from "../api";
 import { useAuth } from "../auth";
 import DayLegend from "../components/DayLegend";
 import ConfirmDialog from "../components/ConfirmDialog";
@@ -47,6 +47,7 @@ export default function HrUserMonth() {
   const [monthFlex, setMonthFlex] = useState(0);
   const [totalFlex, setTotalFlex] = useState(0);
   const [models, setModels] = useState<WorkModel[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [assignments, setAssignments] = useState<WorkModelAssignment[]>([]);
   const [modelId, setModelId] = useState("");
   const [modelFrom, setModelFrom] = useState(isoToday);
@@ -73,6 +74,7 @@ export default function HrUserMonth() {
     left_on: "",
     birthday: "",
     vacation_days_year: "",
+    department_id: "",
   });
   const [accountMsg, setAccountMsg] = useState("");
   const [accountErrors, setAccountErrors] = useState<UserFieldErrors>({});
@@ -83,12 +85,13 @@ export default function HrUserMonth() {
 
   async function reload() {
     if (!userId) return;
-    const [r, m, a] = await Promise.all([api.userDays(userId, month), api.models(), api.userModels(userId)]);
+    const [r, m, a, d] = await Promise.all([api.userDays(userId, month), api.models(), api.userModels(userId), api.departments()]);
     setUser(r.user);
     setDays(r.days);
     setMonthFlex(r.month_flex ?? 0);
     setTotalFlex(r.total_flex ?? 0);
     setModels(m);
+    setDepartments(d);
     setAssignments(a);
     setModelId((cur) => cur || String(r.user.work_model_id ?? m[0]?.id ?? ""));
     setTransponder(r.user.transponder_id ?? "");
@@ -104,6 +107,7 @@ export default function HrUserMonth() {
       left_on: r.user.left_on ?? "",
       birthday: r.user.birthday ?? "",
       vacation_days_year: r.user.vacation_days_year != null ? String(r.user.vacation_days_year) : "",
+      department_id: r.user.department_id != null ? String(r.user.department_id) : "",
     }));
   }
 
@@ -137,6 +141,7 @@ export default function HrUserMonth() {
         account.left_on !== (user.left_on ?? "") ||
         account.birthday !== (user.birthday ?? "") ||
         account.vacation_days_year !== (user.vacation_days_year != null ? String(user.vacation_days_year) : "") ||
+        account.department_id !== (user.department_id != null ? String(user.department_id) : "") ||
         account.password.trim() !== ""),
   );
   const accessDirty = Boolean(
@@ -205,6 +210,7 @@ export default function HrUserMonth() {
                 left_on: string | null;
                 birthday: string | null;
                 vacation_days_year: number | null;
+                department_id: number | null;
               } = {
                 username: account.username,
                 display_name: account.display_name,
@@ -213,6 +219,7 @@ export default function HrUserMonth() {
                 left_on: account.left_on || null,
                 birthday: account.birthday || null,
                 vacation_days_year: account.vacation_days_year.trim() === "" ? null : Number(account.vacation_days_year.replace(",", ".")),
+                department_id: account.department_id ? Number(account.department_id) : null,
               };
               if (isAdmin) {
                 body.role = account.role;
@@ -235,6 +242,7 @@ export default function HrUserMonth() {
                 left_on: next.left_on ?? "",
                 birthday: next.birthday ?? "",
                 vacation_days_year: next.vacation_days_year != null ? String(next.vacation_days_year) : "",
+                department_id: next.department_id != null ? String(next.department_id) : "",
               });
               setAccountMsg("Benutzer gespeichert.");
               await reload();
@@ -295,6 +303,21 @@ export default function HrUserMonth() {
               <option value="admin">Admin</option>
             </select>
             {!isAdmin ? <span className="mt-1 block">Nur Administrator darf die Rolle ändern.</span> : null}
+          </label>
+          <label className="block text-xs text-muted">
+            Abteilung
+            <select
+              className="mt-1 w-full rounded-lg border border-line bg-bg px-3 py-2 text-sm text-ink"
+              value={account.department_id}
+              onChange={(e) => patchAccount({ department_id: e.target.value })}
+            >
+              <option value="">Keine Abteilung</option>
+              {departments.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="flex items-start gap-3 text-sm">
             <input
@@ -693,6 +716,9 @@ export default function HrUserMonth() {
         )}
         <Link to="/modelle" className="text-muted">
           Modelle
+        </Link>
+        <Link to="/abteilungen" className="text-muted">
+          Abteilungen
         </Link>
         <Link to="/feiertage" className="text-muted">
           Feiertage

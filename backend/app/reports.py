@@ -271,9 +271,10 @@ def month_balances_report(
     month: str,
     as_of: date | None = None,
     today: date | None = None,
+    user_ids: set[int] | None = None,
 ) -> list[dict]:
     start, last = month_bounds(month)
-    people = people_in_range(db, start, last)
+    people = people_in_range(db, start, last, user_ids)
     rows = []
     for user in people:
         snapshot = person_month_snapshot(db, user, month, as_of=as_of, today=today)
@@ -282,9 +283,9 @@ def month_balances_report(
     return rows
 
 
-def jubilees_report(db: Session, year: int, half: int) -> list[dict]:
+def jubilees_report(db: Session, year: int, half: int, user_ids: set[int] | None = None) -> list[dict]:
     start, end = half_bounds(year, half)
-    people = people_in_range(db, start, end)
+    people = people_in_range(db, start, end, user_ids)
     events: list[dict] = []
     for user in people:
         if user.birthday:
@@ -357,9 +358,9 @@ def _overlap_hours(intervals: list[tuple[datetime, datetime]], start: datetime, 
     return total
 
 
-def night_hours_report(db: Session, month: str, now: datetime | None = None) -> list[dict]:
+def night_hours_report(db: Session, month: str, now: datetime | None = None, user_ids: set[int] | None = None) -> list[dict]:
     start, last = month_bounds(month)
-    people = people_in_range(db, start, last)
+    people = people_in_range(db, start, last, user_ids)
     q_start, q_end = punches_window_for_month(start, last)
     rows = []
     for user in people:
