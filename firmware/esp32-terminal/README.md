@@ -15,7 +15,7 @@ Ein Gerät besteht aus ESP32, Display und **einem** 13,56 MHz-Leser. Nicht bei
 | Transponder | 13,56 MHz (MIFARE Classic, NTAG, DESFire-UID) | Keine 125 kHz-Chips |
 | Kabel | Dupont / Grove-Kabel | Kurze Leitungen, gemeinsame Masse |
 
-Gehäuse: [`cad/README.md`](cad/README.md). Server-API: [`docs/esp32-terminal.md`](../../docs/esp32-terminal.md).
+Gehäuse: [`cad/README.md`](cad/README.md) (V1 Prototyp, V2 Wandleser ungetestet). Server-API: [`docs/esp32-terminal.md`](../../docs/esp32-terminal.md).
 
 ## Anschluss
 

@@ -1,3 +1,4 @@
+// Version 1: gedruckter Prototyp (Unterschale + Deckel). Version 2: housing-v2.scad
 // Zwei Druckteile, Maße in mm. In OpenSCAD: F5 Vorschau, F6 STL.
 //
 // teil = 0  beide nebeneinander (nur anschauen)

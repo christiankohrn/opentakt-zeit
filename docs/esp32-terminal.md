@@ -44,4 +44,4 @@ Welche Transponder welcher Leser liest: [`firmware/esp32-terminal/README.md`](..
 
 OTA: `cd firmware/esp32-terminal && pio run` erzeugt `.pio/build/esp32dev/firmware.bin`. `kFwVersion` in der Firmware erhöhen, Datei in den Einstellungen mit **höherer** Versionsnummer hochladen. Details in derselben README.
 
-Gehäuse: [`firmware/esp32-terminal/cad/README.md`](../firmware/esp32-terminal/cad/README.md). In OpenSCAD `teil = 1` (Unterschale) bzw. `teil = 2` (Deckel), jeweils ein STL exportieren.
+Gehäuse: [`firmware/esp32-terminal/cad/README.md`](../firmware/esp32-terminal/cad/README.md). Version 1 (`housing.scad`): Unterschale `teil = 1`, Deckel `teil = 2`. Version 2 (`housing-v2.scad`): parametrisierter Wandleser, ungetestet; Platz für Stiftleisten, nicht für den produktiven Einsatz empfohlen.
