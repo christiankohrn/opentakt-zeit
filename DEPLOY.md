@@ -82,20 +82,30 @@ curl -fsS https://zeit.firma.de/api/health
 
 ## Bestehende Instanz aktualisieren
 
-Code liegt schon unter `/opt/zeiterfassung`. Als `deploy`:
+Die Installation kopiert den Code ohne `.git` nach `/opt/zeiterfassung`. `git pull` in diesem Verzeichnis geht nicht. `config.toml` und `app.db` liegen außerhalb und werden nicht überschrieben. `install.sh` nicht für ein normales Update starten: es schreibt die nginx-Vorlage neu und ruft Certbot erneut auf.
+
+Als `deploy` auf dem Server:
 
 ```bash
-# Variante A: Tree ist ein Git-Clone
-cd /opt/zeiterfassung && git pull
+rm -rf /tmp/opentakt-zeit
+git clone --depth 1 https://github.com/christiankohrn/opentakt-zeit.git /tmp/opentakt-zeit
+rsync -a --delete \
+  --exclude '.git' \
+  --exclude 'node_modules' \
+  --exclude '.venv' \
+  --exclude 'backend/.venv' \
+  --exclude 'frontend/node_modules' \
+  --exclude 'frontend/dist' \
+  --exclude 'data' \
+  --exclude 'venv' \
+  --exclude 'lib' \
+  /tmp/opentakt-zeit/ /opt/zeiterfassung/
 sudo /opt/zeiterfassung/deploy/update.sh
-
-# Variante B: vom Entwicklungs-PC ohne Commit
-powershell -File deploy/sync-dev.ps1 -HostName zeit-dev -Domain zeit.firma.de
 ```
 
-`update.sh` sichert die SQLite-Datei nach `backups/pre-update/`, spielt pip/npm neu ein und startet den Dienst.
+`update.sh` sichert die SQLite-Datei nach `/var/lib/zeiterfassung/backups/pre-update/`, spielt pip/npm neu ein, baut das Frontend und startet den Dienst. nginx und das Zertifikat bleiben unverändert.
 
-`config.toml` und die Datenbank werden **nicht** überschrieben.
+Vom Entwicklungsrechner auf die Dev-VM, ohne diesen Weg: `powershell -File deploy/sync-dev.ps1 -HostName zeit-dev -Domain zeit.firma.de`.
 
 ## Was wo läuft
 

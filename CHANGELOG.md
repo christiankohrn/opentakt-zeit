@@ -4,6 +4,7 @@ Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Ve
 
 ## [Unreleased]
 
+- README beschreibt das Update einer laufenden Installation: frischer Klon, Kopie nach `/opt/zeiterfassung`, dann `update.sh`. Config, Datenbank, nginx und Zertifikat bleiben.
 - Während Listen und Auswertungen geladen werden, steht „Laden …“ statt einer leeren Ansicht.
 - Administratoren können eine Person endgültig löschen. Stempel, Abwesenheiten und das Konto sind danach weg; die Oberfläche verlangt eine ausdrückliche Bestätigung.
 - ESP32-Gehäuse Version 2 (parametrisierter Wandleser, OpenSCAD): Maße nach Prototyp V1 leicht korrigiert, ungetestet. Platz für Stiftleisten und Kabel, nicht für den produktiven Einsatz empfohlen.

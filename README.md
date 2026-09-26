@@ -80,6 +80,33 @@ Danach liegen App, Config und Daten unter `/opt/zeiterfassung`, `/etc/zeiterfass
 
 Ausführlich: [DEPLOY.md](DEPLOY.md). Terminals: [docs/datafox-masteriv.md](docs/datafox-masteriv.md).
 
+### Laufende Installation aktualisieren
+
+Unter `/opt/zeiterfassung` liegt kein Git-Repository. `git pull` dort geht nicht. Config (`/etc/zeiterfassung/config.toml`) und Datenbank (`/var/lib/zeiterfassung/app.db`) bleiben dabei unangetastet. `deploy/install.sh` nicht noch einmal ausführen: das schreibt die nginx-Vorlage neu und startet Certbot erneut.
+
+Per SSH als Benutzer `deploy`:
+
+```bash
+rm -rf /tmp/opentakt-zeit
+git clone --depth 1 https://github.com/christiankohrn/opentakt-zeit.git /tmp/opentakt-zeit
+rsync -a --delete \
+  --exclude '.git' \
+  --exclude 'node_modules' \
+  --exclude '.venv' \
+  --exclude 'backend/.venv' \
+  --exclude 'frontend/node_modules' \
+  --exclude 'frontend/dist' \
+  --exclude 'data' \
+  --exclude 'venv' \
+  --exclude 'lib' \
+  /tmp/opentakt-zeit/ /opt/zeiterfassung/
+sudo /opt/zeiterfassung/deploy/update.sh
+```
+
+`update.sh` kopiert die Datenbank nach `/var/lib/zeiterfassung/backups/pre-update/`, installiert die Python- und npm-Abhängigkeiten, baut die Oberfläche neu und startet den Dienst. nginx und das Zertifikat bleiben, wie sie sind.
+
+Prüfung: `curl -fsS https://zeit.firma.de/api/health`. Zeigt der Browser noch die alte Oberfläche, die Seite neu laden.
+
 ## Tests
 
 ```bash
