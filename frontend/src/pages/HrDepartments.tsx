@@ -62,11 +62,13 @@ export default function HrDepartments() {
       <Link to="/personal" className="text-sm text-muted">
         ← Personal
       </Link>
-      <h1 className="mt-2 text-xl font-medium">Abteilungen</h1>
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-xl font-medium">Abteilungen</h1>
+        <SearchField value={query} onChange={setQuery} placeholder="Abteilung suchen" />
+      </div>
       <p className="mt-2 text-sm text-muted">
         Mitarbeitende einer Abteilung zuordnen. In Auswertungen reicht dann ein Haken auf die Abteilung.
       </p>
-      <SearchField className="mt-3" value={query} onChange={setQuery} placeholder="Abteilung suchen" />
       {error ? <p className="mt-3 text-sm text-danger">{error}</p> : null}
       <ul className="mt-4 grid gap-2 md:grid-cols-2">
         {visible.map((dept) => (

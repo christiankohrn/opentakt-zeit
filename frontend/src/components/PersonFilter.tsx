@@ -90,7 +90,7 @@ export default function PersonFilter({
     <div className="relative w-[14.5rem] shrink-0" ref={box}>
       <button
         type="button"
-        className="w-full truncate rounded-lg border border-line bg-card px-2 py-1 text-left text-sm"
+        className="h-[2.25rem] w-full truncate rounded-lg border border-line bg-card px-2 py-1 text-left text-sm"
         onClick={() => setOpen((value) => !value)}
       >
         {label}
@@ -106,7 +106,8 @@ export default function PersonFilter({
             </button>
           </div>
           <SearchField
-            className="mb-2 max-w-none"
+            fill
+            className="mb-2"
             value={query}
             onChange={setQuery}
             placeholder="Name suchen"

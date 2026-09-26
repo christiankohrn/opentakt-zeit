@@ -78,7 +78,7 @@ export default function HrPlausibility() {
           <SearchField value={query} onChange={setQuery} placeholder="Person suchen" />
           {departments.length > 0 || deptFilter ? (
             <select
-              className="max-w-xs rounded-lg border border-line bg-card px-2 py-1 text-sm"
+              className="filter-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
               value={deptFilter}
               onChange={(e) => setFilter(month, e.target.value)}
             >

@@ -106,22 +106,24 @@ export default function HrCalendar() {
       <Link to="/personal" className="text-sm text-muted">
         ← Personal
       </Link>
-      <div className="mt-2 flex items-center justify-between gap-3">
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-medium">Feiertage</h1>
-        <input
-          type="number"
-          min={2020}
-          max={2100}
-          value={year}
-          onChange={(e) => setYear(Number(e.target.value) || currentYear())}
-          className="w-24 rounded-lg border border-line bg-card px-2 py-1 text-sm"
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <SearchField value={query} onChange={setQuery} placeholder="Name oder Datum" />
+          <input
+            type="number"
+            min={2020}
+            max={2100}
+            value={year}
+            onChange={(e) => setYear(Number(e.target.value) || currentYear())}
+            className="h-[2.25rem] w-24 shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
+          />
+        </div>
       </div>
       <p className="mt-2 text-sm text-muted">
         Gesetzliche Feiertage hängen am Standort (Bundesland). Zusätzlich kannst du eigene Feiertage und
         betriebsfreie Tage eintragen.
       </p>
-      <SearchField className="mt-3" value={query} onChange={setQuery} placeholder="Name oder Datum" />
       <label className="mt-4 block rounded-2xl border border-line bg-card px-4 py-3 text-sm">
         <span className="text-xs text-muted">Standort / Bundesland</span>
         <select

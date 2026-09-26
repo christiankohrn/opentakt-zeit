@@ -239,18 +239,40 @@ export default function HrUsers() {
 
   return (
     <div className="pt-2">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-medium">Personal</h1>
-        <input
-          type="month"
-          value={month}
-          onChange={(e) => {
-            const next: Record<string, string> = { month: e.target.value };
-            if (deptFilter) next.dept = deptFilter;
-            setParams(next);
-          }}
-          className="month-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <SearchField value={query} onChange={setQuery} placeholder="Name, Transponder" />
+          {departments.length > 0 || deptFilter ? (
+            <select
+              className="filter-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
+              value={deptFilter}
+              onChange={(e) => {
+                const next: Record<string, string> = { month };
+                if (e.target.value) next.dept = e.target.value;
+                setParams(next);
+              }}
+            >
+              <option value="">Alle Abteilungen</option>
+              {departments.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+              <option value="none">Ohne Abteilung</option>
+            </select>
+          ) : null}
+          <input
+            type="month"
+            value={month}
+            onChange={(e) => {
+              const next: Record<string, string> = { month: e.target.value };
+              if (deptFilter) next.dept = deptFilter;
+              setParams(next);
+            }}
+            className="month-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
+          />
+        </div>
       </div>
       <div className="mt-2 flex flex-wrap gap-3 text-sm">
         <Link to="/pruefung" className="text-present">
@@ -268,28 +290,6 @@ export default function HrUsers() {
         <button type="button" className="text-present" onClick={() => (open ? requestClose() : setOpen(true))}>
           {open ? "Schließen" : "Neu"}
         </button>
-      </div>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <SearchField value={query} onChange={setQuery} placeholder="Name, Benutzer, Transponder" />
-      {departments.length > 0 || deptFilter ? (
-        <select
-          className="max-w-xs rounded-lg border border-line bg-card px-2 py-1 text-sm"
-          value={deptFilter}
-          onChange={(e) => {
-            const next: Record<string, string> = { month };
-            if (e.target.value) next.dept = e.target.value;
-            setParams(next);
-          }}
-        >
-          <option value="">Alle Abteilungen</option>
-          {departments.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name}
-            </option>
-          ))}
-          <option value="none">Ohne Abteilung</option>
-        </select>
-      ) : null}
       </div>
       {info ? <p className="mt-2 text-sm text-present">{info}</p> : null}
       {!open && error ? <p className="mt-2 text-sm text-danger">{error}</p> : null}

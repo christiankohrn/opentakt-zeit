@@ -1,3 +1,5 @@
+import { IconSearch } from "./Icons";
+
 export function matchesQuery(query: string, parts: Array<string | number | null | undefined>) {
   const words = query.trim().toLocaleLowerCase("de").split(/\s+/).filter(Boolean);
   if (words.length === 0) return true;
@@ -13,19 +15,25 @@ export default function SearchField({
   onChange,
   placeholder = "Suchen",
   className = "",
+  fill = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
   className?: string;
+  fill?: boolean;
 }) {
   return (
-    <input
-      type="search"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder}
-      className={`w-full max-w-xs rounded-lg border border-line bg-card px-3 py-1 text-sm ${className}`}
-    />
+    <label className={`relative block ${fill ? "w-full" : "shrink-0"} ${className}`}>
+      <IconSearch className="pointer-events-none absolute top-1/2 left-2 h-4 w-4 -translate-y-1/2 text-muted" />
+      <input
+        type="search"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        aria-label={placeholder}
+        className={`search-compact ${fill ? "search-fill" : ""} rounded-lg border border-line bg-card py-1 pr-2 pl-8 text-sm`}
+      />
+    </label>
   );
 }

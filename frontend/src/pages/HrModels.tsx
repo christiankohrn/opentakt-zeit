@@ -46,8 +46,10 @@ export default function HrModels() {
       <Link to="/personal" className="text-sm text-muted">
         ← Personal
       </Link>
-      <h1 className="mt-2 text-xl font-medium">Arbeitszeitmodelle</h1>
-      <SearchField className="mt-3" value={query} onChange={setQuery} placeholder="Modell suchen" />
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-xl font-medium">Arbeitszeitmodelle</h1>
+        <SearchField value={query} onChange={setQuery} placeholder="Modell suchen" />
+      </div>
       {loading ? <LoadingNote /> : null}
       {!loading && visible.length === 0 ? (
         <p className="mt-8 text-sm text-muted">{query.trim() ? "Kein Modell in dieser Auswahl." : "Noch kein Modell."}</p>

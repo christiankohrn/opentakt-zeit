@@ -150,6 +150,34 @@ input[type="date"]::-webkit-date-and-time-value {
   line-height: 2.35rem;
 }
 
+input[type="search"].search-compact {
+  appearance: none;
+  -webkit-appearance: none;
+  display: block;
+  width: 14.5rem;
+  min-width: 0;
+  max-width: 14.5rem;
+  min-height: 2.25rem;
+  box-sizing: border-box;
+}
+
+input[type="search"].search-compact.search-fill {
+  width: 100%;
+  max-width: 100%;
+}
+
+input[type="search"].search-compact::-webkit-search-decoration,
+input[type="search"].search-compact::-webkit-search-cancel-button {
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+select.filter-compact {
+  width: 14.5rem;
+  max-width: 14.5rem;
+  min-height: 2.25rem;
+}
+
 input[type="month"].month-compact {
   width: 11.5rem;
   min-width: 11.5rem;
