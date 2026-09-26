@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import LoadingNote from "../components/LoadingNote";
+import SearchField, { matchesQuery } from "../components/SearchField";
 import { useAuth } from "../auth";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { IconTrash } from "../components/Icons";
@@ -32,6 +33,7 @@ export default function HrCalendar() {
   const [busy, setBusy] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<CalRow | null>(null);
   const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
 
   async function load(nextYear = year) {
     setLoading(true);
@@ -53,13 +55,16 @@ export default function HrCalendar() {
   const grouped = useMemo(() => {
     const map = new Map<string, CalRow[]>();
     for (const row of rows) {
+      if (!matchesQuery(query, [row.name, row.day, absenceLabel(row.kind), row.kind === "company_off" ? "Betriebsfrei" : "Feiertag"])) {
+        continue;
+      }
       const key = row.day.slice(0, 7);
       const list = map.get(key) ?? [];
       list.push(row);
       map.set(key, list);
     }
     return [...map.entries()];
-  }, [rows]);
+  }, [query, rows]);
 
   async function saveLand(code: string) {
     setBusy(true);
@@ -116,6 +121,7 @@ export default function HrCalendar() {
         Gesetzliche Feiertage hängen am Standort (Bundesland). Zusätzlich kannst du eigene Feiertage und
         betriebsfreie Tage eintragen.
       </p>
+      <SearchField className="mt-3" value={query} onChange={setQuery} placeholder="Name oder Datum" />
       <label className="mt-4 block rounded-2xl border border-line bg-card px-4 py-3 text-sm">
         <span className="text-xs text-muted">Standort / Bundesland</span>
         <select
@@ -171,7 +177,10 @@ export default function HrCalendar() {
       </form>
       {msg ? <p className="mt-3 text-sm text-present">{msg}</p> : null}
       {loading ? <LoadingNote /> : null}
-      {!loading ? <div className="mt-4 space-y-4">
+      {!loading && grouped.length === 0 ? (
+        <p className="mt-8 text-sm text-muted">{query.trim() ? "Kein Tag in dieser Auswahl." : "Keine Einträge in diesem Jahr."}</p>
+      ) : null}
+      {!loading && grouped.length > 0 ? <div className="mt-4 space-y-4">
         {grouped.map(([month, items]) => (
           <section key={month}>
             <h2 className="text-xs font-medium uppercase tracking-wider text-muted">

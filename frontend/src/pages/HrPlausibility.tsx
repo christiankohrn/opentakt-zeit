@@ -2,6 +2,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { api, type Department } from "../api";
 import LoadingNote from "../components/LoadingNote";
+import SearchField, { matchesQuery } from "../components/SearchField";
 import { formatDayLabel, warnLabel } from "../labels";
 
 function payrollMonth() {
@@ -23,6 +24,7 @@ export default function HrPlausibility() {
     Awaited<ReturnType<typeof api.plausibility>>["people"]
   >([]);
   const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
 
   function setFilter(nextMonth: string, nextDept: string) {
     const nextParams: Record<string, string> = { month: nextMonth };
@@ -62,9 +64,9 @@ export default function HrPlausibility() {
 
   const visible = people.filter((p) => {
     if (userFilter && String(p.user.id) !== userFilter) return false;
-    if (deptFilter === "none") return !p.user.department_id;
-    if (deptFilter) return String(p.user.department_id) === deptFilter;
-    return true;
+    if (deptFilter === "none" && p.user.department_id) return false;
+    if (deptFilter && deptFilter !== "none" && String(p.user.department_id) !== deptFilter) return false;
+    return matchesQuery(query, [p.user.display_name, p.user.username, p.user.department_name, p.model_name]);
   });
   const filteredName = visible[0]?.user.display_name;
 
@@ -73,6 +75,7 @@ export default function HrPlausibility() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-medium">Prüfung</h1>
         <div className="flex flex-wrap items-center gap-2">
+          <SearchField value={query} onChange={setQuery} placeholder="Person suchen" />
           {departments.length > 0 || deptFilter ? (
             <select
               className="max-w-xs rounded-lg border border-line bg-card px-2 py-1 text-sm"
@@ -114,7 +117,11 @@ export default function HrPlausibility() {
         <LoadingNote />
       ) : visible.length === 0 ? (
         <p className="mt-8 text-sm text-muted">
-          {userFilter ? "Keine Auffälligkeiten für diese Person in diesem Monat." : "Keine Auffälligkeiten in diesem Monat."}
+          {userFilter
+            ? "Keine Auffälligkeiten für diese Person in diesem Monat."
+            : query.trim() || deptFilter
+              ? "Keine Auffälligkeiten in dieser Auswahl."
+              : "Keine Auffälligkeiten in diesem Monat."}
         </p>
       ) : (
         <ul className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">

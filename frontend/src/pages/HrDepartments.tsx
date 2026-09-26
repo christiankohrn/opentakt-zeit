@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type Department } from "../api";
 import LoadingNote from "../components/LoadingNote";
+import SearchField, { matchesQuery } from "../components/SearchField";
 
 export default function HrDepartments() {
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -10,6 +11,8 @@ export default function HrDepartments() {
   const [editName, setEditName] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
+  const visible = departments.filter((dept) => matchesQuery(query, [dept.name]));
 
   async function load() {
     setDepartments(await api.departments());
@@ -63,9 +66,10 @@ export default function HrDepartments() {
       <p className="mt-2 text-sm text-muted">
         Mitarbeitende einer Abteilung zuordnen. In Auswertungen reicht dann ein Haken auf die Abteilung.
       </p>
+      <SearchField className="mt-3" value={query} onChange={setQuery} placeholder="Abteilung suchen" />
       {error ? <p className="mt-3 text-sm text-danger">{error}</p> : null}
       <ul className="mt-4 grid gap-2 md:grid-cols-2">
-        {departments.map((dept) => (
+        {visible.map((dept) => (
           <li key={dept.id} className="rounded-2xl border border-line bg-card px-4 py-3">
             {editing === dept.id ? (
               <form
@@ -117,7 +121,11 @@ export default function HrDepartments() {
         ))}
       </ul>
       {loading ? <LoadingNote className="mt-4" /> : null}
-      {!loading && departments.length === 0 ? <p className="mt-4 text-sm text-muted">Noch keine Abteilungen.</p> : null}
+      {!loading && visible.length === 0 ? (
+        <p className="mt-4 text-sm text-muted">
+          {query.trim() ? "Keine Abteilung in dieser Auswahl." : "Noch keine Abteilungen."}
+        </p>
+      ) : null}
       <form onSubmit={onSubmit} className="mt-6 space-y-3 rounded-2xl border border-line bg-card p-4">
         <input
           value={name}

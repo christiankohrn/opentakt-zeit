@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { User } from "../api";
+import SearchField, { matchesQuery } from "./SearchField";
 
 type Group = { key: string; name: string; users: User[] };
 
@@ -29,13 +30,16 @@ export default function PersonFilter({
   onChange: (ids: number[] | null) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const box = useRef<HTMLDivElement>(null);
   const allIds = users.map((u) => u.id);
   const selected = selectedIds ?? allIds;
   const selectedSet = new Set(selected);
   const allOn = selectedIds === null || (allIds.length > 0 && selected.length === allIds.length);
-  const groups = groupUsers(users);
-  const showGroups = groups.some((g) => g.key !== "none") || groups.length > 1;
+  const shown = users.filter((user) => matchesQuery(query, [user.display_name, user.username, user.department_name]));
+  const groups = groupUsers(shown);
+  const allGroups = groupUsers(users);
+  const showGroups = allGroups.some((g) => g.key !== "none") || allGroups.length > 1;
 
   useEffect(() => {
     function close(event: MouseEvent) {
@@ -65,7 +69,7 @@ export default function PersonFilter({
     commit(current);
   }
 
-  const selectedGroups = groups.filter((g) => g.users.some((u) => selectedSet.has(u.id)));
+  const selectedGroups = allGroups.filter((g) => g.users.some((u) => selectedSet.has(u.id)));
   const fullGroups = selectedGroups.filter((g) => g.users.every((u) => selectedSet.has(u.id)));
   const label =
     users.length === 0
@@ -101,6 +105,15 @@ export default function PersonFilter({
               Keine
             </button>
           </div>
+          <SearchField
+            className="mb-2 max-w-none"
+            value={query}
+            onChange={setQuery}
+            placeholder="Name suchen"
+          />
+          {shown.length === 0 ? (
+            <p className="px-1 py-2 text-sm text-muted">Keine Personen in dieser Auswahl.</p>
+          ) : null}
           {showGroups
             ? groups.map((group) => {
                 const ids = group.users.map((u) => u.id);
@@ -129,7 +142,7 @@ export default function PersonFilter({
                   </div>
                 );
               })
-            : users.map((user) => (
+            : shown.map((user) => (
                 <label key={user.id} className="flex items-center gap-2 rounded-lg px-1 py-1.5 text-sm hover:bg-bg">
                   <input type="checkbox" checked={selectedSet.has(user.id)} onChange={() => toggle(user.id)} />
                   <span>{user.display_name}</span>
