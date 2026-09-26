@@ -75,13 +75,18 @@ export function absenceLabel(kind: string) {
   return ABSENCE_LABELS[kind] ?? kind;
 }
 
+export function punchOrigin(punch: { source?: string; terminal_name?: string }) {
+  if (punch.source === "import") return "Import";
+  return (punch.terminal_name || "").trim();
+}
+
 export function formatPunchLine(
-  punches: { kind: string; time: string; voided: boolean; terminal_name?: string }[],
+  punches: { kind: string; time: string; voided: boolean; source?: string; terminal_name?: string }[],
 ) {
   return punches
     .filter((p) => !p.voided)
     .map((p) => {
-      const place = (p.terminal_name || "").trim();
+      const place = punchOrigin(p);
       return place ? `${punchLabel(p.kind)} ${p.time} (${place})` : `${punchLabel(p.kind)} ${p.time}`;
     })
     .join("  ·  ");

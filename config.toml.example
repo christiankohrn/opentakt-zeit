@@ -56,5 +56,8 @@ datafox_secret = ""
 # Admin-Einstellungen; beides leer = API aus.
 esp_terminal_secret = ""
 
+# Token für die Buchungs-Übernahme (Header Authorization: Bearer). Leer = Schnittstelle aus.
+import_token = ""
+
 # Optional: Pfad zu libDFCom.so für Polling. Leer = Standardpfade.
 # dfcom_lib = "/opt/zeiterfassung/lib/libDFCom.so"

@@ -70,6 +70,7 @@ class AppConfig(BaseModel):
     dfcom_lib: str = ""
     datafox_secret: str = ""
     esp_terminal_secret: str = ""
+    import_token: str = ""
 
     @property
     def is_dev(self) -> bool:

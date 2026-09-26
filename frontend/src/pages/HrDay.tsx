@@ -4,13 +4,13 @@ import { api, type DaySummary, type PunchKind, type User } from "../api";
 import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
 import LoadingNote from "../components/LoadingNote";
 import { IconTrash } from "../components/Icons";
-import { absenceLabel, formatDayTitle, punchLabel, warnLabel } from "../labels";
+import { absenceLabel, formatDayTitle, punchLabel, punchOrigin, warnLabel } from "../labels";
 import { useUnsavedGuard } from "../unsaved";
 
 const KINDS: PunchKind[] = ["in", "out", "break_start", "break_end"];
 const ISSUE_KEYS = new Set(["missing_day", "checkout_missing", "break_short", "break_short_9h", "break_long", "over_10h"]);
 
-type Row = { kind: PunchKind; time: string };
+type Row = { kind: PunchKind; time: string; source?: string };
 type PendingAbsence = "vacation" | "sick" | "clear" | null;
 
 function rowsKey(rows: Row[]) {
@@ -63,6 +63,7 @@ export default function HrDay() {
       const next = (found?.punches.filter((p) => !p.voided) ?? []).map((p) => ({
         kind: p.kind as PunchKind,
         time: p.time,
+        source: p.source,
       }));
       setRows(next);
       setBaselineRows(cloneRows(next));
@@ -270,6 +271,9 @@ export default function HrDay() {
                 </option>
               ))}
             </select>
+            {punchOrigin(row) === "Import" ? (
+              <span className="self-center text-xs text-muted">Import</span>
+            ) : null}
             <input
               type="time"
               required
@@ -345,6 +349,7 @@ export default function HrDay() {
               .map((p) => (
                 <li key={p.id}>
                   {punchLabel(p.kind)} {p.time}
+                  {punchOrigin(p) ? ` · ${punchOrigin(p)}` : ""}
                 </li>
               ))}
           </ul>
