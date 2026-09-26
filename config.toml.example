@@ -11,6 +11,21 @@ database_path = "data/app.db"
 listen_host = "127.0.0.1"
 listen_port = 8000
 
+# Schlüssel vor dem ersten [Abschnitt]. Danach gehören sie zum Abschnitt und werden nicht gelesen.
+# Shared secret für Datafox MasterIV HTTP. Leer = Terminal-API aus.
+# In der Send-URL als ?k=... eintragen, niemals committen.
+datafox_secret = ""
+
+# Shared secret für das ESP32-Terminal (Header X-Terminal-Key). Leer = Secret aus den
+# Admin-Einstellungen; beides leer = API aus.
+esp_terminal_secret = ""
+
+# Token für die Buchungs-Übernahme (Header Authorization: Bearer). Leer = Schnittstelle aus.
+import_token = ""
+
+# Optional: Pfad zu libDFCom.so für Polling. Leer = Standardpfade.
+# dfcom_lib = "/opt/zeiterfassung/lib/libDFCom.so"
+
 [seed]
 admin_username = "admin"
 admin_password = "change-me"
@@ -47,17 +62,3 @@ group_admin = ""
 [webauthn]
 rp_id = ""
 origins = []
-
-# Shared secret für Datafox MasterIV HTTP. Leer = Terminal-API aus.
-# In der Send-URL als ?k=... eintragen, niemals committen.
-datafox_secret = ""
-
-# Shared secret für das ESP32-Terminal (Header X-Terminal-Key). Leer = Secret aus den
-# Admin-Einstellungen; beides leer = API aus.
-esp_terminal_secret = ""
-
-# Token für die Buchungs-Übernahme (Header Authorization: Bearer). Leer = Schnittstelle aus.
-import_token = ""
-
-# Optional: Pfad zu libDFCom.so für Polling. Leer = Standardpfade.
-# dfcom_lib = "/opt/zeiterfassung/lib/libDFCom.so"

@@ -66,28 +66,43 @@ def empty_stats() -> dict[str, int]:
     return {key: 0 for key in STAT_KEYS}
 
 
+def _load_existing(db: Session, event_ids: list[str]) -> dict[tuple[int, str], Punch]:
+    found: dict[tuple[int, str], Punch] = {}
+    unique = [event_id for event_id in dict.fromkeys(event_ids) if event_id]
+    for start in range(0, len(unique), 400):
+        chunk = unique[start : start + 400]
+        rows = db.scalars(select(Punch).where(Punch.client_event_id.in_(chunk))).all()
+        for punch in rows:
+            found[(punch.user_id, punch.client_event_id or "")] = punch
+    return found
+
+
 def apply_import(db: Session, punches: list[dict]) -> dict[str, int]:
     stats = empty_stats()
     mapping = load_pnr_map()
-    users: dict[int, User | None] = {}
+    resolved: list[tuple[dict, int]] = []
     for item in punches:
         key = pnr_key(str(item.get("pnr") or ""))
         user_id = mapping.get(key)
         if not key or user_id is None:
             stats["unknown_pnr"] += 1
             continue
-        if user_id not in users:
-            users[user_id] = db.get(User, user_id)
-        user = users[user_id]
+        resolved.append((item, user_id))
+    user_ids = list({user_id for _, user_id in resolved})
+    users = {
+        user.id: user
+        for user in db.scalars(select(User).where(User.id.in_(user_ids))).all()
+    } if user_ids else {}
+    existing = _load_existing(db, [str(item.get("event_id") or "") for item, _user_id in resolved])
+    for item, user_id in resolved:
+        user = users.get(user_id)
         if user is None:
             stats["unknown_pnr"] += 1
             continue
         event_id = str(item.get("event_id") or "")
-        existing = db.scalar(
-            select(Punch).where(Punch.user_id == user.id, Punch.client_event_id == event_id)
-        )
+        known = existing.get((user.id, event_id))
         if item.get("void"):
-            _void(existing, stats)
+            _void(known, stats)
             continue
         kind = str(item.get("kind") or "")
         at = item.get("at")
@@ -95,36 +110,36 @@ def apply_import(db: Session, punches: list[dict]) -> dict[str, int]:
             stats["skipped"] += 1
             continue
         booked = _incoming_utc(at)
-        if existing is None:
-            db.add(
-                Punch(
-                    user_id=user.id,
-                    kind=kind,
-                    server_time=booked,
-                    device_time=booked,
-                    source=IMPORT_SOURCE,
-                    client_event_id=event_id,
-                    terminal_name=IMPORT_PLACE,
-                )
+        if known is None:
+            punch = Punch(
+                user_id=user.id,
+                kind=kind,
+                server_time=booked,
+                device_time=booked,
+                source=IMPORT_SOURCE,
+                client_event_id=event_id,
+                terminal_name=IMPORT_PLACE,
             )
+            db.add(punch)
+            existing[(user.id, event_id)] = punch
             stats["stored"] += 1
             continue
-        if existing.source != IMPORT_SOURCE or existing.voided_by_id is not None:
-            stats["manuell" if existing.voided_by_id is not None else "skipped"] += 1
+        if known.source != IMPORT_SOURCE or known.voided_by_id is not None:
+            stats["manuell" if known.voided_by_id is not None else "skipped"] += 1
             continue
-        changed = existing.kind != kind or not _same_instant(existing.server_time, booked)
-        restored = existing.voided_at is not None
+        changed = known.kind != kind or not _same_instant(known.server_time, booked)
+        restored = known.voided_at is not None
         if not changed and not restored:
             stats["duplicate"] += 1
             continue
-        existing.kind = kind
-        existing.server_time = booked
-        existing.device_time = booked
-        existing.source = IMPORT_SOURCE
-        existing.terminal_name = IMPORT_PLACE
+        known.kind = kind
+        known.server_time = booked
+        known.device_time = booked
+        known.source = IMPORT_SOURCE
+        known.terminal_name = IMPORT_PLACE
         if restored:
-            existing.voided_at = None
-            existing.void_reason = None
+            known.voided_at = None
+            known.void_reason = None
         stats["updated"] += 1
     db.commit()
     return stats
