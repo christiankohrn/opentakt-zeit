@@ -482,6 +482,7 @@ export const api = {
   patchDepartment: (id: number, body: { name: string }) =>
     request<Department>(`/api/hr/departments/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   deleteDepartment: (id: number) => request(`/api/hr/departments/${id}`, { method: "DELETE" }),
+  deleteUser: (id: number) => request(`/api/hr/users/${id}`, { method: "DELETE" }),
   userModels: (userId: number) => request<WorkModelAssignment[]>(`/api/hr/users/${userId}/work-models`),
   assignUserModel: (userId: number, body: { work_model_id: number; valid_from: string }) =>
     request<WorkModelAssignment>(`/api/hr/users/${userId}/work-models`, { method: "POST", body: JSON.stringify(body) }),

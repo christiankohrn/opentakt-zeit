@@ -8,14 +8,27 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.auth import HR_ROLES, as_local, bump_session_rev, current_user, local_day_bounds, normalize_username, now_utc, require_admin, require_hr, write_session
 from app.balance import account_hours, days_in_range, summarize_user_day
 from app.datafox import normalize_badge
 from app.database import get_db
-from app.models import Absence, AuditEvent, DayAcceptance, Department, Punch, User, WorkModel, WorkModelAssignment
+from app.models import (
+    Absence,
+    AuditEvent,
+    CalendarEntry,
+    DayAcceptance,
+    Department,
+    MailToken,
+    Punch,
+    TotpBackupCode,
+    User,
+    WebAuthnCredential,
+    WorkModel,
+    WorkModelAssignment,
+)
 from app.schemas import (
     AbsenceRangeIn,
     CalendarIn,
@@ -492,6 +505,54 @@ def patch_user_account(user_id: int, payload: UserAccountIn, request: Request, d
     if actor.id == user.id:
         write_session(request, user)
     return _user_out(user)
+
+
+def _drop_user_rows(db: Session, user: User, actor: User) -> None:
+    uid = user.id
+    punch_ids = list(db.scalars(select(Punch.id).where(Punch.user_id == uid)))
+    if punch_ids:
+        db.execute(update(Punch).where(Punch.replaces_id.in_(punch_ids)).values(replaces_id=None))
+    db.execute(update(Punch).where(Punch.voided_by_id == uid).values(voided_by_id=None))
+    db.execute(update(Punch).where(Punch.user_id == uid).values(replaces_id=None, voided_by_id=None))
+    db.execute(delete(Punch).where(Punch.user_id == uid))
+    db.execute(update(Absence).where(Absence.created_by_id == uid).values(created_by_id=actor.id))
+    db.execute(delete(Absence).where(Absence.user_id == uid))
+    db.execute(update(DayAcceptance).where(DayAcceptance.accepted_by_id == uid).values(accepted_by_id=actor.id))
+    db.execute(delete(DayAcceptance).where(DayAcceptance.user_id == uid))
+    db.execute(update(WorkModelAssignment).where(WorkModelAssignment.created_by_id == uid).values(created_by_id=actor.id))
+    db.execute(delete(WorkModelAssignment).where(WorkModelAssignment.user_id == uid))
+    db.execute(update(CalendarEntry).where(CalendarEntry.created_by_id == uid).values(created_by_id=actor.id))
+    db.execute(delete(MailToken).where(MailToken.user_id == uid))
+    db.execute(delete(TotpBackupCode).where(TotpBackupCode.user_id == uid))
+    db.execute(delete(WebAuthnCredential).where(WebAuthnCredential.user_id == uid))
+    db.execute(update(AuditEvent).where(AuditEvent.actor_id == uid).values(actor_id=None))
+
+
+@router.delete("/users/{user_id}")
+def delete_user(user_id: int, request: Request, db: Session = Depends(get_db)):
+    actor = _actor_admin(request, db)
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(404, "Nicht gefunden")
+    if actor.id == user.id:
+        raise HTTPException(400, "Das eigene Konto kann hier nicht gelöscht werden")
+    if user.role == "admin" and _active_admin_count(db) <= 1 and user.active:
+        raise HTTPException(400, "Der letzte Administrator kann nicht gelöscht werden")
+    name = user.display_name
+    username = user.username
+    _drop_user_rows(db, user, actor)
+    db.add(
+        AuditEvent(
+            actor_id=actor.id,
+            action="user.delete",
+            entity_type="user",
+            entity_id=str(user.id),
+            payload=json.dumps({"username": username, "display_name": name}),
+        )
+    )
+    db.delete(user)
+    db.commit()
+    return {"ok": True}
 
 
 @router.post("/users/{user_id}/access-mail")

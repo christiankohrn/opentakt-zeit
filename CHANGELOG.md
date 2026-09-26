@@ -4,6 +4,7 @@ Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Ve
 
 ## [Unreleased]
 
+- Administratoren können eine Person endgültig löschen. Stempel, Abwesenheiten und das Konto sind danach weg; die Oberfläche verlangt eine ausdrückliche Bestätigung.
 - ESP32-Gehäuse Version 2 (parametrisierter Wandleser, OpenSCAD): Maße nach Prototyp V1 leicht korrigiert, ungetestet. Platz für Stiftleisten und Kabel, nicht für den produktiven Einsatz empfohlen.
 - Abteilungen als Stammdaten: Zuordnung am Mitarbeitenden, Filter in Personal und Prüfung. In den Auswertungen lassen sich ganze Abteilungen im Personenfilter anhaken.
 - Optionales Skript `deploy/install-dfcom.sh`: Datafox-DFCom-SDK von datafox.de laden und `libDFCom.so` lokal bauen. Die Bibliothek wird nicht mitgeliefert; HTTP-Stempeln bleibt der Standardweg.

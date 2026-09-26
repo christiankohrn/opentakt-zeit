@@ -7,6 +7,7 @@ type Props = {
   cancelLabel?: string;
   busy?: boolean;
   danger?: boolean;
+  confirmDisabled?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 };
@@ -18,6 +19,7 @@ export default function ConfirmDialog({
   cancelLabel = "Zurück",
   busy = false,
   danger = false,
+  confirmDisabled = false,
   onCancel,
   onConfirm,
 }: Props) {
@@ -59,7 +61,7 @@ export default function ConfirmDialog({
           <button
             type="button"
             className={`flex-1 rounded-xl py-2 text-white disabled:opacity-60 ${danger ? "bg-danger" : "bg-navy"}`}
-            disabled={busy}
+            disabled={busy || confirmDisabled}
             onClick={onConfirm}
           >
             {confirmLabel}

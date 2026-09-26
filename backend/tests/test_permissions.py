@@ -222,3 +222,45 @@ def test_admin_can_change_role_and_web_login(client):
     assert promote.status_code == 200, promote.text
     assert promote.json()["role"] == "supervisor"
     assert promote.json()["web_login"] is True
+
+
+def test_hr_cannot_delete_user(client):
+    login(client, "personal")
+    people = users_by_name(client)
+    res = client.delete(f"/api/hr/users/{people['mitarbeiter']['id']}")
+    assert res.status_code == 403
+
+
+def test_admin_deletes_person_and_their_punches(client):
+    login(client)
+    models = client.get("/api/hr/work-models").json()
+    created = client.post(
+        "/api/hr/users",
+        json={
+            "username": "weg-mit",
+            "display_name": "Weg Damit",
+            "role": "employee",
+            "work_model_id": models[0]["id"],
+            "web_login": False,
+            "hired_on": "2026-01-01",
+        },
+    )
+    assert created.status_code == 200, created.text
+    user_id = created.json()["id"]
+    booked = client.put(
+        f"/api/hr/users/{user_id}/days/2026-08-07",
+        json={"reason": "Testdaten", "punches": [{"kind": "in", "time": "08:00"}, {"kind": "out", "time": "16:00"}]},
+    )
+    assert booked.status_code == 200, booked.text
+    deleted = client.delete(f"/api/hr/users/{user_id}")
+    assert deleted.status_code == 200, deleted.text
+    assert client.get(f"/api/hr/users/{user_id}/days?month=2026-08").status_code == 404
+    names = {u["username"] for u in client.get("/api/hr/users").json()}
+    assert "weg-mit" not in names
+
+
+def test_admin_cannot_delete_self(client):
+    me = login(client)
+    res = client.delete(f"/api/hr/users/{me['id']}")
+    assert res.status_code == 400
+    assert "eigene Konto" in res.json()["detail"]

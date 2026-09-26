@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, type DaySummary, type Department, type User, type WorkModel, type WorkModelAssignment } from "../api";
 import { useAuth } from "../auth";
 import DayLegend from "../components/DayLegend";
@@ -37,6 +37,7 @@ const ROLE: Record<string, string> = {
 export default function HrUserMonth() {
   const { user: me } = useAuth();
   const isAdmin = me?.role === "admin";
+  const nav = useNavigate();
   const { id } = useParams();
   const [params, setParams] = useSearchParams();
   const userId = Number(id);
@@ -77,6 +78,9 @@ export default function HrUserMonth() {
     department_id: "",
   });
   const [accountMsg, setAccountMsg] = useState("");
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteAck, setDeleteAck] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const [accountErrors, setAccountErrors] = useState<UserFieldErrors>({});
   const [generatedPassword, setGeneratedPassword] = useState("");
   const [exportMsg, setExportMsg] = useState("");
@@ -659,6 +663,25 @@ export default function HrUserMonth() {
           Eintragen
         </button>
       </form>
+      {isAdmin && user && me?.id !== user.id ? (
+        <div className="space-y-2 rounded-2xl border border-danger/40 bg-card p-4">
+          <p className="text-sm font-medium text-danger">Person löschen</p>
+          <p className="text-xs text-muted">
+            Entfernt {user.display_name} samt allen Stempeln, Abwesenheiten und dem Konto. Das ist keine
+            Deaktivierung und lässt sich nicht rückgängig machen.
+          </p>
+          <button
+            type="button"
+            className="w-full rounded-xl border border-danger py-2 text-sm text-danger"
+            onClick={() => {
+              setDeleteAck(false);
+              setDeleteOpen(true);
+            }}
+          >
+            Endgültig löschen
+          </button>
+        </div>
+      ) : null}
     </>
   );
 
@@ -862,6 +885,51 @@ export default function HrUserMonth() {
             </div>
           </div>
         </div>
+      ) : null}
+      {deleteOpen && user ? (
+        <ConfirmDialog
+          title={`${user.display_name} unwiderruflich löschen?`}
+          danger
+          confirmDisabled={!deleteAck || deleteBusy}
+          busy={deleteBusy}
+          confirmLabel={deleteBusy ? "Löschen …" : "Endgültig löschen"}
+          body={
+            <div className="space-y-3">
+              <p>
+                Alle Stempel, Pausen, Urlaubs- und Krankheitstage, Salden, Modellzuordnungen, Passkeys und
+                Einladungen von <span className="font-medium text-ink">{user.display_name}</span> werden gelöscht.
+                Auswertungen zeigen die Person danach nicht mehr.
+              </p>
+              <p>Deaktivieren lässt Konto und Zeiten stehen. Löschen entfernt beides für immer.</p>
+              <label className="flex items-start gap-2 text-ink">
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={deleteAck}
+                  onChange={(e) => setDeleteAck(e.target.checked)}
+                />
+                <span>Ich lösche {user.display_name} einschließlich aller Zeitdaten.</span>
+              </label>
+            </div>
+          }
+          onCancel={() => {
+            if (!deleteBusy) setDeleteOpen(false);
+          }}
+          onConfirm={() => {
+            void (async () => {
+              setDeleteBusy(true);
+              try {
+                await api.deleteUser(user.id);
+                nav("/personal");
+              } catch (err) {
+                setDeleteOpen(false);
+                setAccountMsg(err instanceof Error ? err.message : "Löschen fehlgeschlagen");
+              } finally {
+                setDeleteBusy(false);
+              }
+            })();
+          }}
+        />
       ) : null}
       {modelDelete ? (
         <ConfirmDialog
