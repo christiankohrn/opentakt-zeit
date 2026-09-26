@@ -100,8 +100,10 @@ rsync -a --delete \
   --exclude 'venv' \
   --exclude 'lib' \
   /tmp/opentakt-zeit/ /opt/zeiterfassung/
-sudo /opt/zeiterfassung/deploy/update.sh
+bash /opt/zeiterfassung/deploy/update.sh
 ```
+
+Als `deploy` die letzte Zeile mit `sudo`. Ohne Ausführungsrecht sagt `sudo` „command not found“; dann `chmod a+x /opt/zeiterfassung/deploy/update.sh`. Das Skript setzt den Baum danach auf `deploy:zeiterfassung`, damit `npm` schreiben kann.
 
 `update.sh` sichert die SQLite-Datei nach `/var/lib/zeiterfassung/backups/pre-update/`, spielt pip/npm neu ein, baut das Frontend und startet den Dienst. nginx und das Zertifikat bleiben unverändert.
 

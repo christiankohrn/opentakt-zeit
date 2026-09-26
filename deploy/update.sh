@@ -7,6 +7,10 @@ STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 # shellcheck source=deploy/common.sh
 source "$(cd "$(dirname "$0")" && pwd)/common.sh"
 
+# rsync as root leaves the tree root-owned; pip and npm run as deploy.
+chown -R deploy:zeiterfassung "$APP_ROOT"
+chmod a+x "$APP_ROOT/deploy/"*.sh
+
 ensure_datafox_secret
 ensure_esp_terminal_secret
 ensure_terminal_http

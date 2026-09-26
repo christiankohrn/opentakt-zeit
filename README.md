@@ -100,8 +100,10 @@ rsync -a --delete \
   --exclude 'venv' \
   --exclude 'lib' \
   /tmp/opentakt-zeit/ /opt/zeiterfassung/
-sudo /opt/zeiterfassung/deploy/update.sh
+bash /opt/zeiterfassung/deploy/update.sh
 ```
+
+Als `deploy` statt root dasselbe, nur die letzte Zeile mit `sudo`. Fehlt das Ausführungsrecht, meldet `sudo` sonst „command not found“ — dann einmal `chmod a+x /opt/zeiterfassung/deploy/update.sh`.
 
 `update.sh` kopiert die Datenbank nach `/var/lib/zeiterfassung/backups/pre-update/`, installiert die Python- und npm-Abhängigkeiten, baut die Oberfläche neu und startet den Dienst. nginx und das Zertifikat bleiben, wie sie sind.
 
