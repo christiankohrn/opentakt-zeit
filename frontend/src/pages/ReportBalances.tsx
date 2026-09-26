@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, type MonthBalanceRow, type User } from "../api";
 import PersonFilter from "../components/PersonFilter";
+import LoadingNote from "../components/LoadingNote";
 import ReportToolbar, { ExportButtons } from "../components/ReportToolbar";
 import { signedHours } from "../labels";
 import { defaultStichtag, formatDeDate, monthLabel, parseUserIds, payrollMonth } from "../reportPeriod";
@@ -16,6 +17,7 @@ export default function ReportBalances() {
   const [people, setPeople] = useState<MonthBalanceRow[]>([]);
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     api.users().then(setUsers).catch((err: Error) => setError(err.message));
@@ -30,14 +32,25 @@ export default function ReportBalances() {
   }, [asOf, month, params, setParams, userIdsKey]);
 
   useEffect(() => {
+    let cancel = false;
+    setLoading(true);
     api
       .monthBalances(month, asOf, parseUserIds(userIdsKey))
       .then((r) => {
+        if (cancel) return;
         setPeople(r.people);
         setNote(r.note);
         setError("");
       })
-      .catch((err: Error) => setError(err.message));
+      .catch((err: Error) => {
+        if (!cancel) setError(err.message);
+      })
+      .finally(() => {
+        if (!cancel) setLoading(false);
+      });
+    return () => {
+      cancel = true;
+    };
   }, [asOf, month, userIdsKey]);
 
   function setFilter(nextMonth: string, nextAsOf: string, ids: number[] | null) {
@@ -81,6 +94,10 @@ export default function ReportBalances() {
         Stand {formatDeDate(asOf)} · {monthLabel(month)}. Zeitkonto bis zum früheren von Stichtag und heute. {note}
       </p>
       {error ? <p className="mt-3 text-sm text-danger">{error}</p> : null}
+      {loading ? (
+        <LoadingNote />
+      ) : (
+        <>
       <ul className="mt-4 space-y-2 md:hidden">
         {people.map((row) => (
           <li key={row.user_id} className="rounded-2xl border border-line bg-card px-4 py-3">
@@ -153,6 +170,8 @@ export default function ReportBalances() {
           </tbody>
         </table>
       </div>
+        </>
+      )}
     </div>
   );
 }

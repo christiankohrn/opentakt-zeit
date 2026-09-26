@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, type DaySummary } from "../api";
 import DayLegend from "../components/DayLegend";
+import LoadingNote from "../components/LoadingNote";
 import { useVisiblePoll } from "../live";
 import { bookingText, dayKindLabel, dayRowClass, daySurfaceClass, formatDayLabel, formatHours, formatPunchLine, hoursTone, isoDate, signedHours, warnLabel } from "../labels";
 
@@ -19,20 +20,22 @@ export default function Times() {
   const [days, setDays] = useState<DaySummary[]>([]);
   const [monthFlex, setMonthFlex] = useState(0);
   const [totalFlex, setTotalFlex] = useState(0);
+  const [loading, setLoading] = useState(true);
 
-  const load = useCallback(() => {
+  const load = useCallback((quiet = false) => {
+    if (!quiet) setLoading(true);
     api.myDays(month).then((r) => {
       setDays(r.days);
       setMonthFlex(r.month_flex ?? 0);
       setTotalFlex(r.total_flex ?? 0);
-    });
+    }).finally(() => setLoading(false));
   }, [month]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  useVisiblePoll(20000, load);
+  useVisiblePoll(20000, () => load(true));
 
   const totals = useMemo(() => {
     const today = isoDate();
@@ -58,13 +61,19 @@ export default function Times() {
           className="month-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
         />
       </div>
-      <p className="mt-2 text-sm text-muted">
-        Ist {formatHours(totals.work)} · Soll {formatHours(totals.soll)} · Monat{" "}
-        <span className={hoursTone(monthFlex)}>{signedHours(monthFlex)}</span>
-        {" · "}
-        Gesamt <span className={hoursTone(totalFlex)}>{signedHours(totalFlex)}</span>
-      </p>
+      {loading ? (
+        <LoadingNote className="mt-2" />
+      ) : (
+        <p className="mt-2 text-sm text-muted">
+          Ist {formatHours(totals.work)} · Soll {formatHours(totals.soll)} · Monat{" "}
+          <span className={hoursTone(monthFlex)}>{signedHours(monthFlex)}</span>
+          {" · "}
+          Gesamt <span className={hoursTone(totalFlex)}>{signedHours(totalFlex)}</span>
+        </p>
+      )}
       <DayLegend />
+      {!loading ? (
+        <>
       <ul className="mt-4 space-y-2 md:hidden">
         {days.map((d) => {
           const off = Boolean(d.calendar || d.absence);
@@ -134,6 +143,8 @@ export default function Times() {
           </tbody>
         </table>
       </div>
+        </>
+      ) : null}
     </div>
   );
 }

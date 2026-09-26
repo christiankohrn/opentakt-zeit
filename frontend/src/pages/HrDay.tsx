@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, type DaySummary, type PunchKind, type User } from "../api";
 import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
+import LoadingNote from "../components/LoadingNote";
 import { IconTrash } from "../components/Icons";
 import { absenceLabel, formatDayTitle, punchLabel, warnLabel } from "../labels";
 import { useUnsavedGuard } from "../unsaved";
@@ -36,6 +37,7 @@ export default function HrDay() {
   const pruefungTo = `/pruefung?month=${month}&user=${userId}`;
 
   const [user, setUser] = useState<User | null>(null);
+  const [loadError, setLoadError] = useState("");
   const [summary, setSummary] = useState<DaySummary | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
   const [baselineRows, setBaselineRows] = useState<Row[]>([]);
@@ -53,19 +55,24 @@ export default function HrDay() {
   const issues = (summary?.warnings ?? []).filter((w) => ISSUE_KEYS.has(w));
 
   async function load() {
-    const r = await api.userDays(userId, month || day.slice(0, 7));
-    setUser(r.user);
-    const found = r.days.find((d) => d.date === day) ?? null;
-    setSummary(found);
-    const next = (found?.punches.filter((p) => !p.voided) ?? []).map((p) => ({
-      kind: p.kind as PunchKind,
-      time: p.time,
-    }));
-    setRows(next);
-    setBaselineRows(cloneRows(next));
-    setPendingAbsence(null);
-    setPendingAccept(false);
-    setMsg("");
+    try {
+      const r = await api.userDays(userId, month || day.slice(0, 7));
+      setUser(r.user);
+      const found = r.days.find((d) => d.date === day) ?? null;
+      setSummary(found);
+      const next = (found?.punches.filter((p) => !p.voided) ?? []).map((p) => ({
+        kind: p.kind as PunchKind,
+        time: p.time,
+      }));
+      setRows(next);
+      setBaselineRows(cloneRows(next));
+      setPendingAbsence(null);
+      setPendingAccept(false);
+      setMsg("");
+      setLoadError("");
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : "Fehler");
+    }
   }
 
   useEffect(() => {
@@ -177,6 +184,18 @@ export default function HrDay() {
 
   const title = day ? formatDayTitle(day) : "";
   const backLabel = from === "pruefung" ? "Prüfung" : (user?.display_name ?? "Personal");
+
+  if (!user) {
+    return (
+      <div className="pt-2">
+        <Link to={backTo} className="text-sm text-muted">
+          ← {backLabel}
+        </Link>
+        <h1 className="mt-2 text-xl font-medium">{title}</h1>
+        {loadError ? <p className="mt-4 text-sm text-danger">{loadError}</p> : <LoadingNote />}
+      </div>
+    );
+  }
 
   return (
     <div className="pt-2">

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, type JournalAccounts, type JournalReport, type User } from "../api";
 import PersonFilter from "../components/PersonFilter";
+import LoadingNote from "../components/LoadingNote";
 import ReportToolbar, { ExportButtons } from "../components/ReportToolbar";
 import { formatHours, signedHours } from "../labels";
 import { monthLabel, parseUserIds, payrollMonth } from "../reportPeriod";
@@ -57,6 +58,7 @@ export default function ReportJournal() {
   const [users, setUsers] = useState<User[]>([]);
   const [journals, setJournals] = useState<JournalReport[]>([]);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     api.users().then(setUsers).catch((err: Error) => setError(err.message));
@@ -71,13 +73,24 @@ export default function ReportJournal() {
   }, [month, params, setParams, userIdsKey]);
 
   useEffect(() => {
+    let cancel = false;
+    setLoading(true);
     api
       .journals(month, parseUserIds(userIdsKey))
       .then((r) => {
+        if (cancel) return;
         setJournals(r.people);
         setError("");
       })
-      .catch((err: Error) => setError(err.message));
+      .catch((err: Error) => {
+        if (!cancel) setError(err.message);
+      })
+      .finally(() => {
+        if (!cancel) setLoading(false);
+      });
+    return () => {
+      cancel = true;
+    };
   }, [month, userIdsKey]);
 
   function setFilter(nextMonth: string, ids: number[] | null) {
@@ -114,10 +127,13 @@ export default function ReportJournal() {
         {monthLabel(month)}. PDF für alle ausgewählten Personen auf einmal, je Person eine Seite zur Aushändigung.
       </p>
       {error ? <p className="mt-3 text-sm text-danger">{error}</p> : null}
-      {journals.length === 0 && !error ? (
+      {loading ? (
+        <LoadingNote />
+      ) : journals.length === 0 && !error ? (
         <p className="mt-8 text-sm text-muted">Keine Personen für diesen Monat.</p>
       ) : null}
-      {journals.map((journal) => (
+      {!loading
+        ? journals.map((journal) => (
         <section key={journal.user_id} className="mt-6 break-after-page">
           <h2 className="text-lg font-medium">{journal.display_name}</h2>
           <p className="text-sm text-muted">{journal.month_label}</p>
@@ -155,7 +171,8 @@ export default function ReportJournal() {
           </div>
           {journal.accounts ? <AccountFooter accounts={journal.accounts} /> : null}
         </section>
-      ))}
+      ))
+        : null}
     </div>
   );
 }

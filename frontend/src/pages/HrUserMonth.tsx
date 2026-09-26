@@ -4,6 +4,7 @@ import { api, type DaySummary, type Department, type User, type WorkModel, type 
 import { useAuth } from "../auth";
 import DayLegend from "../components/DayLegend";
 import ConfirmDialog from "../components/ConfirmDialog";
+import LoadingNote from "../components/LoadingNote";
 import FieldError from "../components/FieldError";
 import { IconChevron, IconTrash } from "../components/Icons";
 import PasswordField from "../components/PasswordField";
@@ -751,6 +752,8 @@ export default function HrUserMonth() {
       <div className="mt-4 flex flex-col gap-3 xl:grid xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start xl:gap-6">
         <div className="order-2 xl:order-1">
           <DayLegend />
+          {!user ? <LoadingNote /> : (
+          <>
           <ul className="mt-3 space-y-2 xl:hidden">
             {visibleDays.map((d) => {
               const issues = d.warnings.filter((w) => w !== "overnight");
@@ -849,6 +852,8 @@ export default function HrUserMonth() {
               </tbody>
             </table>
           </div>
+          </>
+          )}
         </div>
         <div className="order-1 space-y-3 xl:order-2 xl:sticky xl:top-6">{settings}</div>
       </div>

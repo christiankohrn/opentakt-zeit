@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type WorkModel } from "../api";
+import LoadingNote from "../components/LoadingNote";
 import { formatDecimal } from "../labels";
 
 export default function HrModels() {
@@ -8,13 +9,14 @@ export default function HrModels() {
   const [name, setName] = useState("Teilzeit 20h");
   const [kind, setKind] = useState("flextime");
   const [hours, setHours] = useState("4,4,4,4,4,0,0");
+  const [loading, setLoading] = useState(true);
 
   async function load() {
     setModels(await api.models());
   }
 
   useEffect(() => {
-    void load();
+    void load().finally(() => setLoading(false));
   }, []);
 
   async function onSubmit(e: FormEvent) {
@@ -42,7 +44,8 @@ export default function HrModels() {
         ← Personal
       </Link>
       <h1 className="mt-2 text-xl font-medium">Arbeitszeitmodelle</h1>
-      <ul className="mt-4 grid gap-2 md:grid-cols-2">
+      {loading ? <LoadingNote /> : null}
+      {!loading ? <ul className="mt-4 grid gap-2 md:grid-cols-2">
         {models.map((m) => (
           <li key={m.id} className="rounded-2xl border border-line bg-card px-4 py-3">
             <p className="font-medium">{m.name}</p>
@@ -54,6 +57,7 @@ export default function HrModels() {
           </li>
         ))}
       </ul>
+      : null}
       <form onSubmit={onSubmit} className="mt-6 space-y-3 rounded-2xl border border-line bg-card p-4">
         <input
           value={name}

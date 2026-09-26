@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, ApiError, type DfcomSettings, type EspTerminalSettings, type SecurityPolicyValue, type SmtpSettings } from "../api";
 import PasswordField from "../components/PasswordField";
+import LoadingNote from "../components/LoadingNote";
 
 const ROLE_LABELS: Record<string, string> = {
   employee: "Mitarbeiter",
@@ -37,6 +38,7 @@ function SecurityPolicyCard() {
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     void api
@@ -46,7 +48,8 @@ function SecurityPolicyCard() {
         setRoles(p.roles);
         setValues(p.values);
       })
-      .catch(() => setErr("Sicherheitsrichtlinie konnte nicht geladen werden."));
+      .catch(() => setErr("Sicherheitsrichtlinie konnte nicht geladen werden."))
+      .finally(() => setReady(true));
   }, []);
 
   async function save() {
@@ -71,7 +74,8 @@ function SecurityPolicyCard() {
         Pro Benutzergruppe festlegen, ob eine zweite Stufe Pflicht ist. Betroffene Personen werden beim nächsten Login
         aufgefordert, 2FA bzw. einen Passkey einzurichten, bevor sie weiterkommen.
       </p>
-      {roles.map((role) => (
+      {ready ? (
+        roles.map((role) => (
         <label key={role} className="flex items-center justify-between gap-3 text-sm">
           <span>{ROLE_LABELS[role] ?? role}</span>
           <select
@@ -86,9 +90,13 @@ function SecurityPolicyCard() {
             ))}
           </select>
         </label>
-      ))}
+      ))
+      ) : (
+        <LoadingNote className="mt-2" />
+      )}
       {err ? <p className="text-sm text-danger">{err}</p> : null}
       {msg ? <p className="text-sm text-present">{msg}</p> : null}
+      {ready ? (
       <button
         type="button"
         disabled={busy}
@@ -97,6 +105,7 @@ function SecurityPolicyCard() {
       >
         {busy ? "…" : "Richtlinie speichern"}
       </button>
+      ) : null}
     </div>
   );
 }
@@ -121,12 +130,14 @@ function MailCard() {
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     void api
       .smtpSettings()
       .then(setForm)
-      .catch(() => setErr("Mailserver konnte nicht geladen werden."));
+      .catch(() => setErr("Mailserver konnte nicht geladen werden."))
+      .finally(() => setReady(true));
   }, []);
 
   async function onSave(e: FormEvent) {
@@ -168,6 +179,15 @@ function MailCard() {
     } finally {
       setBusy(false);
     }
+  }
+
+  if (!ready) {
+    return (
+      <div className="space-y-3">
+        <p className="text-sm text-muted">Zugangsmails, Passwort-Reset und Testversand.</p>
+        {err ? <p className="text-sm text-danger">{err}</p> : <LoadingNote className="mt-2" />}
+      </div>
+    );
   }
 
   return (
@@ -331,6 +351,7 @@ function EspCard() {
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     void api
@@ -339,7 +360,8 @@ function EspCard() {
         setEsp(next);
         setFwVersion(Math.max(2, (next.firmware_version || 0) + 1));
       })
-      .catch(() => setErr("ESP-Terminal konnte nicht geladen werden."));
+      .catch(() => setErr("ESP-Terminal konnte nicht geladen werden."))
+      .finally(() => setReady(true));
   }, []);
 
   async function saveEsp() {
@@ -374,6 +396,14 @@ function EspCard() {
     } finally {
       setBusy(false);
     }
+  }
+
+  if (!ready) {
+    return (
+      <div className="space-y-3">
+        {err ? <p className="text-sm text-danger">{err}</p> : <LoadingNote className="mt-2" />}
+      </div>
+    );
   }
 
   return (
@@ -636,9 +666,14 @@ function DfcomCard() {
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [ready, setReady] = useState(false);
 
   async function load() {
-    setDfcom(await api.dfcomSettings());
+    try {
+      setDfcom(await api.dfcomSettings());
+    } finally {
+      setReady(true);
+    }
   }
 
   useEffect(() => {
@@ -716,6 +751,15 @@ function DfcomCard() {
     } finally {
       setBusy(false);
     }
+  }
+
+  if (!ready) {
+    return (
+      <div className="space-y-3">
+        <p className="text-sm text-muted">Datafox MasterIV per Polling. HTTP-Stempeln bleibt parallel nutzbar.</p>
+        {err ? <p className="text-sm text-danger">{err}</p> : <LoadingNote className="mt-2" />}
+      </div>
+    );
   }
 
   return (

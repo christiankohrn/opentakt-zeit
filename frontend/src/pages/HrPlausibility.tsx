@@ -1,6 +1,7 @@
 import { Link, useSearchParams } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { api, type Department } from "../api";
+import LoadingNote from "../components/LoadingNote";
 import { formatDayLabel, warnLabel } from "../labels";
 
 function payrollMonth() {
@@ -21,6 +22,7 @@ export default function HrPlausibility() {
   const [people, setPeople] = useState<
     Awaited<ReturnType<typeof api.plausibility>>["people"]
   >([]);
+  const [loading, setLoading] = useState(true);
 
   function setFilter(nextMonth: string, nextDept: string) {
     const nextParams: Record<string, string> = { month: nextMonth };
@@ -43,7 +45,19 @@ export default function HrPlausibility() {
   }, [deptFilter, month, params, setParams, userFilter]);
 
   useEffect(() => {
-    api.plausibility(month).then((r) => setPeople(r.people));
+    let cancel = false;
+    setLoading(true);
+    api
+      .plausibility(month)
+      .then((r) => {
+        if (!cancel) setPeople(r.people);
+      })
+      .finally(() => {
+        if (!cancel) setLoading(false);
+      });
+    return () => {
+      cancel = true;
+    };
   }, [month]);
 
   const visible = people.filter((p) => {
@@ -96,7 +110,9 @@ export default function HrPlausibility() {
           </Link>
         </p>
       ) : null}
-      {visible.length === 0 ? (
+      {loading ? (
+        <LoadingNote />
+      ) : visible.length === 0 ? (
         <p className="mt-8 text-sm text-muted">
           {userFilter ? "Keine Auffälligkeiten für diese Person in diesem Monat." : "Keine Auffälligkeiten in diesem Monat."}
         </p>

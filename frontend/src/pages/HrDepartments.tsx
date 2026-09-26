@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type Department } from "../api";
+import LoadingNote from "../components/LoadingNote";
 
 export default function HrDepartments() {
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -8,13 +9,16 @@ export default function HrDepartments() {
   const [editing, setEditing] = useState<number | null>(null);
   const [editName, setEditName] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
 
   async function load() {
     setDepartments(await api.departments());
   }
 
   useEffect(() => {
-    void load().catch((err: Error) => setError(err.message));
+    void load()
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setLoading(false));
   }, []);
 
   async function onSubmit(e: FormEvent) {
@@ -112,7 +116,8 @@ export default function HrDepartments() {
           </li>
         ))}
       </ul>
-      {departments.length === 0 ? <p className="mt-4 text-sm text-muted">Noch keine Abteilungen.</p> : null}
+      {loading ? <LoadingNote className="mt-4" /> : null}
+      {!loading && departments.length === 0 ? <p className="mt-4 text-sm text-muted">Noch keine Abteilungen.</p> : null}
       <form onSubmit={onSubmit} className="mt-6 space-y-3 rounded-2xl border border-line bg-card p-4">
         <input
           value={name}

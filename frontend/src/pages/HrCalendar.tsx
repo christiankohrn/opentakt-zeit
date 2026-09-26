@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
+import LoadingNote from "../components/LoadingNote";
 import { useAuth } from "../auth";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { IconTrash } from "../components/Icons";
@@ -30,12 +31,18 @@ export default function HrCalendar() {
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<CalRow | null>(null);
+  const [loading, setLoading] = useState(true);
 
   async function load(nextYear = year) {
-    const [settings, cal] = await Promise.all([api.orgSettings(), api.calendar(nextYear)]);
-    setLand(settings.bundesland);
-    setStates(settings.states);
-    setRows(cal);
+    setLoading(true);
+    try {
+      const [settings, cal] = await Promise.all([api.orgSettings(), api.calendar(nextYear)]);
+      setLand(settings.bundesland);
+      setStates(settings.states);
+      setRows(cal);
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -163,7 +170,8 @@ export default function HrCalendar() {
         </button>
       </form>
       {msg ? <p className="mt-3 text-sm text-present">{msg}</p> : null}
-      <div className="mt-4 space-y-4">
+      {loading ? <LoadingNote /> : null}
+      {!loading ? <div className="mt-4 space-y-4">
         {grouped.map(([month, items]) => (
           <section key={month}>
             <h2 className="text-xs font-medium uppercase tracking-wider text-muted">
@@ -205,6 +213,7 @@ export default function HrCalendar() {
           </section>
         ))}
       </div>
+      : null}
       {pendingDelete ? (
         <ConfirmDialog
           title="Eintrag löschen?"

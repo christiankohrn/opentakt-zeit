@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, type AbsenceDaysRow, type User } from "../api";
 import PersonFilter from "../components/PersonFilter";
+import LoadingNote from "../components/LoadingNote";
 import ReportToolbar, { ExportButtons } from "../components/ReportToolbar";
 import { formatDeDate, parseUserIds, payrollYear, yearRange } from "../reportPeriod";
 
@@ -22,6 +23,7 @@ export default function AbsenceDaysReport({
   const [users, setUsers] = useState<User[]>([]);
   const [people, setPeople] = useState<AbsenceDaysRow[]>([]);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
   const periodLabel = kind === "sick" ? "Krankheitstage" : "Urlaubstage";
   const load = kind === "sick" ? api.sickDays : api.vacationDays;
   const downloadCsv = kind === "sick" ? api.downloadSickDaysCsv : api.downloadVacationDaysCsv;
@@ -41,12 +43,23 @@ export default function AbsenceDaysReport({
   }, [from, params, setParams, to]);
 
   useEffect(() => {
+    let cancel = false;
+    setLoading(true);
     load(from, to, parseUserIds(userIdsKey))
       .then((r) => {
+        if (cancel) return;
         setPeople(r.people);
         setError("");
       })
-      .catch((err: Error) => setError(err.message));
+      .catch((err: Error) => {
+        if (!cancel) setError(err.message);
+      })
+      .finally(() => {
+        if (!cancel) setLoading(false);
+      });
+    return () => {
+      cancel = true;
+    };
   }, [from, load, to, userIdsKey]);
 
   function setFilter(nextFrom: string, nextTo: string, ids: number[] | null) {
@@ -87,11 +100,17 @@ export default function AbsenceDaysReport({
         />
         <PersonFilter users={users} selectedIds={selectedIds} onChange={(ids) => setFilter(from, to, ids)} />
       </ReportToolbar>
-      <p className="mt-2 text-sm text-muted">
-        {formatDeDate(from)} – {formatDeDate(to)}. Standard: ganzes Jahr, alle Mitarbeitenden. {people.length} Personen,{" "}
-        {periodTotal} Tage im Zeitraum, {yearTotal} im Jahr insgesamt. Auch 0 Tage.
-      </p>
+      {loading ? (
+        <LoadingNote className="mt-2" />
+      ) : (
+        <p className="mt-2 text-sm text-muted">
+          {formatDeDate(from)} – {formatDeDate(to)}. Standard: ganzes Jahr, alle Mitarbeitenden. {people.length} Personen,{" "}
+          {periodTotal} Tage im Zeitraum, {yearTotal} im Jahr insgesamt. Auch 0 Tage.
+        </p>
+      )}
       {error ? <p className="mt-3 text-sm text-danger">{error}</p> : null}
+      {!loading ? (
+        <>
       <ul className="mt-4 space-y-2 md:hidden">
         {people.map((row) => (
           <li key={row.user_id} className="rounded-2xl border border-line bg-card px-4 py-3">
@@ -128,6 +147,8 @@ export default function AbsenceDaysReport({
           </tbody>
         </table>
       </div>
+        </>
+      ) : null}
     </div>
   );
 }

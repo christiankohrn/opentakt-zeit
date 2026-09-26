@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, type NightHoursRow, type User } from "../api";
 import PersonFilter from "../components/PersonFilter";
+import LoadingNote from "../components/LoadingNote";
 import ReportToolbar, { ExportButtons } from "../components/ReportToolbar";
 import { formatHours } from "../labels";
 import { monthLabel, parseUserIds, payrollMonth } from "../reportPeriod";
@@ -15,6 +16,7 @@ export default function ReportNightHours() {
   const [users, setUsers] = useState<User[]>([]);
   const [people, setPeople] = useState<NightHoursRow[]>([]);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     api.users().then(setUsers).catch((err: Error) => setError(err.message));
@@ -30,13 +32,24 @@ export default function ReportNightHours() {
   }, [month, params, setParams, showCombined, userIdsKey]);
 
   useEffect(() => {
+    let cancel = false;
+    setLoading(true);
     api
       .nightHours(month, parseUserIds(userIdsKey))
       .then((r) => {
+        if (cancel) return;
         setPeople(r.people);
         setError("");
       })
-      .catch((err: Error) => setError(err.message));
+      .catch((err: Error) => {
+        if (!cancel) setError(err.message);
+      })
+      .finally(() => {
+        if (!cancel) setLoading(false);
+      });
+    return () => {
+      cancel = true;
+    };
   }, [month, userIdsKey]);
 
   function setFilter(nextMonth: string, combined: boolean, ids: number[] | null) {
@@ -77,6 +90,10 @@ export default function ReportNightHours() {
         abgezogen.
       </p>
       {error ? <p className="mt-3 text-sm text-danger">{error}</p> : null}
+      {loading ? (
+        <LoadingNote />
+      ) : (
+        <>
       <ul className="mt-4 space-y-2 md:hidden">
         {people.map((row) => (
           <li key={row.user_id} className="rounded-2xl border border-line bg-card px-4 py-3">
@@ -120,6 +137,8 @@ export default function ReportNightHours() {
           </tbody>
         </table>
       </div>
+        </>
+      )}
     </div>
   );
 }

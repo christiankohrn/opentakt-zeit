@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, ApiError, type PunchKind, type Status } from "../api";
+import LoadingNote from "../components/LoadingNote";
 import { useVisiblePoll } from "../live";
 import { enqueue, newEventId, readQueue, writeQueue } from "../offline";
 import { bookingText, daySurfaceClass, formatDayLabel, hoursTone, isoDate, signedHours, warnLabel } from "../labels";
@@ -24,6 +25,7 @@ export default function Stamp() {
   const [busy, setBusy] = useState<PunchKind | null>(null);
   const [clock, setClock] = useState(() => new Date());
   const [pending, setPending] = useState(0);
+  const [ready, setReady] = useState(false);
 
   const refresh = useCallback(async (quiet = false) => {
     try {
@@ -33,6 +35,8 @@ export default function Stamp() {
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) return;
       setError("Offline — Stempel werden gespeichert und später gesendet.");
+    } finally {
+      setReady(true);
     }
   }, []);
 
@@ -114,7 +118,7 @@ export default function Stamp() {
     }
   }
 
-  const copy = status ? STATE_COPY[status.state] : STATE_COPY.away;
+  const copy = status ? STATE_COPY[status.state] : ready ? STATE_COPY.away : null;
   const time = clock.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   const dateLabel = formatDayLabel(isoDate(clock), "long");
   const flex = status?.flex_hours ?? 0;
@@ -127,6 +131,7 @@ export default function Stamp() {
         <div>
           <p className="text-center text-5xl font-light tracking-tight sm:text-6xl md:text-left md:text-7xl">{time}</p>
           <p className="mt-2 text-center text-lg text-muted md:text-left">{dateLabel}</p>
+          {copy ? (
           <div className="mt-8 rounded-3xl border border-line bg-card px-6 py-10 text-center md:mt-6 md:py-8 md:text-left">
             <p className={`text-sm uppercase tracking-[0.25em] ${copy.color}`}>{copy.title}</p>
             <p className="mt-3 text-2xl font-medium">{status?.display_name ?? "…"}</p>
@@ -143,6 +148,9 @@ export default function Stamp() {
               </div>
             </div>
           </div>
+          ) : (
+            <LoadingNote className="mt-8 text-center md:text-left" />
+          )}
         </div>
         <div>
           {error ? <p className="mt-4 text-center text-sm text-pause md:mt-0 md:text-left">{error}</p> : null}
@@ -150,7 +158,7 @@ export default function Stamp() {
             <p className="mt-2 text-center text-sm text-muted md:text-left">{pending} Stempel warten aufs Netz</p>
           ) : null}
           <div className="mt-8 grid grid-cols-1 gap-3 md:mt-0">
-            {(status?.allowed ?? ["in"]).map((kind) => (
+            {(status?.allowed ?? (ready ? ["in"] : [])).map((kind) => (
               <button
                 key={kind}
                 type="button"

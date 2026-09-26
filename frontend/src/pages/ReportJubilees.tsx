@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, type JubileeEvent, type User } from "../api";
 import PersonFilter from "../components/PersonFilter";
+import LoadingNote from "../components/LoadingNote";
 import ReportToolbar, { ExportButtons } from "../components/ReportToolbar";
 import { formatDeDate, parseUserIds, payrollHalf, payrollYear } from "../reportPeriod";
 
@@ -14,6 +15,7 @@ export default function ReportJubilees() {
   const [users, setUsers] = useState<User[]>([]);
   const [events, setEvents] = useState<JubileeEvent[]>([]);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     api.users().then(setUsers).catch((err: Error) => setError(err.message));
@@ -28,13 +30,24 @@ export default function ReportJubilees() {
   }, [half, params, setParams, userIdsKey, year]);
 
   useEffect(() => {
+    let cancel = false;
+    setLoading(true);
     api
       .jubilees(year, half, parseUserIds(userIdsKey))
       .then((r) => {
+        if (cancel) return;
         setEvents(r.events);
         setError("");
       })
-      .catch((err: Error) => setError(err.message));
+      .catch((err: Error) => {
+        if (!cancel) setError(err.message);
+      })
+      .finally(() => {
+        if (!cancel) setLoading(false);
+      });
+    return () => {
+      cancel = true;
+    };
   }, [half, userIdsKey, year]);
 
   function setFilter(nextYear: number, nextHalf: number, ids: number[] | null) {
@@ -79,7 +92,12 @@ export default function ReportJubilees() {
         Geburtstage, Eintrittstage und 10/25/40-Jahr-Jubiläen. Ohne Geburtstag erscheinen nur Eintritt und Jubiläen.
       </p>
       {error ? <p className="mt-3 text-sm text-danger">{error}</p> : null}
-      {events.length === 0 && !error ? <p className="mt-8 text-sm text-muted">Keine Ereignisse in diesem Halbjahr.</p> : null}
+      {loading ? (
+        <LoadingNote />
+      ) : events.length === 0 && !error ? (
+        <p className="mt-8 text-sm text-muted">Keine Ereignisse in diesem Halbjahr.</p>
+      ) : (
+        <>
       <ul className="mt-4 space-y-2 md:hidden">
         {events.map((row) => (
           <li key={`${row.user_id}-${row.kind}-${row.date}`} className="rounded-2xl border border-line bg-card px-4 py-3">
@@ -122,6 +140,8 @@ export default function ReportJubilees() {
           </tbody>
         </table>
       </div>
+        </>
+      )}
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { api, type Department, type FlexBalance, type User, type WorkModel } from "../api";
 import { useAuth } from "../auth";
 import FieldError from "../components/FieldError";
+import LoadingNote from "../components/LoadingNote";
 import PasswordField from "../components/PasswordField";
 import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
 import { hoursTone, isoDate, signedHours } from "../labels";
@@ -90,6 +91,7 @@ export default function HrUsers() {
   const [form, setForm] = useState<UserForm>(() => emptyUserForm(""));
   const [fieldErrors, setFieldErrors] = useState<UserFieldErrors>({});
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
   const [generatedPassword, setGeneratedPassword] = useState("");
   const [mailReady, setMailReady] = useState(false);
   const [info, setInfo] = useState("");
@@ -104,19 +106,27 @@ export default function HrUsers() {
   });
 
   async function load() {
-    const [u, m, d, b, mail] = await Promise.all([
-      api.users(),
-      api.models(),
-      api.departments(),
-      api.balances(month),
-      api.mailStatus().catch(() => ({ ready: false })),
-    ]);
-    setUsers(u);
-    setModels(m);
-    setDepartments(d);
-    setBalances(Object.fromEntries(b.people.map((row) => [row.user_id, row])));
-    setMailReady(mail.ready);
-    if (m[0] && !form.work_model_id) setForm((f) => ({ ...f, work_model_id: String(m[0].id) }));
+    setLoading(true);
+    try {
+      const [u, m, d, b, mail] = await Promise.all([
+        api.users(),
+        api.models(),
+        api.departments(),
+        api.balances(month),
+        api.mailStatus().catch(() => ({ ready: false })),
+      ]);
+      setUsers(u);
+      setModels(m);
+      setDepartments(d);
+      setBalances(Object.fromEntries(b.people.map((row) => [row.user_id, row])));
+      setMailReady(mail.ready);
+      setError("");
+      if (m[0] && !form.work_model_id) setForm((f) => ({ ...f, work_model_id: String(m[0].id) }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler");
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -493,6 +503,14 @@ export default function HrUsers() {
           </button>
         </form>
       ) : null}
+      {loading ? <LoadingNote /> : null}
+      {!loading && visible.length === 0 ? (
+        <p className="mt-8 text-sm text-muted">
+          {deptFilter ? "Keine Personen in dieser Auswahl." : "Keine Personen."}
+        </p>
+      ) : null}
+      {!loading ? (
+        <>
       <ul className="mt-4 space-y-2 md:hidden">
         {visible.map((u) => {
           const flex = balances[u.id];
@@ -587,6 +605,8 @@ export default function HrUsers() {
           </tbody>
         </table>
       </div>
+        </>
+      ) : null}
       {closeConfirm || blocker.state === "blocked" ? (
         <UnsavedChangesDialog onStay={onStay} onDiscard={onDiscard} />
       ) : null}
