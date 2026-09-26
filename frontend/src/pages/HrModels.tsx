@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type WorkModel } from "../api";
 import LoadingNote from "../components/LoadingNote";
+import SearchField, { matchesQuery } from "../components/SearchField";
 import { formatDecimal } from "../labels";
 
 export default function HrModels() {
@@ -10,6 +11,8 @@ export default function HrModels() {
   const [kind, setKind] = useState("flextime");
   const [hours, setHours] = useState("4,4,4,4,4,0,0");
   const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
+  const visible = models.filter((m) => matchesQuery(query, [m.name, m.kind === "shift" ? "Schicht" : "Gleitzeit"]));
 
   async function load() {
     setModels(await api.models());
@@ -43,10 +46,16 @@ export default function HrModels() {
       <Link to="/personal" className="text-sm text-muted">
         ← Personal
       </Link>
-      <h1 className="mt-2 text-xl font-medium">Arbeitszeitmodelle</h1>
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-xl font-medium">Arbeitszeitmodelle</h1>
+        <SearchField value={query} onChange={setQuery} placeholder="Modell suchen" />
+      </div>
       {loading ? <LoadingNote /> : null}
-      {!loading ? <ul className="mt-4 grid gap-2 md:grid-cols-2">
-        {models.map((m) => (
+      {!loading && visible.length === 0 ? (
+        <p className="mt-8 text-sm text-muted">{query.trim() ? "Kein Modell in dieser Auswahl." : "Noch kein Modell."}</p>
+      ) : null}
+      {!loading && visible.length > 0 ? <ul className="mt-4 grid gap-2 md:grid-cols-2">
+        {visible.map((m) => (
           <li key={m.id} className="rounded-2xl border border-line bg-card px-4 py-3">
             <p className="font-medium">{m.name}</p>
             <p className="text-xs text-muted">

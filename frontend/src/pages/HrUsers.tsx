@@ -4,6 +4,7 @@ import { api, type Department, type FlexBalance, type User, type WorkModel } fro
 import { useAuth } from "../auth";
 import FieldError from "../components/FieldError";
 import LoadingNote from "../components/LoadingNote";
+import SearchField, { matchesQuery } from "../components/SearchField";
 import PasswordField from "../components/PasswordField";
 import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
 import { hoursTone, isoDate, signedHours } from "../labels";
@@ -95,14 +96,22 @@ export default function HrUsers() {
   const [generatedPassword, setGeneratedPassword] = useState("");
   const [mailReady, setMailReady] = useState(false);
   const [info, setInfo] = useState("");
+  const [query, setQuery] = useState("");
   const dirty = open && JSON.stringify(form) !== JSON.stringify(emptyUserForm(form.work_model_id));
   const blocker = useUnsavedGuard(dirty);
   const sendingMail = Boolean(isAdmin && form.send_access_mail && form.web_login && mailReady);
   const passwordRequired = Boolean(isAdmin && form.web_login && !sendingMail);
   const visible = users.filter((u) => {
-    if (!deptFilter) return true;
-    if (deptFilter === "none") return !u.department_id;
-    return String(u.department_id) === deptFilter;
+    if (deptFilter === "none" && u.department_id) return false;
+    if (deptFilter && deptFilter !== "none" && String(u.department_id) !== deptFilter) return false;
+    return matchesQuery(query, [
+      u.display_name,
+      u.username,
+      u.email,
+      u.department_name,
+      u.work_model_name,
+      u.transponder_id,
+    ]);
   });
 
   async function load() {
@@ -230,18 +239,40 @@ export default function HrUsers() {
 
   return (
     <div className="pt-2">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-medium">Personal</h1>
-        <input
-          type="month"
-          value={month}
-          onChange={(e) => {
-            const next: Record<string, string> = { month: e.target.value };
-            if (deptFilter) next.dept = deptFilter;
-            setParams(next);
-          }}
-          className="month-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <SearchField value={query} onChange={setQuery} placeholder="Name, Transponder" />
+          {departments.length > 0 || deptFilter ? (
+            <select
+              className="filter-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
+              value={deptFilter}
+              onChange={(e) => {
+                const next: Record<string, string> = { month };
+                if (e.target.value) next.dept = e.target.value;
+                setParams(next);
+              }}
+            >
+              <option value="">Alle Abteilungen</option>
+              {departments.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+              <option value="none">Ohne Abteilung</option>
+            </select>
+          ) : null}
+          <input
+            type="month"
+            value={month}
+            onChange={(e) => {
+              const next: Record<string, string> = { month: e.target.value };
+              if (deptFilter) next.dept = deptFilter;
+              setParams(next);
+            }}
+            className="month-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
+          />
+        </div>
       </div>
       <div className="mt-2 flex flex-wrap gap-3 text-sm">
         <Link to="/pruefung" className="text-present">
@@ -260,25 +291,6 @@ export default function HrUsers() {
           {open ? "Schließen" : "Neu"}
         </button>
       </div>
-      {departments.length > 0 || deptFilter ? (
-        <select
-          className="mt-3 max-w-xs rounded-lg border border-line bg-card px-2 py-1 text-sm"
-          value={deptFilter}
-          onChange={(e) => {
-            const next: Record<string, string> = { month };
-            if (e.target.value) next.dept = e.target.value;
-            setParams(next);
-          }}
-        >
-          <option value="">Alle Abteilungen</option>
-          {departments.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name}
-            </option>
-          ))}
-          <option value="none">Ohne Abteilung</option>
-        </select>
-      ) : null}
       {info ? <p className="mt-2 text-sm text-present">{info}</p> : null}
       {!open && error ? <p className="mt-2 text-sm text-danger">{error}</p> : null}
       {open ? (
@@ -506,7 +518,7 @@ export default function HrUsers() {
       {loading ? <LoadingNote /> : null}
       {!loading && visible.length === 0 ? (
         <p className="mt-8 text-sm text-muted">
-          {deptFilter ? "Keine Personen in dieser Auswahl." : "Keine Personen."}
+          {deptFilter || query.trim() ? "Keine Personen in dieser Auswahl." : "Keine Personen."}
         </p>
       ) : null}
       {!loading ? (

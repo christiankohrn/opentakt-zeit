@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import LoadingNote from "../components/LoadingNote";
+import SearchField, { matchesQuery } from "../components/SearchField";
 import { useAuth } from "../auth";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { IconTrash } from "../components/Icons";
@@ -32,6 +33,7 @@ export default function HrCalendar() {
   const [busy, setBusy] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<CalRow | null>(null);
   const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
 
   async function load(nextYear = year) {
     setLoading(true);
@@ -53,13 +55,16 @@ export default function HrCalendar() {
   const grouped = useMemo(() => {
     const map = new Map<string, CalRow[]>();
     for (const row of rows) {
+      if (!matchesQuery(query, [row.name, row.day, absenceLabel(row.kind), row.kind === "company_off" ? "Betriebsfrei" : "Feiertag"])) {
+        continue;
+      }
       const key = row.day.slice(0, 7);
       const list = map.get(key) ?? [];
       list.push(row);
       map.set(key, list);
     }
     return [...map.entries()];
-  }, [rows]);
+  }, [query, rows]);
 
   async function saveLand(code: string) {
     setBusy(true);
@@ -101,16 +106,19 @@ export default function HrCalendar() {
       <Link to="/personal" className="text-sm text-muted">
         ← Personal
       </Link>
-      <div className="mt-2 flex items-center justify-between gap-3">
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-medium">Feiertage</h1>
-        <input
-          type="number"
-          min={2020}
-          max={2100}
-          value={year}
-          onChange={(e) => setYear(Number(e.target.value) || currentYear())}
-          className="w-24 rounded-lg border border-line bg-card px-2 py-1 text-sm"
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <SearchField value={query} onChange={setQuery} placeholder="Name oder Datum" />
+          <input
+            type="number"
+            min={2020}
+            max={2100}
+            value={year}
+            onChange={(e) => setYear(Number(e.target.value) || currentYear())}
+            className="h-[2.25rem] w-24 shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
+          />
+        </div>
       </div>
       <p className="mt-2 text-sm text-muted">
         Gesetzliche Feiertage hängen am Standort (Bundesland). Zusätzlich kannst du eigene Feiertage und
@@ -171,7 +179,10 @@ export default function HrCalendar() {
       </form>
       {msg ? <p className="mt-3 text-sm text-present">{msg}</p> : null}
       {loading ? <LoadingNote /> : null}
-      {!loading ? <div className="mt-4 space-y-4">
+      {!loading && grouped.length === 0 ? (
+        <p className="mt-8 text-sm text-muted">{query.trim() ? "Kein Tag in dieser Auswahl." : "Keine Einträge in diesem Jahr."}</p>
+      ) : null}
+      {!loading && grouped.length > 0 ? <div className="mt-4 space-y-4">
         {grouped.map(([month, items]) => (
           <section key={month}>
             <h2 className="text-xs font-medium uppercase tracking-wider text-muted">
