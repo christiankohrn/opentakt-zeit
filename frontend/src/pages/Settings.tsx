@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, ApiError, type DfcomSettings, type EspTerminalSettings, type SecurityPolicyValue, type SmtpSettings } from "../api";
-import { useClosedMonth } from "../closedMonth";
+import ConfirmDialog from "../components/ConfirmDialog";
 import PasswordField from "../components/PasswordField";
 import LoadingNote from "../components/LoadingNote";
 
@@ -933,12 +933,16 @@ function DfcomCard() {
   );
 }
 
+function formatLedgerDay(value: string) {
+  return new Date(value + "T12:00:00").toLocaleDateString("de-DE");
+}
+
 function LedgerCard() {
-  const closed = useClosedMonth();
   const [day, setDay] = useState("");
   const [land, setLand] = useState("NW");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
+  const [warn, setWarn] = useState(false);
 
   useEffect(() => {
     void api.orgSettings().then((settings) => {
@@ -947,28 +951,39 @@ function LedgerCard() {
     });
   }, []);
 
+  async function save() {
+    setBusy(true);
+    setMsg("");
+    try {
+      const next = await api.patchOrgSettings({
+        bundesland: land,
+        ledger_from: day || null,
+        confirm_closed: true,
+      });
+      setDay(next.ledger_from ?? "");
+      setWarn(false);
+      setMsg(
+        next.ledger_from
+          ? `Abrechnung ab ${formatLedgerDay(next.ledger_from)}.`
+          : "Abrechnung ab dem Eintritt.",
+      );
+    } catch (err) {
+      setWarn(false);
+      setMsg(err instanceof ApiError ? err.message : "Speichern fehlgeschlagen");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const when = day ? formatLedgerDay(day) : "";
+
   return (
     <form
-      className="mb-4 space-y-2 rounded-2xl border border-line bg-card p-4"
+      className="space-y-2 rounded-2xl border border-line bg-card p-4"
       onSubmit={(e: FormEvent) => {
         e.preventDefault();
-        setBusy(true);
         setMsg("");
-        void closed
-          .attempt(async (confirmClosed) => {
-            const next = await api.patchOrgSettings({
-              bundesland: land,
-              ledger_from: day || null,
-              confirm_closed: confirmClosed,
-            });
-            setDay(next.ledger_from ?? "");
-            setMsg(
-              next.ledger_from
-                ? `Abrechnung ab ${new Date(next.ledger_from + "T12:00:00").toLocaleDateString("de-DE")}.`
-                : "Abrechnung ab dem Eintritt.",
-            );
-          }, setMsg)
-          .finally(() => setBusy(false));
+        setWarn(true);
       }}
     >
       <p className="text-sm font-medium">Abrechnung ab</p>
@@ -989,7 +1004,37 @@ function LedgerCard() {
         {busy ? "Speichern …" : "Stichtag speichern"}
       </button>
       {msg ? <p className="text-sm text-muted">{msg}</p> : null}
-      {closed.dialog}
+      {warn ? (
+        <ConfirmDialog
+          title={day ? "Stichtag wirklich speichern?" : "Stichtag wirklich entfernen?"}
+          danger
+          busy={busy}
+          confirmLabel={busy ? "Speichern …" : day ? "Trotzdem speichern" : "Trotzdem entfernen"}
+          cancelLabel="Abbrechen"
+          onCancel={() => {
+            if (!busy) setWarn(false);
+          }}
+          onConfirm={() => void save()}
+          body={
+            day ? (
+              <div className="space-y-2 text-ink">
+                <p className="font-medium text-danger">Das gilt für alle Personen und lässt sich nicht rückgängig machen.</p>
+                <ul className="list-disc space-y-1 pl-4">
+                  <li>Abschlüsse vor dem {when} werden gelöscht.</li>
+                  <li>Der Saldo zählt erst ab diesem Tag. Stempel davor bleiben in den Tagen stehen und zählen nicht mehr mit.</li>
+                  <li>Der Eintritt bleibt für Jubiläen gespeichert.</li>
+                  <li>Monate ab dem Stichtag werden neu gerechnet.</li>
+                </ul>
+              </div>
+            ) : (
+              <div className="space-y-2 text-ink">
+                <p className="font-medium text-danger">Ohne Stichtag rechnet die Abrechnung wieder ab dem Eintritt.</p>
+                <p>Vorhandene Abschlüsse werden neu gerechnet. Bei langen Beschäftigungen dauert das sehr lange.</p>
+              </div>
+            )
+          }
+        />
+      ) : null}
     </form>
   );
 }
@@ -1008,10 +1053,7 @@ export default function Settings() {
         ← Personal
       </Link>
       <h1 className="mt-2 text-xl font-medium">Einstellungen</h1>
-      <div className="mt-4">
-        <LedgerCard />
-      </div>
-      <div className="mt-3 flex gap-1 rounded-2xl border border-line bg-card p-1">
+      <div className="mt-4 flex gap-1 rounded-2xl border border-line bg-card p-1">
         {TABS.map((item) => (
           <button
             key={item.id}
@@ -1041,6 +1083,9 @@ export default function Settings() {
             <DfcomCard />
           </div>
         </div>
+      </div>
+      <div className="mt-8 border-t border-line pt-6">
+        <LedgerCard />
       </div>
     </div>
   );
