@@ -191,8 +191,10 @@ def summarize_day(
     if auto_break and not still_open:
         stamped_break = pause_minutes > 0 or any(p.kind in {"break_start", "break_end"} for p in events)
         if not stamped_break:
-            if work_minutes - 30 > 9 * 60:
+            if work_minutes > 9 * 60 + 45:
                 auto_minutes = 45
+            elif work_minutes > 9 * 60 + 30:
+                auto_minutes = work_minutes - 9 * 60
             elif work_minutes > 6 * 60 + 30:
                 auto_minutes = 30
             elif work_minutes > 6 * 60:

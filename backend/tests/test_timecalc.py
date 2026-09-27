@@ -223,9 +223,14 @@ def test_auto_break_follows_the_six_and_nine_hour_steps():
     assert nine["auto_break_minutes"] == 30
     assert format_hm(nine["work_hours"]) == "8:48"
 
-    long = span(date(2026, 9, 8), (7, 0), (16, 31))
-    assert long["auto_break_minutes"] == 45
-    assert format_hm(long["work_hours"]) == "8:46"
+    capped = span(date(2026, 8, 3), (7, 12), (16, 43))
+    assert capped["auto_break_minutes"] == 31
+    assert format_hm(capped["work_hours"]) == "9:00"
+    assert format_hm(capped["delta_hours"], signed=True) == "+1:00"
+
+    full = span(date(2026, 8, 4), (7, 0), (16, 46))
+    assert full["auto_break_minutes"] == 45
+    assert format_hm(full["work_hours"]) == "9:01"
 
 
 def test_auto_break_skips_if_break_stamped():

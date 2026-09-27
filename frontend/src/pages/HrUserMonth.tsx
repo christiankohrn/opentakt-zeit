@@ -522,7 +522,7 @@ export default function HrUserMonth() {
           <span>
             <span className="font-medium">Pausenautomatik</span>
             <span className="mt-0.5 block text-xs text-muted">
-              Ohne gestempelte Pause: über 6 Stunden nur der Überhang bis 30 Minuten, 45 Minuten erst wenn danach noch mehr als 9 Stunden Arbeit bleiben.
+              Ohne gestempelte Pause: über 6 Stunden nur der Überhang bis 30 Minuten, über 9 Stunden nur der Überhang bis 45 Minuten.
             </span>
           </span>
         </label>
