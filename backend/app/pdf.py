@@ -22,6 +22,12 @@ def de_date(value: date | str) -> str:
     return value.strftime("%d.%m.%Y")
 
 
+def de_hm(value: float, digits: int = 1, signed: bool = False) -> str:
+    from app.balance import format_hm
+
+    return format_hm(value, signed=signed)
+
+
 def de_num(value: float, digits: int = 1, signed: bool = False) -> str:
     text = f"{value:.{digits}f}".replace(".", ",")
     if signed and value > 0:

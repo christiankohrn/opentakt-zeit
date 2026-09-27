@@ -261,12 +261,18 @@ def summarize_day(
         result["open"] = False
         if calendar is not None and calendar.kind in {"holiday", "company_off"}:
             result["soll_hours"] = 0.0
-        if not events:
+        fills = absence is not None and absence.kind in {"vacation", "sick"}
+        if fills:
+            stamped = 0.0 if not events else float(result["work_hours"])
+            if not events:
+                result["break_hours"] = 0.0
+                result["auto_break_minutes"] = 0
+            result["work_hours"] = round(float(result["soll_hours"]) + stamped, 2)
+            result["delta_hours"] = round(stamped, 2)
+        elif not events:
             result["work_hours"] = 0.0
             result["break_hours"] = 0.0
             result["auto_break_minutes"] = 0
-            result["delta_hours"] = 0.0
-        elif absence is not None and absence.kind in paid:
             result["delta_hours"] = 0.0
         else:
             result["delta_hours"] = round(result["work_hours"] - result["soll_hours"], 2)

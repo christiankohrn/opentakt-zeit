@@ -71,10 +71,10 @@ def test_employee_cannot_read_reports(client):
 
 def test_sick_days_includes_zeros_and_skips_unemployed(client):
     login(client)
-    sick = create_person(client, "krank-anna", "Anna Krank", hired_on="2025-01-01")
-    zero = create_person(client, "gesund-ben", "Ben Gesund", hired_on="2025-01-01")
-    create_person(client, "alina-alt", "Alina Alt", hired_on="2020-01-01", left_on="2025-06-01")
-    create_person(client, "zara-neu", "Zara Zukunft", hired_on="2027-01-01")
+    sick = create_person(client, "krank-anna", "Krank, Anna", hired_on="2025-01-01")
+    zero = create_person(client, "gesund-ben", "Gesund, Ben", hired_on="2025-01-01")
+    create_person(client, "alina-alt", "Alt, Alina", hired_on="2020-01-01", left_on="2025-06-01")
+    create_person(client, "zara-neu", "Zukunft, Zara", hired_on="2027-01-01")
     added = client.post(
         f"/api/hr/users/{sick['id']}/absences",
         json={"kind": "sick", "start": "2026-03-02", "end": "2026-03-04"},
@@ -88,18 +88,18 @@ def test_sick_days_includes_zeros_and_skips_unemployed(client):
     res = client.get("/api/hr/reports/sick-days?year=2026")
     assert res.status_code == 200, res.text
     by_name = {row["display_name"]: row for row in res.json()["people"]}
-    assert by_name["Anna Krank"]["period_days"] == 4
-    assert by_name["Anna Krank"]["year_days"] == 4
-    assert by_name["Anna Krank"]["sick_days"] == 4
-    assert by_name["Ben Gesund"]["period_days"] == 0
-    assert by_name["Ben Gesund"]["year_days"] == 0
-    assert "Alina Alt" not in by_name
-    assert "Zara Zukunft" not in by_name
+    assert by_name["Krank, Anna"]["period_days"] == 4
+    assert by_name["Krank, Anna"]["year_days"] == 4
+    assert by_name["Krank, Anna"]["sick_days"] == 4
+    assert by_name["Gesund, Ben"]["period_days"] == 0
+    assert by_name["Gesund, Ben"]["year_days"] == 0
+    assert "Alt, Alina" not in by_name
+    assert "Zukunft, Zara" not in by_name
     csv_res = client.get("/api/hr/reports/sick-days.csv?year=2026")
     assert csv_res.status_code == 200
     text = csv_res.text
     assert "Zeitraum" in text
-    assert "Anna Krank;4;4" in text
+    assert "Krank, Anna;4;4" in text
     assert zero["id"]
 
     filtered = client.get(
@@ -107,7 +107,7 @@ def test_sick_days_includes_zeros_and_skips_unemployed(client):
     )
     assert filtered.status_code == 200, filtered.text
     names = [row["display_name"] for row in filtered.json()["people"]]
-    assert names == ["Anna Krank"]
+    assert names == ["Krank, Anna"]
     assert filtered.json()["people"][0]["period_days"] == 3
     assert filtered.json()["people"][0]["year_days"] == 4
 
@@ -139,7 +139,7 @@ def test_vacation_days_period_and_year(client):
     assert row["year_days"] == 3
     csv_res = client.get("/api/hr/reports/vacation-days.csv?year=2026")
     assert csv_res.status_code == 200
-    assert "Eva Urlaub;3;3" in csv_res.text
+    assert "Urlaub, Eva;3;3" in csv_res.text
     assert_pdf(client.get("/api/hr/reports/vacation-days.pdf?year=2026"))
 
 
@@ -359,11 +359,11 @@ def test_journal_pdf_fits_31_day_month_on_one_page():
         ("Konto", 0.12, "R"),
     ]
     booking = "Kommen 08:00 · Pause Beginn 12:00 · Pause Ende 12:30 · Gehen 16:30"
-    rows = [[f"{day:02d}.08.", booking, "8,00", "8,00", "0,00"] for day in range(1, 32)]
-    rows.extend([["Woche", "", "40,00", "40,00", "0,00"] for _ in range(6)])
-    rows.append(["Monat", "", "176,00", "176,00", "0,00"])
+    rows = [[f"{day:02d}.08.", booking, "8:00", "8:00", "0:00"] for day in range(1, 32)]
+    rows.extend([["Woche", "", "40:00", "40:00", "0:00"] for _ in range(6)])
+    rows.append(["Monat", "", "176:00", "176:00", "0:00"])
     accounts = [
-        ["Zeitkonto", "1,0", "2,0", "-", "3,0"],
+        ["Zeitkonto", "+1:00", "+2:00", "-", "+3:00"],
         ["Urlaubskonto", "27", "0", "3", "24"],
     ]
     pdf.journal_person(columns, rows, accounts, note="Resturlaub = Jahresanspruch - genommen - verplant.")

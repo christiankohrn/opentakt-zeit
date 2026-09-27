@@ -14,6 +14,8 @@ class LoginIn(BaseModel):
 class UserOut(BaseModel):
     id: int
     username: str
+    first_name: str = ""
+    last_name: str = ""
     display_name: str
     email: Optional[str]
     role: str
@@ -115,7 +117,9 @@ class DepartmentOut(BaseModel):
 
 class UserWrite(BaseModel):
     username: str
-    display_name: str
+    first_name: str = ""
+    last_name: str = ""
+    display_name: str = ""
     email: Optional[str] = None
     password: Optional[str] = None
     role: str = "employee"
@@ -176,6 +180,8 @@ class UserSettingsIn(BaseModel):
 
 class UserAccountIn(BaseModel):
     username: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
     display_name: Optional[str] = None
     email: Optional[str] = None
     role: Optional[str] = None

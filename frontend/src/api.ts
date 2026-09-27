@@ -12,6 +12,8 @@ export type WorkState = "away" | "in" | "break";
 export type User = {
   id: number;
   username: string;
+  first_name?: string;
+  last_name?: string;
   display_name: string;
   email: string | null;
   role: Role;
@@ -489,6 +491,8 @@ export const api = {
     id: number,
     body: {
       username?: string;
+      first_name?: string;
+      last_name?: string;
       display_name?: string;
       email?: string | null;
       role?: string;

@@ -62,9 +62,9 @@ def test_flatten_params_exposes_col_without_prefix():
     assert params["badge"] == "AABB"
 
 
-def test_format_flex_uses_german_decimal():
+def test_format_flex_uses_hours_and_minutes():
     from app.balance import format_flex
 
-    assert format_flex(2.5) == "+2,5h"
-    assert format_flex(-1.0) == "-1,0h"
-    assert format_flex(0) == "+0,0h"
+    assert format_flex(2.5) == "+2:30"
+    assert format_flex(-1.0) == "-1:00"
+    assert format_flex(0) == "0:00"

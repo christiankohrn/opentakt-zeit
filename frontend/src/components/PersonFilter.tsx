@@ -36,7 +36,10 @@ export default function PersonFilter({
   const selected = selectedIds ?? allIds;
   const selectedSet = new Set(selected);
   const allOn = selectedIds === null || (allIds.length > 0 && selected.length === allIds.length);
-  const shown = users.filter((user) => matchesQuery(query, [user.display_name, user.username, user.department_name]));
+  const shown = users
+    .filter((user) => matchesQuery(query, [user.display_name, user.username, user.department_name]))
+    .slice()
+    .sort((a, b) => a.display_name.localeCompare(b.display_name, "de"));
   const groups = groupUsers(shown);
   const allGroups = groupUsers(users);
   const showGroups = allGroups.some((g) => g.key !== "none") || allGroups.length > 1;

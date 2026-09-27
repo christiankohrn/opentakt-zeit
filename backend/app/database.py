@@ -54,6 +54,10 @@ def ensure_schema() -> None:
     ModelBase.metadata.create_all(bind=engine)
     cols = {c["name"] for c in inspect(engine).get_columns("users")}
     alters: list[str] = []
+    if "first_name" not in cols:
+        alters.append("ALTER TABLE users ADD COLUMN first_name VARCHAR(80) NOT NULL DEFAULT ''")
+    if "last_name" not in cols:
+        alters.append("ALTER TABLE users ADD COLUMN last_name VARCHAR(120) NOT NULL DEFAULT ''")
     if "auto_break" not in cols:
         alters.append("ALTER TABLE users ADD COLUMN auto_break BOOLEAN NOT NULL DEFAULT 0")
     if "transponder_id" not in cols:

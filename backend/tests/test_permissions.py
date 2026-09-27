@@ -58,7 +58,7 @@ def test_hr_can_update_personnel_fields_and_create_employee(client):
         json={"display_name": "Max Personal", "email": "max@example.com"},
     )
     assert res.status_code == 200, res.text
-    assert res.json()["display_name"] == "Max Personal"
+    assert res.json()["display_name"] == "Personal, Max"
     assert res.json()["role"] == "employee"
     models = client.get("/api/hr/work-models").json()
     created = client.post(

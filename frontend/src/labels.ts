@@ -36,13 +36,37 @@ export function formatDecimal(value: number, digits = 1) {
   return value.toFixed(digits).replace(".", ",");
 }
 
-export function formatHours(hours: number, digits = 1) {
-  return `${formatDecimal(hours, digits)}\u00a0h`;
+export function parseHours(value: string): number | null {
+  const text = value.trim().replace(/\s/g, "");
+  const clock = text.match(/^([+-])?(\d+):(\d{1,2})$/);
+  if (clock) {
+    const mins = Number(clock[3]);
+    if (mins > 59) return null;
+    const sign = clock[1] === "-" ? -1 : 1;
+    return (sign * (Number(clock[2]) * 60 + mins)) / 60;
+  }
+  const hours = Number(text.replace(",", "."));
+  return Number.isFinite(hours) ? hours : null;
 }
 
-export function signedHours(hours: number, digits = 1) {
-  const sign = hours > 0 ? "+" : "";
-  return `${sign}${formatHours(hours, digits)}`;
+export function formatHm(hours: number, signed = false) {
+  if (!Number.isFinite(hours)) return "0:00";
+  const negative = hours < 0;
+  const total = Math.round(Math.abs(hours) * 60);
+  const whole = Math.floor(total / 60);
+  const mins = total % 60;
+  const body = `${whole}:${String(mins).padStart(2, "0")}`;
+  if (negative) return `-${body}`;
+  if (signed && total > 0) return `+${body}`;
+  return body;
+}
+
+export function formatHours(hours: number, _digits = 1) {
+  return formatHm(hours, false);
+}
+
+export function signedHours(hours: number, _digits = 1) {
+  return formatHm(hours, true);
 }
 
 export function isoDate(d = new Date()) {

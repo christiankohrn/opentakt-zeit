@@ -13,7 +13,7 @@ from app.auth import as_local, current_user, now_utc, require_hr
 from app.config import get_config
 from app.database import get_db
 from app.models import User
-from app.pdf import ReportPDF, de_date, de_days, de_num, table_pdf
+from app.pdf import ReportPDF, de_date, de_days, de_hm, table_pdf
 from app.reports import (
     JOURNAL_ACCOUNT_NOTE,
     VACATION_NOTE,
@@ -153,10 +153,10 @@ def _journal_account_rows(report: dict) -> list[list[str]]:
     return [
         [
             "Zeitkonto",
-            de_num(accounts.get("flex_prev") or 0, 1, signed=True),
-            de_num(accounts.get("flex_month") or 0, 1, signed=True),
+            de_hm(accounts.get("flex_prev") or 0, 1, signed=True),
+            de_hm(accounts.get("flex_month") or 0, 1, signed=True),
             "-",
-            de_num(accounts.get("flex_total") or 0, 1, signed=True),
+            de_hm(accounts.get("flex_total") or 0, 1, signed=True),
         ],
         [
             "Urlaubskonto",
@@ -172,16 +172,16 @@ def _journal_table_rows(report: dict) -> list[list[str]]:
     rows: list[list[str]] = []
     for row in report["rows"]:
         if row["type"] == "day":
-            work = de_num(row["work_hours"], 2) if row["work_hours"] else "-"
+            work = de_hm(row["work_hours"], 2) if row["work_hours"] else "-"
         else:
-            work = de_num(row["work_hours"], 2)
+            work = de_hm(row["work_hours"], 2)
         rows.append(
             [
                 row["label"],
                 row["booking"],
                 work,
-                de_num(row["soll_hours"], 2),
-                de_num(row["delta_hours"], 2, signed=True),
+                de_hm(row["soll_hours"], 2),
+                de_hm(row["delta_hours"], 2, signed=True),
             ]
         )
     return rows
@@ -254,9 +254,9 @@ def month_balances(
     csv_rows = [
         [
             row["display_name"],
-            de_num(row["flex_prev"], 1, signed=True),
-            de_num(row["flex_month"], 1, signed=True),
-            de_num(row["flex_total"], 1, signed=True),
+            de_hm(row["flex_prev"], 1, signed=True),
+            de_hm(row["flex_month"], 1, signed=True),
+            de_hm(row["flex_total"], 1, signed=True),
             row["vacation_prev"],
             row["vacation_month"],
             row["vacation_total"],
@@ -272,9 +272,9 @@ def month_balances(
         if people:
             totals = [
                 "Summe",
-                de_num(sum(row["flex_prev"] for row in people), 1, signed=True),
-                de_num(sum(row["flex_month"] for row in people), 1, signed=True),
-                de_num(sum(row["flex_total"] for row in people), 1, signed=True),
+                de_hm(sum(row["flex_prev"] for row in people), 1, signed=True),
+                de_hm(sum(row["flex_month"] for row in people), 1, signed=True),
+                de_hm(sum(row["flex_total"] for row in people), 1, signed=True),
                 str(sum(row["vacation_prev"] for row in people)),
                 str(sum(row["vacation_month"] for row in people)),
                 str(sum(row["vacation_total"] for row in people)),
@@ -296,9 +296,9 @@ def month_balances(
                 rows=[
                     [
                         row["display_name"],
-                        de_num(row["flex_prev"], 1, signed=True),
-                        de_num(row["flex_month"], 1, signed=True),
-                        de_num(row["flex_total"], 1, signed=True),
+                        de_hm(row["flex_prev"], 1, signed=True),
+                        de_hm(row["flex_month"], 1, signed=True),
+                        de_hm(row["flex_total"], 1, signed=True),
                         str(row["vacation_prev"]),
                         str(row["vacation_month"]),
                         str(row["vacation_total"]),
@@ -393,10 +393,10 @@ def night_hours(
         if people:
             totals = [
                 "Summe",
-                de_num(sum(row["hours_20_24"] for row in people), 2),
-                de_num(sum(row["hours_0_4"] for row in people), 2),
-                de_num(sum(row["hours_4_6"] for row in people), 2),
-                de_num(sum(row["hours_1_plus_3"] for row in people), 2),
+                de_hm(sum(row["hours_20_24"] for row in people), 2),
+                de_hm(sum(row["hours_0_4"] for row in people), 2),
+                de_hm(sum(row["hours_4_6"] for row in people), 2),
+                de_hm(sum(row["hours_1_plus_3"] for row in people), 2),
             ]
         return _pdf_response(
             f"lohnarten-{month}.pdf",
@@ -414,10 +414,10 @@ def night_hours(
                 rows=[
                     [
                         row["display_name"],
-                        de_num(row["hours_20_24"], 2),
-                        de_num(row["hours_0_4"], 2),
-                        de_num(row["hours_4_6"], 2),
-                        de_num(row["hours_1_plus_3"], 2),
+                        de_hm(row["hours_20_24"], 2),
+                        de_hm(row["hours_0_4"], 2),
+                        de_hm(row["hours_4_6"], 2),
+                        de_hm(row["hours_1_plus_3"], 2),
                     ]
                     for row in people
                 ],
@@ -432,10 +432,10 @@ def night_hours(
             [
                 [
                     row["display_name"],
-                    de_num(row["hours_20_24"], 2),
-                    de_num(row["hours_0_4"], 2),
-                    de_num(row["hours_4_6"], 2),
-                    de_num(row["hours_1_plus_3"], 2),
+                    de_hm(row["hours_20_24"], 2),
+                    de_hm(row["hours_0_4"], 2),
+                    de_hm(row["hours_4_6"], 2),
+                    de_hm(row["hours_1_plus_3"], 2),
                 ]
                 for row in people
             ],

@@ -12,7 +12,7 @@ from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.auth import HR_ROLES, as_local, bump_session_rev, current_user, local_day_bounds, normalize_username, now_utc, require_admin, require_hr, write_session
-from app.balance import account_hours, days_in_range, summarize_user_day
+from app.balance import account_hours, days_in_range, format_hm, summarize_user_day
 from app.closing_job import job_status, start_close, start_recalculate
 from app.closings import (
     any_closing,
@@ -26,6 +26,7 @@ from app.closings import (
 )
 from app.datafox import normalize_badge
 from app.database import get_db
+from app.names import compose_display_name, name_sort_key, person_sort_key, split_person_name
 from app.models import (
     Absence,
     AuditEvent,
@@ -147,6 +148,23 @@ def _attach_accepted(summary: dict, acc: DayAcceptance | None) -> dict:
     return summary
 
 
+def _apply_name(user: User, raw: str) -> None:
+    first, last = split_person_name(raw)
+    user.first_name = first[:80]
+    user.last_name = last[:120]
+    user.display_name = compose_display_name(user.first_name, user.last_name)[:160]
+
+
+def _apply_name_parts(user: User, first: str, last: str) -> None:
+    user.first_name = " ".join((first or "").split())[:80]
+    user.last_name = " ".join((last or "").split())[:120]
+    user.display_name = compose_display_name(user.first_name, user.last_name)[:160]
+
+
+def _by_name(user: User) -> str:
+    return person_sort_key(user.first_name, user.last_name, user.display_name)
+
+
 def _user_with_rels():
     return select(User).options(selectinload(User.work_model), selectinload(User.department))
 
@@ -251,7 +269,7 @@ def _check_employment_dates(user: User) -> None:
 @router.get("/users", response_model=list[UserOut])
 def list_users(request: Request, db: Session = Depends(get_db)):
     _actor(request, db)
-    users = list(db.scalars(_user_with_rels().order_by(User.display_name)))
+    users = sorted(db.scalars(_user_with_rels()), key=_by_name)
     counts = passkey_counts(db, [u.id for u in users])
     return [_user_out(u).model_copy(update={"passkey_count": counts.get(u.id, 0)}) for u in users]
 
@@ -280,7 +298,7 @@ def create_user(payload: UserWrite, request: Request, db: Session = Depends(get_
     dept = _department_by_id(db, payload.department_id)
     user = User(
         username=username,
-        display_name=payload.display_name.strip(),
+        display_name="",
         email=email,
         role=payload.role,
         active=payload.active,
@@ -295,6 +313,12 @@ def create_user(payload: UserWrite, request: Request, db: Session = Depends(get_
         birthday=payload.birthday,
         vacation_days_year=payload.vacation_days_year,
     )
+    if payload.first_name.strip() or payload.last_name.strip():
+        _apply_name_parts(user, payload.first_name, payload.last_name)
+    else:
+        _apply_name(user, payload.display_name)
+    if len(user.display_name) < 2:
+        raise HTTPException(400, "Name zu kurz")
     user.department = dept
     _check_employment_dates(user)
     _set_transponder(db, user, payload.transponder_id)
@@ -353,7 +377,12 @@ def patch_user(user_id: int, payload: UserWrite, request: Request, db: Session =
     _ensure_not_last_admin(db, user, payload.role, payload.active)
     privileged = payload.role != user.role or payload.active != user.active or bool(payload.password) or next_web_login != user.web_login
     user.username = normalize_username(payload.username)
-    user.display_name = payload.display_name.strip()
+    if payload.first_name.strip() or payload.last_name.strip():
+        _apply_name_parts(user, payload.first_name, payload.last_name)
+    else:
+        _apply_name(user, payload.display_name)
+    if len(user.display_name) < 2:
+        raise HTTPException(400, "Name zu kurz")
     user.email = _set_email(payload.email)
     user.role = payload.role
     user.active = payload.active
@@ -457,11 +486,18 @@ def patch_user_account(user_id: int, payload: UserAccountIn, request: Request, d
         if taken:
             raise HTTPException(409, "Benutzername vergeben")
         user.username = username
-    if payload.display_name is not None:
-        name = payload.display_name.strip()
-        if len(name) < 2:
+    name_parts = "first_name" in payload.model_fields_set or "last_name" in payload.model_fields_set
+    if name_parts or payload.display_name is not None:
+        if name_parts:
+            _apply_name_parts(
+                user,
+                payload.first_name if payload.first_name is not None else user.first_name,
+                payload.last_name if payload.last_name is not None else user.last_name,
+            )
+        else:
+            _apply_name(user, payload.display_name or "")
+        if len(user.display_name) < 2:
             raise HTTPException(400, "Name zu kurz")
-        user.display_name = name
     if "email" in payload.model_fields_set:
         user.email = _set_email(payload.email)
     next_role = user.role
@@ -1435,21 +1471,22 @@ def closing_detail(year: int, month: int, request: Request, db: Session = Depend
         select(MonthClosing, User)
         .join(User, User.id == MonthClosing.user_id)
         .where(MonthClosing.year == year, MonthClosing.month == month)
-        .order_by(User.display_name)
     )
+    people = [
+        {
+            "user_id": user.id,
+            "display_name": user.display_name,
+            "flex_hours": row.flex_hours,
+            "opening_balance_hours": user.opening_balance_hours,
+            "opening_balance_on": user.opening_balance_on.isoformat() if user.opening_balance_on else None,
+        }
+        for row, user in rows
+    ]
+    people.sort(key=lambda item: name_sort_key(item["display_name"]))
     return {
         "year": year,
         "month": month,
-        "people": [
-            {
-                "user_id": user.id,
-                "display_name": user.display_name,
-                "flex_hours": row.flex_hours,
-                "opening_balance_hours": user.opening_balance_hours,
-                "opening_balance_on": user.opening_balance_on.isoformat() if user.opening_balance_on else None,
-            }
-            for row, user in rows
-        ],
+        "people": people,
     }
 
 
@@ -1477,7 +1514,7 @@ def balances(
     end = date(year + 1, 1, 1) if mon == 12 else date(year, mon + 1, 1)
     last = end - timedelta(days=1)
     q_start, q_end = punches_window_for_month(start, last)
-    users = list(db.scalars(_user_with_rels().order_by(User.display_name)))
+    users = sorted(db.scalars(_user_with_rels()), key=_by_name)
     timelines = load_timelines(db, [u.id for u in users])
     cal = calendar_map(db, start, last)
     today = as_local(now_utc()).date()
@@ -1539,9 +1576,9 @@ def plausibility(
         db.scalars(
             _user_with_rels()
             .where(User.active.is_(True), User.role.in_(("employee", "supervisor")))
-            .order_by(User.display_name)
         )
     )
+    users.sort(key=_by_name)
     timelines = load_timelines(db, [u.id for u in users])
     cal = calendar_map(db, start, last)
     rows = []
@@ -1627,10 +1664,10 @@ def export_csv(
     user_id: int | None = None,
 ):
     _actor(request, db)
-    q = _user_with_rels().order_by(User.display_name)
+    q = _user_with_rels()
     if user_id:
         q = q.where(User.id == user_id)
-    users = list(db.scalars(q))
+    users = sorted(db.scalars(q), key=_by_name)
     timelines = load_timelines(db, [u.id for u in users])
     year, mon = (int(x) for x in month.split("-"))
     start = date(year, mon, 1)
@@ -1674,10 +1711,10 @@ def export_csv(
                         day["date"],
                         day["first_in"] or "",
                         day["last_out"] or "",
-                        str(day["work_hours"]).replace(".", ","),
-                        str(day["break_hours"]).replace(".", ","),
-                        str(day["soll_hours"]).replace(".", ","),
-                        str(day["delta_hours"]).replace(".", ","),
+                        format_hm(day["work_hours"]),
+                        format_hm(day["break_hours"]),
+                        format_hm(day["soll_hours"]),
+                        format_hm(day["delta_hours"], signed=True),
                         (day["absence"] or {}).get("kind", "") if day["absence"] else day_cal.get("name", ""),
                         ",".join(_warn_de(w) for w in day["warnings"]),
                     ]

@@ -14,7 +14,8 @@ import { firstUserFieldError, inputClass, validateUserAccount, type UserFieldErr
 
 type UserForm = {
   username: string;
-  display_name: string;
+  first_name: string;
+  last_name: string;
   email: string;
   password: string;
   role: string;
@@ -32,7 +33,8 @@ type UserForm = {
 function emptyUserForm(workModelId: string): UserForm {
   return {
     username: "",
-    display_name: "",
+    first_name: "",
+    last_name: "",
     email: "",
     password: "",
     role: "employee",
@@ -107,6 +109,8 @@ export default function HrUsers() {
     if (deptFilter && deptFilter !== "none" && String(u.department_id) !== deptFilter) return false;
     return matchesQuery(query, [
       u.display_name,
+      u.first_name,
+      u.last_name,
       u.username,
       u.email,
       u.department_name,
@@ -204,7 +208,8 @@ export default function HrUsers() {
     setError("");
     setInfo("");
     const nextErrors = validateUserAccount({
-      display_name: form.display_name,
+      first_name: form.first_name,
+      last_name: form.last_name,
       username: form.username,
       email: form.email,
       emailRequired: sendingMail,
@@ -309,16 +314,28 @@ export default function HrUsers() {
       {open ? (
         <form id="new-user-form" noValidate onSubmit={onSubmit} className="mt-4 space-y-3 rounded-2xl border border-line bg-card p-4">
           <label className="block text-xs text-muted">
-            Anzeigename
+            Vorname
             <input
-              placeholder="z. B. Erika Mustermann"
-              className={`mt-1 w-full px-3 py-2 ${inputClass(fieldErrors.display_name)}`}
-              value={form.display_name}
-              onChange={(e) => patchForm({ display_name: e.target.value })}
-              aria-invalid={Boolean(fieldErrors.display_name)}
-              aria-describedby={fieldErrors.display_name ? "err-display-name" : undefined}
+              placeholder="z. B. Anna"
+              className={`mt-1 w-full px-3 py-2 ${inputClass(fieldErrors.first_name)}`}
+              value={form.first_name}
+              onChange={(e) => patchForm({ first_name: e.target.value })}
+              aria-invalid={Boolean(fieldErrors.first_name)}
+              aria-describedby={fieldErrors.first_name ? "err-first-name" : undefined}
             />
-            <FieldError id="err-display-name">{fieldErrors.display_name}</FieldError>
+            <FieldError id="err-first-name">{fieldErrors.first_name}</FieldError>
+          </label>
+          <label className="block text-xs text-muted">
+            Nachname
+            <input
+              placeholder="z. B. PU Berg"
+              className={`mt-1 w-full px-3 py-2 ${inputClass(fieldErrors.last_name)}`}
+              value={form.last_name}
+              onChange={(e) => patchForm({ last_name: e.target.value })}
+              aria-invalid={Boolean(fieldErrors.last_name)}
+              aria-describedby={fieldErrors.last_name ? "err-last-name" : undefined}
+            />
+            <FieldError id="err-last-name">{fieldErrors.last_name}</FieldError>
           </label>
           <label className="block text-xs text-muted">
             Benutzername

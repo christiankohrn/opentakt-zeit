@@ -36,12 +36,52 @@ def test_summarize_with_break():
     assert "break_short" not in day["warnings"]
 
 
-def test_vacation_covers_soll():
-    absence = SimpleNamespace(kind="vacation", note="Urlaub")
-    day = summarize_day([], date(2026, 8, 5), None, now=datetime(2026, 8, 6, tzinfo=ZoneInfo("UTC")), absence=absence)
-    assert day["delta_hours"] == 0
-    assert day["absence"]["kind"] == "vacation"
-    assert day["warnings"] == []
+def _full_week():
+    return SimpleNamespace(
+        hours_mon=8,
+        hours_tue=8,
+        hours_wed=8,
+        hours_thu=8,
+        hours_fri=8,
+        hours_sat=0,
+        hours_sun=0,
+        break_after_minutes=0,
+        break_minutes=0,
+        flex_enabled=True,
+    )
+
+
+def test_vacation_and_sick_fill_the_target():
+    model = _full_week()
+    now = datetime(2026, 8, 6, tzinfo=ZoneInfo("UTC"))
+    vacation = summarize_day(
+        [],
+        date(2026, 8, 5),
+        model,
+        now=now,
+        absence=SimpleNamespace(kind="vacation", note="Urlaub"),
+    )
+    assert vacation["work_hours"] == 8
+    assert vacation["delta_hours"] == 0
+    assert vacation["absence"]["kind"] == "vacation"
+    assert vacation["warnings"] == []
+    sick = summarize_day([], date(2026, 8, 5), model, now=now, absence=SimpleNamespace(kind="sick", note=""))
+    assert sick["work_hours"] == 8
+    assert sick["delta_hours"] == 0
+
+
+def test_stamps_on_vacation_count_as_plus():
+    punches = [_p_on(date(2026, 8, 5), "in", 7), _p_on(date(2026, 8, 5), "out", 9)]
+    day = summarize_day(
+        punches,
+        date(2026, 8, 5),
+        _full_week(),
+        now=datetime(2026, 8, 6, tzinfo=ZoneInfo("UTC")),
+        absence=SimpleNamespace(kind="vacation", note=""),
+    )
+    assert abs(day["work_hours"] - 10) < 0.05
+    assert abs(day["delta_hours"] - 2) < 0.05
+    assert day["first_in"] == "07:00"
 
 
 def test_overnight_shift_split_across_midnight():

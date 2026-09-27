@@ -123,6 +123,17 @@ def month_flex_hours(db: Session, user: User, when=None) -> float:
     return month
 
 
+def format_hm(hours: float, signed: bool = False) -> str:
+    minutes = int(round(float(hours) * 60))
+    sign = ""
+    if minutes < 0:
+        sign = "-"
+        minutes = -minutes
+    elif signed and minutes > 0:
+        sign = "+"
+    whole, mins = divmod(minutes, 60)
+    return f"{sign}{whole}:{mins:02d}"
+
+
 def format_flex(hours: float) -> str:
-    sign = "+" if hours >= 0 else ""
-    return f"{sign}{hours:.1f}h".replace(".", ",")
+    return format_hm(hours, signed=True)

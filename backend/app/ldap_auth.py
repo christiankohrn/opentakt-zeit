@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_config
 from app.models import User
+from app.names import compose_display_name, split_person_name
 from app.security import hash_password
 
 
@@ -35,11 +36,15 @@ def try_ldap_login(db: Session, username: str, password: str, existing: User | N
         return None
     check.unbind()
 
-    display = str(entry.displayName) if "displayName" in entry else username
+    raw_name = str(entry.displayName) if "displayName" in entry else username
+    first, last = split_person_name(raw_name)
+    display = compose_display_name(first, last) or username
     email = str(entry.mail) if "mail" in entry else None
     if existing:
         if not existing.active:
             return None
+        existing.first_name = first
+        existing.last_name = last
         existing.display_name = display or existing.display_name
         existing.email = email or existing.email
         existing.auth_source = "ldap"
@@ -47,6 +52,8 @@ def try_ldap_login(db: Session, username: str, password: str, existing: User | N
         return existing
     user = User(
         username=username,
+        first_name=first,
+        last_name=last,
         display_name=display or username,
         email=email,
         password_hash=None,

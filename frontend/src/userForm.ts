@@ -1,5 +1,6 @@
 export type UserFieldErrors = {
-  display_name?: string;
+  first_name?: string;
+  last_name?: string;
   username?: string;
   email?: string;
   password?: string;
@@ -16,7 +17,8 @@ export function validEmail(value: string): boolean {
 }
 
 export function validateUserAccount(input: {
-  display_name: string;
+  first_name: string;
+  last_name: string;
   username: string;
   email: string;
   emailRequired?: boolean;
@@ -26,7 +28,7 @@ export function validateUserAccount(input: {
   left_on: string;
 }): UserFieldErrors {
   const errors: UserFieldErrors = {};
-  if (!input.display_name.trim()) errors.display_name = "Anzeigename fehlt.";
+  if (!input.first_name.trim() && !input.last_name.trim()) errors.last_name = "Name fehlt.";
   if (!input.username.trim()) errors.username = "Benutzername fehlt.";
   if (input.emailRequired && !input.email.trim()) errors.email = "E-Mail-Adresse fehlt.";
   else if (input.email.trim() && !validEmail(input.email)) errors.email = "E-Mail-Adresse ist ungültig.";
@@ -41,7 +43,8 @@ export function validateUserAccount(input: {
 
 export function firstUserFieldError(errors: UserFieldErrors): string | undefined {
   return (
-    errors.display_name ||
+    errors.last_name ||
+    errors.first_name ||
     errors.username ||
     errors.email ||
     errors.password ||

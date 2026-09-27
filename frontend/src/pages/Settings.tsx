@@ -326,10 +326,10 @@ const emptyEsp: EspTerminalSettings = {
 function previewLine(template: string, max: number) {
   const sample: Record<string, string> = {
     first_name: "Anna",
-    display_name: "Anna Schmidt",
+    display_name: "Schmidt, Anna",
     kind: "Kommen",
-    flex_month: "+2,5h",
-    flex_total: "+12,5h",
+    flex_month: "+2:30",
+    flex_total: "+12:30",
   };
   let out = template;
   for (const [key, value] of Object.entries(sample)) out = out.replaceAll(`{${key}}`, value);

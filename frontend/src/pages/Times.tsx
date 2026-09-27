@@ -83,8 +83,18 @@ export default function Times() {
                 <span>
                   {formatDayLabel(d.date, "short")}
                 </span>
-                <span className={off ? "text-ink" : d.delta_hours < 0 ? "text-danger" : "text-present"}>
-                  {off ? dayKindLabel(d) : formatHours(d.work_hours, 2)}
+                <span className={`tabular-nums ${off ? "text-ink" : d.delta_hours < 0 ? "text-danger" : "text-present"}`}>
+                  {off ? (
+                    <>
+                      {dayKindLabel(d)}
+                      {d.work_hours ? <span className="ml-2">{formatHours(d.work_hours, 2)}</span> : null}
+                      {d.delta_hours ? (
+                        <span className={`ml-2 ${hoursTone(d.delta_hours)}`}>{signedHours(d.delta_hours)}</span>
+                      ) : null}
+                    </>
+                  ) : (
+                    formatHours(d.work_hours, 2)
+                  )}
                 </span>
               </div>
               <p className="mt-1 text-xs text-muted">
@@ -124,11 +134,12 @@ export default function Times() {
                 <td className="px-4 py-2.5 text-right tabular-nums">{hoursCell(d)}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-muted">{formatHours(d.soll_hours)}</td>
                 <td
-                  className={`px-4 py-2.5 text-right tabular-nums ${
-                    d.calendar || d.absence ? "text-muted" : d.delta_hours < 0 ? "text-danger" : "text-present"
-                  }`}
+                  className={`px-4 py-2.5 text-right tabular-nums ${hoursTone(
+                    d.delta_hours,
+                    Boolean((d.calendar || d.absence) && !d.delta_hours),
+                  )}`}
                 >
-                  {d.calendar || d.absence ? "—" : signedHours(d.delta_hours)}
+                  {(d.calendar || d.absence) && !d.delta_hours ? "—" : signedHours(d.delta_hours)}
                 </td>
                 <td className={`px-4 py-2.5 text-xs ${d.warnings.some((w) => w !== "overnight") ? "text-danger" : "text-muted"}`}>
                   {[

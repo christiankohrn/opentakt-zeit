@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.auth import as_local, now_utc
 from app.balance import days_in_range, hired_on, is_employed, month_days
 from app.models import Absence, Punch, User
+from app.names import name_sort_key
 from app.timecalc import punches_window_for_month, work_intervals
 
 JUBILEE_YEARS = (10, 25, 40)
@@ -77,7 +78,10 @@ def employment_overlap(user: User, start: date, end: date) -> tuple[date, date] 
 
 
 def people_in_range(db: Session, start: date, end: date, user_ids: set[int] | None = None) -> list[User]:
-    users = list(db.scalars(select(User).options(selectinload(User.work_model)).order_by(User.display_name)))
+    users = sorted(
+        db.scalars(select(User).options(selectinload(User.work_model))),
+        key=lambda user: name_sort_key(user.display_name),
+    )
     people = [user for user in users if employment_overlap(user, start, end)]
     if user_ids is None:
         return people
@@ -330,7 +334,7 @@ def jubilees_report(db: Session, year: int, half: int, user_ids: set[int] | None
                             "years": mark,
                         }
                     )
-    events.sort(key=lambda row: (row["date"], row["display_name"], row["kind"]))
+    events.sort(key=lambda row: (row["date"], name_sort_key(row["display_name"]), row["kind"]))
     return events
 
 

@@ -202,14 +202,14 @@ export default function Stamp() {
                     </div>
                     <p
                       className={`shrink-0 text-sm tabular-nums ${
-                        off || (!d.work_hours && !d.soll_hours) ? "text-muted" : hoursTone(d.delta_hours)
+                        (off && !d.delta_hours) || (!d.work_hours && !d.soll_hours)
+                          ? "text-muted"
+                          : hoursTone(d.delta_hours)
                       }`}
                     >
-                      {off && !d.work_hours
+                      {(off && !d.delta_hours) || (!d.work_hours && !d.soll_hours)
                         ? "—"
-                        : !d.work_hours && !d.soll_hours
-                          ? "—"
-                          : signedHours(d.delta_hours)}
+                        : signedHours(d.delta_hours)}
                     </p>
                   </div>
                 </li>

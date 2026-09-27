@@ -6,7 +6,8 @@ assert.equal(validEmail("no-at"), false);
 assert.equal(validEmail("a@localhost"), true);
 
 const empty = validateUserAccount({
-  display_name: "  ",
+  first_name: "  ",
+  last_name: "  ",
   username: "",
   email: "",
   emailRequired: true,
@@ -15,15 +16,16 @@ const empty = validateUserAccount({
   hired_on: "",
   left_on: "",
 });
-assert.equal(empty.display_name, "Anzeigename fehlt.");
+assert.equal(empty.last_name, "Name fehlt.");
 assert.equal(empty.username, "Benutzername fehlt.");
 assert.equal(empty.email, "E-Mail-Adresse fehlt.");
 assert.equal(empty.password, "Passwort für die Web-Anmeldung fehlt.");
 assert.equal(empty.hired_on, "Eintrittsdatum fehlt.");
-assert.equal(firstUserFieldError(empty), "Anzeigename fehlt.");
+assert.equal(firstUserFieldError(empty), "Name fehlt.");
 
 const dates = validateUserAccount({
-  display_name: "Erika",
+  first_name: "Erika",
+  last_name: "Schicht",
   username: "erika",
   email: "bad",
   password: "short",
@@ -35,7 +37,8 @@ assert.equal(dates.password, "Mindestens 8 Zeichen.");
 assert.equal(dates.left_on, "Austritt liegt vor dem Eintritt.");
 
 const ok = validateUserAccount({
-  display_name: "Erika",
+  first_name: "Erika",
+  last_name: "",
   username: "erika",
   email: "",
   password: "",

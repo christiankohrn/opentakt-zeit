@@ -10,7 +10,7 @@ import FieldError from "../components/FieldError";
 import { IconChevron, IconTrash } from "../components/Icons";
 import PasswordField from "../components/PasswordField";
 import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
-import { bookingText, dayRowClass, daySurfaceClass, formatDayLabel, formatHours, hoursTone, signedHours, warnLabel } from "../labels";
+import { bookingText, dayRowClass, daySurfaceClass, formatDayLabel, formatHours, hoursTone, parseHours, signedHours, warnLabel } from "../labels";
 import { generatePassword } from "../password";
 import { useUnsavedGuard } from "../unsaved";
 import { firstUserFieldError, inputClass, validateUserAccount, type UserFieldErrors } from "../userForm";
@@ -67,7 +67,8 @@ export default function HrUserMonth() {
   const [webLogin, setWebLogin] = useState(true);
   const [accessMsg, setAccessMsg] = useState("");
   const [account, setAccount] = useState({
-    display_name: "",
+    first_name: "",
+    last_name: "",
     username: "",
     email: "",
     role: "employee",
@@ -100,9 +101,7 @@ export default function HrUserMonth() {
     const [r, m, a, d] = await Promise.all([api.userDays(userId, month), api.models(), api.userModels(userId), api.departments()]);
     setUser(r.user);
     setMonthClosed(Boolean(r.closed));
-    setOpeningHours(
-      r.user.opening_balance_hours != null ? String(r.user.opening_balance_hours).replace(".", ",") : "0",
-    );
+    setOpeningHours(signedHours(r.user.opening_balance_hours ?? 0));
     setOpeningOn(r.user.opening_balance_on ?? "");
     setDays(r.days);
     setMonthFlex(r.month_flex ?? 0);
@@ -114,7 +113,8 @@ export default function HrUserMonth() {
     setTransponder(r.user.transponder_id ?? "");
     setWebLogin(r.user.web_login !== false);
     setAccount((cur) => ({
-      display_name: r.user.display_name,
+      first_name: r.user.first_name ?? "",
+      last_name: r.user.last_name ?? "",
       username: r.user.username,
       email: r.user.email ?? "",
       role: r.user.role,
@@ -149,7 +149,8 @@ export default function HrUserMonth() {
 
   const accountDirty = Boolean(
     user &&
-      (account.display_name !== user.display_name ||
+      (account.first_name !== (user.first_name ?? "") ||
+        account.last_name !== (user.last_name ?? "") ||
         account.username !== user.username ||
         account.email !== (user.email ?? "") ||
         account.role !== user.role ||
@@ -200,7 +201,8 @@ export default function HrUserMonth() {
             e.preventDefault();
             setAccountMsg("");
             const nextErrors = validateUserAccount({
-              display_name: account.display_name,
+              first_name: account.first_name,
+              last_name: account.last_name,
               username: account.username,
               email: account.email,
               password: account.password,
@@ -217,7 +219,8 @@ export default function HrUserMonth() {
             }
             const body: {
               username: string;
-              display_name: string;
+              first_name: string;
+              last_name: string;
               email: string | null;
               role?: string;
               active?: boolean;
@@ -230,7 +233,8 @@ export default function HrUserMonth() {
               confirm_closed?: boolean;
             } = {
               username: account.username,
-              display_name: account.display_name,
+              first_name: account.first_name,
+              last_name: account.last_name,
               email: account.email.trim() || null,
               hired_on: account.hired_on || null,
               left_on: account.left_on || null,
@@ -251,7 +255,8 @@ export default function HrUserMonth() {
               setAccount({
                 ...account,
                 password: "",
-                display_name: next.display_name,
+                first_name: next.first_name ?? "",
+                last_name: next.last_name ?? "",
                 username: next.username,
                 email: next.email ?? "",
                 role: next.role,
@@ -270,15 +275,27 @@ export default function HrUserMonth() {
         >
           <p className="text-sm font-medium">Benutzer</p>
           <label className="block text-xs text-muted">
-            Anzeigename
+            Vorname
             <input
-              className={`mt-1 w-full px-3 py-2 text-sm ${inputClass(accountErrors.display_name)}`}
-              value={account.display_name}
-              onChange={(e) => patchAccount({ display_name: e.target.value })}
-              aria-invalid={Boolean(accountErrors.display_name)}
-              aria-describedby={accountErrors.display_name ? "err-acc-display" : undefined}
+              className={`mt-1 w-full px-3 py-2 text-sm ${inputClass(accountErrors.first_name)}`}
+              value={account.first_name}
+              onChange={(e) => patchAccount({ first_name: e.target.value })}
+              aria-invalid={Boolean(accountErrors.first_name)}
+              aria-describedby={accountErrors.first_name ? "err-acc-first" : undefined}
             />
-            <FieldError id="err-acc-display">{accountErrors.display_name}</FieldError>
+            <FieldError id="err-acc-first">{accountErrors.first_name}</FieldError>
+          </label>
+          <label className="block text-xs text-muted">
+            Nachname
+            <input
+              placeholder="z. B. PU Berg"
+              className={`mt-1 w-full px-3 py-2 text-sm ${inputClass(accountErrors.last_name)}`}
+              value={account.last_name}
+              onChange={(e) => patchAccount({ last_name: e.target.value })}
+              aria-invalid={Boolean(accountErrors.last_name)}
+              aria-describedby={accountErrors.last_name ? "err-acc-last" : undefined}
+            />
+            <FieldError id="err-acc-last">{accountErrors.last_name}</FieldError>
           </label>
           <label className="block text-xs text-muted">
             Benutzername
@@ -738,9 +755,9 @@ export default function HrUserMonth() {
             onSubmit={(e) => {
               e.preventDefault();
               setOpeningMsg("");
-              const hours = Number(openingHours.trim().replace(",", "."));
-              if (!Number.isFinite(hours)) {
-                setOpeningMsg("Stunden als Zahl eingeben.");
+              const hours = parseHours(openingHours);
+              if (hours == null) {
+                setOpeningMsg("Stunden als hh:mm eingeben, zum Beispiel 12:30 oder -4:15.");
                 return;
               }
               void closed.attempt(async (confirmClosed) => {
@@ -857,13 +874,18 @@ export default function HrUserMonth() {
                       <div className="flex shrink-0 items-center gap-1 text-right text-sm">
                         <div>
                           <p className="whitespace-nowrap text-present">
-                            {d.calendar || d.absence || !d.work_hours ? "" : formatHours(d.work_hours)}
+                            {d.work_hours ? formatHours(d.work_hours) : ""}
                           </p>
-                          {d.calendar || d.absence || (!d.work_hours && !d.soll_hours) ? null : (
-                            <p className={`whitespace-nowrap text-xs ${hoursTone(d.delta_hours)}`}>
+                          {(d.calendar || d.absence ? d.delta_hours !== 0 : Boolean(d.work_hours || d.soll_hours)) ? (
+                            <p
+                              className={`whitespace-nowrap text-xs ${hoursTone(
+                                d.delta_hours,
+                                Boolean((d.calendar || d.absence) && !d.delta_hours),
+                              )}`}
+                            >
                               {signedHours(d.delta_hours)}
                             </p>
-                          )}
+                          ) : null}
                         </div>
                         <IconChevron className="h-5 w-5 text-muted" />
                       </div>
@@ -911,10 +933,10 @@ export default function HrUserMonth() {
                       <td
                         className={`whitespace-nowrap px-4 py-2.5 text-right tabular-nums ${hoursTone(
                           d.delta_hours,
-                          Boolean(d.calendar || d.absence),
+                          Boolean((d.calendar || d.absence) && !d.delta_hours),
                         )}`}
                       >
-                        {d.calendar || d.absence ? "—" : signedHours(d.delta_hours)}
+                        {(d.calendar || d.absence) && !d.delta_hours ? "—" : signedHours(d.delta_hours)}
                       </td>
                       <td className={`px-4 py-2.5 text-xs ${issues.length ? "text-danger" : "text-muted"}`}>
                         {d.warnings.map(warnLabel).join(" · ") || (d.accepted ? "Akzeptiert" : "—")}

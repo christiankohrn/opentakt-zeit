@@ -15,6 +15,7 @@ from app.config import get_config
 from app.datafox import ack_body, flatten_params, parse_badge, parse_kind, parse_timestamp
 from app.database import get_db
 from app.models import Punch, User
+from app.names import given_name
 from app.punches import KIND_LABELS
 from app.terminal_punch import apply_booking
 
@@ -104,7 +105,7 @@ async def datafox(request: Request, db: Session = Depends(get_db)):
 
     user = db.get(User, result.user_id) if result.user_id else None
     punch = db.get(Punch, result.punch_id) if result.punch_id else None
-    first = (user.display_name.split()[0] if user and user.display_name else None) or "OK"
+    first = (given_name(user.display_name) if user and user.display_name else "") or "OK"
     label = KIND_LABELS.get(result.kind or "", result.kind or "")
     line2 = label
     if user and punch:

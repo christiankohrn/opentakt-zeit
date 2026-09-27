@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 
+from app.names import format_person_name, given_name
 from app.punches import KIND_LABELS
 
 LINE_MAX = 21
@@ -30,8 +31,8 @@ def punch_values(
     flex_month: str = "",
     flex_total: str = "",
 ) -> dict[str, str]:
-    name = (display_name or "").strip()
-    first = name.split()[0] if name else ""
+    name = format_person_name(display_name)
+    first = given_name(name)
     label = KIND_LABELS.get(kind or "", kind or "")
     return {
         "display_name": name,
