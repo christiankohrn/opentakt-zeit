@@ -183,6 +183,7 @@ ensure_terminal_http() {
     echo "ensure_terminal_http.py fehlt" >&2
     return 0
   fi
-  python3 "$script" || return 0
+  python3 "$script" || true
+  python3 "$APP_ROOT/deploy/ensure_proxy_timeout.py" || true
   nginx -t && systemctl reload nginx
 }

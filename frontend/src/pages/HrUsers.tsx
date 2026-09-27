@@ -96,6 +96,7 @@ export default function HrUsers() {
   const [generatedPassword, setGeneratedPassword] = useState("");
   const [mailReady, setMailReady] = useState(false);
   const [info, setInfo] = useState("");
+  const [balanceNote, setBalanceNote] = useState("");
   const [query, setQuery] = useState("");
   const dirty = open && JSON.stringify(form) !== JSON.stringify(emptyUserForm(form.work_model_id));
   const blocker = useUnsavedGuard(dirty);
@@ -116,25 +117,36 @@ export default function HrUsers() {
 
   async function load() {
     setLoading(true);
+    setBalanceNote("");
     try {
-      const [u, m, d, b, mail] = await Promise.all([
+      const [u, m, d, mail] = await Promise.all([
         api.users(),
         api.models(),
         api.departments(),
-        api.balances(month),
         api.mailStatus().catch(() => ({ ready: false })),
       ]);
       setUsers(u);
       setModels(m);
       setDepartments(d);
-      setBalances(Object.fromEntries(b.people.map((row) => [row.user_id, row])));
       setMailReady(mail.ready);
       setError("");
       if (m[0] && !form.work_model_id) setForm((f) => ({ ...f, work_model_id: String(m[0].id) }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Fehler");
-    } finally {
       setLoading(false);
+      return;
+    }
+    setLoading(false);
+    try {
+      const b = await api.balances(month);
+      setBalances(Object.fromEntries(b.people.map((row) => [row.user_id, row])));
+      setBalanceNote(
+        b.people.some((row) => row.total_delta_hours == null)
+          ? "Der Gesamtsaldo erscheint nach dem ersten Monatsabschluss. Bis dahin lädt die Liste ohne die ganze Historie."
+          : "",
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fehler");
     }
   }
 
@@ -274,6 +286,7 @@ export default function HrUsers() {
           />
         </div>
       </div>
+      {balanceNote ? <p className="mt-2 text-sm text-muted">{balanceNote}</p> : null}
       <div className="mt-2 flex flex-wrap gap-3 text-sm">
         <Link to="/pruefung" className="text-present">
           Prüfung
@@ -549,8 +562,12 @@ export default function HrUsers() {
                   {flex ? (
                     <div className="shrink-0 text-right text-sm tabular-nums">
                       <p className={hoursTone(flex.delta_hours)}>{signedHours(flex.delta_hours)}</p>
-                      <p className={`text-xs ${hoursTone(flex.total_delta_hours)}`}>
-                        {signedHours(flex.total_delta_hours)} gesamt
+                      <p
+                        className={`text-xs ${
+                          flex.total_delta_hours == null ? "text-muted" : hoursTone(flex.total_delta_hours)
+                        }`}
+                      >
+                        {flex.total_delta_hours == null ? "— gesamt" : `${signedHours(flex.total_delta_hours)} gesamt`}
                       </p>
                     </div>
                   ) : null}
@@ -600,9 +617,11 @@ export default function HrUsers() {
                     {flex ? signedHours(flex.delta_hours) : "—"}
                   </td>
                   <td
-                    className={`px-4 py-2.5 text-right tabular-nums ${flex ? hoursTone(flex.total_delta_hours) : "text-muted"}`}
+                    className={`px-4 py-2.5 text-right tabular-nums ${
+                      flex && flex.total_delta_hours != null ? hoursTone(flex.total_delta_hours) : "text-muted"
+                    }`}
                   >
-                    {flex ? signedHours(flex.total_delta_hours) : "—"}
+                    {flex && flex.total_delta_hours != null ? signedHours(flex.total_delta_hours) : "—"}
                   </td>
                   <td className="px-4 py-2.5">
                     <SecurityBadges u={u} />

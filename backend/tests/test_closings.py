@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from datetime import date, timedelta
 
 
@@ -33,6 +34,18 @@ def put_day(client, user_id: int, day: date, start: str, end: str, confirm: bool
             "confirm_closed": confirm,
         },
     )
+
+
+def wait_job(client) -> dict:
+    last = {}
+    for _ in range(100):
+        res = client.get("/api/hr/closings/job")
+        assert res.status_code == 200, res.text
+        last = res.json()
+        if not last["running"]:
+            return last
+        time.sleep(0.05)
+    raise AssertionError(last)
 
 
 def flex_of(client, year: int, month: int, user_id: int) -> float:
@@ -92,7 +105,9 @@ def _run_close(client, person, day: date) -> None:
 
     closed = client.post("/api/hr/closings", json={"year": day.year, "month": day.month})
     assert closed.status_code == 200, closed.text
-    assert closed.json()["rows"] >= 1
+    finished = wait_job(client)
+    assert finished["error"] is None
+    assert finished["rows"] >= 1
     assert flex_of(client, day.year, day.month, person["id"]) == 10
 
     listed = client.get("/api/hr/closings")

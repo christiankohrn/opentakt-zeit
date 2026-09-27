@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, ApiError } from "../api";
+import { api, ApiError, type ClosingJob } from "../api";
 import LoadingNote from "../components/LoadingNote";
 import { hoursTone, signedHours } from "../labels";
 
@@ -78,6 +78,58 @@ export default function HrClosings() {
     }
   }
 
+  function progressText(job: ClosingJob) {
+    const name = job.kind === "recalculate" ? "Neuberechnung" : "Abschluss";
+    const when = job.year && job.month ? ` ${label(job.year, job.month)}` : "";
+    if (!job.total) return `${name}${when} läuft …`;
+    return `${name}${when}: ${job.done} von ${job.total} Personen. Die Seite kann offen bleiben.`;
+  }
+
+  async function followJob(job: ClosingJob) {
+    let current = job;
+    while (current.running) {
+      setMsg(progressText(current));
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      current = await api.closingJob();
+    }
+    if (current.error) {
+      setMsg(current.error);
+      return;
+    }
+    await load();
+    if (current.kind === "recalculate") {
+      if (openKey === `${current.year}-${current.month}`) {
+        const detail = await api.closingDetail(current.year, current.month);
+        setPeople(detail.people);
+      }
+      setMsg(`${label(current.year, current.month)} neu gerechnet (${current.rows} Personen).`);
+      return;
+    }
+    if (current.year && current.month) {
+      setMsg(
+        current.rows
+          ? `${label(current.year, current.month)} abgeschlossen (${current.rows} Salden).`
+          : `${label(current.year, current.month)} war schon abgeschlossen.`,
+      );
+    }
+  }
+
+  useEffect(() => {
+    let cancel = false;
+    void api
+      .closingJob()
+      .then((job) => {
+        if (cancel || !job.running) return;
+        setBusy(true);
+        return followJob(job).finally(() => setBusy(false));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancel = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function closeThrough(e: FormEvent) {
     e.preventDefault();
     const [yearText, monthText] = target.split("-");
@@ -87,13 +139,7 @@ export default function HrClosings() {
     setBusy(true);
     setMsg("");
     try {
-      const result = await api.closeMonth(year, month);
-      await load();
-      setMsg(
-        result.rows
-          ? `${label(year, month)} abgeschlossen (${result.rows} Salden).`
-          : `${label(year, month)} war schon abgeschlossen.`,
-      );
+      await followJob(await api.closeMonth(year, month));
     } catch (err) {
       setMsg(err instanceof ApiError ? err.message : "Abschluss fehlgeschlagen");
     } finally {
@@ -105,12 +151,7 @@ export default function HrClosings() {
     setBusy(true);
     setMsg("");
     try {
-      const result = await api.recalculateClosing(row.year, row.month);
-      if (openKey === `${row.year}-${row.month}`) {
-        const detail = await api.closingDetail(row.year, row.month);
-        setPeople(detail.people);
-      }
-      setMsg(`${label(row.year, row.month)} neu gerechnet (${result.people} Personen).`);
+      await followJob(await api.recalculateClosing(row.year, row.month));
     } catch (err) {
       setMsg(err instanceof ApiError ? err.message : "Neuberechnung fehlgeschlagen");
     } finally {

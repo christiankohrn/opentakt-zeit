@@ -254,30 +254,51 @@ def _store(db: Session, user: User, snapshots: dict[tuple[int, int], float], act
     return written
 
 
-def close_through(db: Session, year: int, month: int, actor_id: int | None) -> int:
-    today = date.today()
-    if month_end(year, month) >= today:
+def assert_past_month(year: int, month: int) -> None:
+    if not 1 <= month <= 12:
+        raise HTTPException(status_code=400, detail="Ungültiger Monat")
+    if month_end(year, month) >= date.today():
         raise HTTPException(status_code=400, detail="Nur Monate, die schon vorbei sind")
+
+
+def close_one(db: Session, user: User, year: int, month: int, actor_id: int | None) -> int:
+    first = first_closable(user)
+    if first > (year, month):
+        return 0
+    latest = db.scalar(
+        select(MonthClosing)
+        .where(MonthClosing.user_id == user.id)
+        .order_by(MonthClosing.year.desc(), MonthClosing.month.desc())
+    )
+    begin = first
+    if latest is not None:
+        previous = (latest.year, latest.month)
+        if previous >= (year, month):
+            return 0
+        begin = next_month(*previous)
+        if begin < first:
+            begin = first
+    _total, snapshots = _walk(db, user, month_end(year, month))
+    return _store(db, user, snapshots, actor_id, begin, create=True)
+
+
+def close_through(
+    db: Session,
+    year: int,
+    month: int,
+    actor_id: int | None,
+    on_user=None,
+) -> int:
+    assert_past_month(year, month)
+    users = list(db.scalars(select(User).order_by(User.id)))
     written = 0
-    for user in db.scalars(select(User)):
-        first = first_closable(user)
-        if first > (year, month):
-            continue
-        latest = db.scalar(
-            select(MonthClosing)
-            .where(MonthClosing.user_id == user.id)
-            .order_by(MonthClosing.year.desc(), MonthClosing.month.desc())
-        )
-        begin = first
-        if latest is not None:
-            previous = (latest.year, latest.month)
-            if previous >= (year, month):
-                continue
-            begin = next_month(*previous)
-            if begin < first:
-                begin = first
-        _total, snapshots = _walk(db, user, month_end(year, month))
-        written += _store(db, user, snapshots, actor_id, begin, create=True)
+    total = len(users)
+    if on_user is not None:
+        on_user(0, total, written)
+    for index, user in enumerate(users, start=1):
+        written += close_one(db, user, year, month, actor_id)
+        if on_user is not None:
+            on_user(index, total, written)
     return written
 
 
@@ -295,11 +316,30 @@ def recalculate_user_from(db: Session, user: User, year: int, month: int, actor_
     _store(db, user, snapshots, actor_id, (year, month), create=False)
 
 
-def recalculate_pairs(db: Session, pairs: list[tuple[int, int, int]], actor_id: int | None) -> None:
-    for user_id, year, month in pairs:
+def recalculate_pairs(
+    db: Session,
+    pairs: list[tuple[int, int, int]],
+    actor_id: int | None,
+    on_user=None,
+) -> None:
+    total = len(pairs)
+    if on_user is not None:
+        on_user(0, total)
+    for index, (user_id, year, month) in enumerate(pairs, start=1):
         user = db.get(User, user_id)
         if user is not None:
             recalculate_user_from(db, user, year, month, actor_id)
+        if on_user is not None:
+            on_user(index, total)
+
+
+def listed_total(db: Session, user: User, today: date) -> float | None:
+    """Gesamtsaldo für Listen. Ohne Abschluss und bei langer Historie nicht die ganzen Jahre lesen."""
+    last = employment_end(user, today)
+    start = calc_start(user)
+    if _latest_usable(db, user.id, last, start) is None and (last - start).days > 120:
+        return None
+    return flex_as_of(db, user, last)
 
 
 def refresh_closed_day(db: Session, user: User, day: date, actor_id: int | None) -> None:

@@ -105,7 +105,18 @@ export type FlexBalance = {
   work_hours: number;
   soll_hours: number;
   delta_hours: number;
-  total_delta_hours: number;
+  total_delta_hours: number | null;
+};
+
+export type ClosingJob = {
+  running: boolean;
+  kind: string;
+  year: number;
+  month: number;
+  done: number;
+  total: number;
+  rows: number;
+  error: string | null;
 };
 
 export type AbsenceDaysRow = {
@@ -314,6 +325,15 @@ async function downloadFile(path: string, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+function apiMessage(status: number, raw: unknown): string {
+  const text =
+    raw && typeof raw === "object" && "message" in raw ? String((raw as { message: unknown }).message) : String(raw ?? "");
+  if (status === 502 || status === 504 || /<\s*html|gateway time-out|bad gateway/i.test(text)) {
+    return "Die Anfrage hat zu lange gedauert und wurde vom Webserver abgebrochen. Die Berechnung läuft oft noch weiter. Bitte kurz warten und neu laden.";
+  }
+  return text || "Fehler";
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   const isForm = typeof FormData !== "undefined" && init.body instanceof FormData;
@@ -334,9 +354,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       window.dispatchEvent(new CustomEvent(AUTH_EVENT, { detail: { path } }));
     }
     const raw = typeof data === "object" && data && "detail" in data ? (data as { detail: unknown }).detail : res.statusText;
-    const detail =
-      raw && typeof raw === "object" && "message" in raw ? String((raw as { message: unknown }).message) : String(raw);
-    throw new ApiError(res.status, detail, raw);
+    throw new ApiError(res.status, apiMessage(res.status, raw), raw);
   }
   return data as T;
 }
@@ -597,10 +615,11 @@ export const api = {
         opening_balance_on: string | null;
       }[];
     }>(`/api/hr/closings/${year}/${month}`),
+  closingJob: () => request<ClosingJob>("/api/hr/closings/job"),
   closeMonth: (year: number, month: number) =>
-    request<{ ok: boolean; rows: number }>("/api/hr/closings", { method: "POST", body: JSON.stringify({ year, month }) }),
+    request<ClosingJob>("/api/hr/closings", { method: "POST", body: JSON.stringify({ year, month }) }),
   recalculateClosing: (year: number, month: number) =>
-    request<{ ok: boolean; people: number }>(`/api/hr/closings/${year}/${month}/recalculate`, { method: "POST" }),
+    request<ClosingJob>(`/api/hr/closings/${year}/${month}/recalculate`, { method: "POST" }),
   plausibility: (month: string) =>
     request<{
       month: string;

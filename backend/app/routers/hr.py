@@ -13,10 +13,11 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.auth import HR_ROLES, as_local, bump_session_rev, current_user, local_day_bounds, normalize_username, now_utc, require_admin, require_hr, write_session
 from app.balance import account_hours, days_in_range, summarize_user_day
+from app.closing_job import job_status, start_close, start_recalculate
 from app.closings import (
     any_closing,
-    close_through,
     earliest_per_user,
+    listed_total,
     month_is_closed,
     recalculate_pairs,
     require_open,
@@ -1380,6 +1381,12 @@ def list_closings(request: Request, db: Session = Depends(get_db)):
     }
 
 
+@router.get("/closings/job")
+def closing_job(request: Request, db: Session = Depends(get_db)):
+    _actor_admin(request, db)
+    return job_status()
+
+
 @router.get("/closings/{year}/{month}")
 def closing_detail(year: int, month: int, request: Request, db: Session = Depends(get_db)):
     _actor_admin(request, db)
@@ -1410,50 +1417,13 @@ def closing_detail(year: int, month: int, request: Request, db: Session = Depend
 @router.post("/closings")
 def create_closing(payload: ClosingMonthIn, request: Request, db: Session = Depends(get_db)):
     actor = _actor_admin(request, db)
-    written = close_through(db, payload.year, payload.month, actor.id)
-    db.add(
-        AuditEvent(
-            actor_id=actor.id,
-            action="month.close",
-            entity_type="month_closing",
-            entity_id=f"{payload.year:04d}-{payload.month:02d}",
-            payload=json.dumps({"year": payload.year, "month": payload.month, "rows": written}),
-        )
-    )
-    db.commit()
-    return {"ok": True, "rows": written}
+    return start_close(payload.year, payload.month, actor.id)
 
 
 @router.post("/closings/{year}/{month}/recalculate")
 def recalculate_closing(year: int, month: int, request: Request, db: Session = Depends(get_db)):
     actor = _actor_admin(request, db)
-    if not 1 <= month <= 12:
-        raise HTTPException(400, "Ungültiger Monat")
-    pairs = [
-        (user_id, year, month)
-        for user_id in db.scalars(
-            select(MonthClosing.user_id)
-            .where(
-                or_(
-                    MonthClosing.year > year,
-                    and_(MonthClosing.year == year, MonthClosing.month >= month),
-                )
-            )
-            .distinct()
-        ).all()
-    ]
-    recalculate_pairs(db, pairs, actor.id)
-    db.add(
-        AuditEvent(
-            actor_id=actor.id,
-            action="month.recalculate",
-            entity_type="month_closing",
-            entity_id=f"{year:04d}-{month:02d}",
-            payload=json.dumps({"year": year, "month": month, "people": len(pairs)}),
-        )
-    )
-    db.commit()
-    return {"ok": True, "people": len(pairs)}
+    return start_recalculate(year, month, actor.id)
 
 
 @router.get("/balances")
@@ -1501,7 +1471,7 @@ def balances(
                 soll += float(summary["soll_hours"] or 0)
                 delta += float(summary["delta_hours"] or 0)
             cur += timedelta(days=1)
-        _month_flex, total_flex = account_hours(db, user, month=month)
+        total_flex = listed_total(db, user, today)
         people.append(
             {
                 "user_id": user.id,
