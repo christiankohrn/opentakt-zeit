@@ -347,7 +347,36 @@ def test_journal_accounts_resturlaub_and_planned(client):
     assert pdf_page_count(pdf.content) == 1
 
 
-def test_journal_pdf_fits_31_day_month_on_one_page():
+def test_journal_account_matches_the_month_row_to_the_minute(client):
+    from app.balance import format_hm
+
+    login(client)
+    person = create_person(
+        client,
+        "minute-konto",
+        "Minute Konto",
+        hired_on="2026-08-03",
+        left_on="2026-08-03",
+    )
+    account = client.patch(
+        f"/api/hr/users/{person['id']}/account",
+        json={"opening_balance_hours": -4.2, "opening_balance_on": "2026-07-31"},
+    )
+    assert account.status_code == 200, account.text
+    stored = client.put(
+        f"/api/hr/users/{person['id']}/days/2026-08-03",
+        json={"reason": "Testtag", "punches": [{"kind": "in", "time": "08:00"}, {"kind": "out", "time": "16:28"}]},
+    )
+    assert stored.status_code == 200, stored.text
+    res = client.get(f"/api/hr/reports/journal?month=2026-08&user_ids={person['id']}")
+    assert res.status_code == 200, res.text
+    report = res.json()["people"][0]
+    month = next(row for row in report["rows"] if row["type"] == "month")
+    accounts = report["accounts"]
+    assert format_hm(month["delta_hours"], signed=True) == "+0:28"
+    assert format_hm(accounts["flex_month"], signed=True) == "+0:28"
+    assert format_hm(accounts["flex_prev"], signed=True) == "-4:12"
+    assert format_hm(accounts["flex_total"], signed=True) == "-3:44"
     from app.pdf import ReportPDF
 
     pdf = ReportPDF(title="Journal Probe", subtitle="August 2026", org="Org")

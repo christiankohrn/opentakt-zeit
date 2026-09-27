@@ -252,9 +252,9 @@ def person_month_snapshot(
     return {
         "user_id": user.id,
         "display_name": user.display_name,
-        "flex_prev": round(flex_prev, 1),
-        "flex_month": round(flex_month, 1),
-        "flex_total": round(flex_prev + flex_month, 1),
+        "flex_prev": flex_prev,
+        "flex_month": flex_month,
+        "flex_total": flex_prev + flex_month,
         "vacation_prev": vac_prev,
         "vacation_month": vac_month,
         "vacation_total": vac_ytd,
@@ -382,9 +382,9 @@ def night_hours_report(db: Session, month: str, now: datetime | None = None, use
                 w0, w1 = _window_bounds(cur, start_t, end_t)
                 hours[key] += _overlap_hours(intervals, w0, w1)
             cur += timedelta(days=1)
-        band_1 = round(hours["hours_20_24"], 2)
-        band_2 = round(hours["hours_0_4"], 2)
-        band_3 = round(hours["hours_4_6"], 2)
+        band_1 = hours["hours_20_24"]
+        band_2 = hours["hours_0_4"]
+        band_3 = hours["hours_4_6"]
         rows.append(
             {
                 "user_id": user.id,
@@ -392,7 +392,7 @@ def night_hours_report(db: Session, month: str, now: datetime | None = None, use
                 "hours_20_24": band_1,
                 "hours_0_4": band_2,
                 "hours_4_6": band_3,
-                "hours_1_plus_3": round(band_1 + band_3, 2),
+                "hours_1_plus_3": band_1 + band_3,
             }
         )
     return rows
@@ -429,9 +429,9 @@ def journal_report(db: Session, user: User, month: str) -> dict:
                     "type": "week",
                     "label": "Woche",
                     "booking": "",
-                    "work_hours": round(week_work, 2),
-                    "soll_hours": round(week_soll, 2),
-                    "delta_hours": round(week_delta, 2),
+                    "work_hours": week_work,
+                    "soll_hours": week_soll,
+                    "delta_hours": week_delta,
                 }
             )
             week_work = week_soll = week_delta = 0.0
@@ -440,9 +440,9 @@ def journal_report(db: Session, user: User, month: str) -> dict:
             "type": "month",
             "label": "Monat",
             "booking": "",
-            "work_hours": round(month_work, 2),
-            "soll_hours": round(month_soll, 2),
-            "delta_hours": round(month_delta, 2),
+            "work_hours": month_work,
+            "soll_hours": month_soll,
+            "delta_hours": month_delta,
         }
     )
     snapshot = person_month_snapshot(db, user, month, as_of=min(last, as_local(now_utc()).date())) or {

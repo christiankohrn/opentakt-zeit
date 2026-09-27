@@ -45,7 +45,7 @@ def month_label(year: int, month: int) -> str:
 
 
 def opening_hours(user: User) -> float:
-    return round(float(user.opening_balance_hours or 0), 1)
+    return float(user.opening_balance_hours or 0)
 
 
 def ledger_from(db: Session) -> date | None:
@@ -100,18 +100,18 @@ def _walk(db: Session, user: User, last: date) -> tuple[float, dict[tuple[int, i
             if cursor >= start:
                 running += by_day.get(cursor.isoformat(), 0.0)
             cursor += timedelta(days=1)
-        snapshots[(year, month)] = round(running, 1)
+        snapshots[(year, month)] = running
         if end_day >= last:
             break
         year, month = next_month(year, month)
-    return round(running, 1), snapshots
+    return running, snapshots
 
 
 def flex_as_of(db: Session, user: User, last: date) -> float:
     start = calc_start(db, user)
     chosen = _latest_usable(db, user.id, last, start)
     if chosen is not None:
-        base = round(float(chosen.flex_hours), 1)
+        base = float(chosen.flex_hours)
         calc_from = month_end(chosen.year, chosen.month) + timedelta(days=1)
     else:
         if last < start:
@@ -124,8 +124,7 @@ def flex_as_of(db: Session, user: User, last: date) -> float:
     end = min(last, employment_end(user, last))
     if end < calc_from:
         return base
-    total = base + sum(_delta(day) for day in days_in_range(db, user, calc_from, end))
-    return round(total, 1)
+    return base + sum(_delta(day) for day in days_in_range(db, user, calc_from, end))
 
 
 def month_delta(db: Session, user: User, year: int, month: int, today: date) -> float:
@@ -133,7 +132,7 @@ def month_delta(db: Session, user: User, year: int, month: int, today: date) -> 
     end = min(month_end(year, month), employment_end(user, today))
     if end < start:
         return 0.0
-    return round(sum(_delta(day) for day in days_in_range(db, user, start, end)), 1)
+    return sum(_delta(day) for day in days_in_range(db, user, start, end))
 
 
 def _latest_usable(db: Session, user_id: int, last: date, start: date) -> MonthClosing | None:

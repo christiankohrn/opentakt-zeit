@@ -537,7 +537,7 @@ def patch_user_account(user_id: int, payload: UserAccountIn, request: Request, d
     if "hired_on" in payload.model_fields_set:
         user.hired_on = payload.hired_on
     if "opening_balance_hours" in payload.model_fields_set and payload.opening_balance_hours is not None:
-        user.opening_balance_hours = round(float(payload.opening_balance_hours), 1)
+        user.opening_balance_hours = float(payload.opening_balance_hours)
     if "opening_balance_on" in payload.model_fields_set:
         user.opening_balance_on = payload.opening_balance_on
     if "left_on" in payload.model_fields_set:
@@ -1551,9 +1551,9 @@ def balances(
         people.append(
             {
                 "user_id": user.id,
-                "work_hours": round(work, 1),
-                "soll_hours": round(soll, 1),
-                "delta_hours": round(delta, 1),
+                "work_hours": work,
+                "soll_hours": soll,
+                "delta_hours": delta,
                 "total_delta_hours": total_flex,
             }
         )

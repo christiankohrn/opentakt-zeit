@@ -57,7 +57,7 @@ def _flex_sum(days: list[dict], month: str | None = None) -> float:
         if month and not str(d.get("date", "")).startswith(month):
             continue
         total += float(d.get("delta_hours") or 0)
-    return round(total, 1)
+    return total
 
 
 def days_in_range(db: Session, user: User, start: date, last: date) -> list[dict]:

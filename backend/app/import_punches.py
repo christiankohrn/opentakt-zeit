@@ -198,7 +198,7 @@ def apply_openings(db: Session, people: list[dict]) -> dict[str, int]:
         if user is None or not isinstance(on, date):
             stats["unknown_pnr"] += 1
             continue
-        user.opening_balance_hours = round(float(item.get("hours") or 0), 1)
+        user.opening_balance_hours = float(item.get("hours") or 0)
         user.opening_balance_on = on
         changed.append((user, on))
         stats["updated"] += 1
