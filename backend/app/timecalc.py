@@ -16,7 +16,7 @@ VALID_TRANSITIONS = {
 
 def status_from_punches(punches: list[Punch]) -> str:
     active = [p for p in punches if p.voided_at is None]
-    active.sort(key=lambda p: p.server_time)
+    active.sort(key=lambda p: _as_utc(p.server_time))
     state = "away"
     for p in active:
         if p.kind == "in":
@@ -89,7 +89,7 @@ def work_intervals(
         for p in punches
         if p.voided_at is None and start_utc <= _as_utc(p.server_time) < end_utc
     ]
-    events.sort(key=lambda p: p.server_time)
+    events.sort(key=lambda p: _as_utc(p.server_time))
     prev = [p for p in punches if p.voided_at is None and _as_utc(p.server_time) < start_utc]
     prev_state = status_from_punches(prev)
     intervals: list[tuple[datetime, datetime]] = []
@@ -130,7 +130,7 @@ def summarize_day(
     start_utc, end_utc = local_day_bounds(day)
     now = now or datetime.now(tz=ZoneInfo("UTC"))
     all_in_day = [p for p in punches if start_utc <= _as_utc(p.server_time) < end_utc]
-    all_in_day.sort(key=lambda p: p.server_time)
+    all_in_day.sort(key=lambda p: _as_utc(p.server_time))
     events = [p for p in all_in_day if p.voided_at is None]
 
     prev = [p for p in punches if p.voided_at is None and _as_utc(p.server_time) < start_utc]
@@ -202,7 +202,7 @@ def summarize_day(
             for p in punches
             if p.voided_at is None and _as_utc(p.server_time) >= end_utc
         ]
-        later.sort(key=lambda p: p.server_time)
+        later.sort(key=lambda p: _as_utc(p.server_time))
         next_kind = later[0].kind if later else None
         if next_kind and next_kind != "in":
             warnings.append("overnight")

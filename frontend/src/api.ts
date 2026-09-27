@@ -28,6 +28,8 @@ export type User = {
   left_on: string | null;
   birthday: string | null;
   vacation_days_year: number | null;
+  opening_balance_hours?: number;
+  opening_balance_on?: string | null;
   totp_enabled?: boolean;
   passkey_count?: number;
   security_setup_required?: string | null;
@@ -251,10 +253,19 @@ export type UserCreateResult = User & {
 
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  detail: unknown;
+  constructor(status: number, message: string, detail?: unknown) {
     super(message);
     this.status = status;
+    this.detail = detail;
   }
+}
+
+export function closedMonthDetail(err: unknown): string | null {
+  if (!(err instanceof ApiError) || err.status !== 409 || !err.detail || typeof err.detail !== "object") return null;
+  const body = err.detail as { code?: string; message?: string };
+  if (body.code !== "closed_month") return null;
+  return body.message || "Dieser Monat ist abgeschlossen.";
 }
 
 export const AUTH_EVENT = "ze:unauthorized";
@@ -322,11 +333,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     if (res.status === 401 && !path.startsWith("/api/auth/")) {
       window.dispatchEvent(new CustomEvent(AUTH_EVENT, { detail: { path } }));
     }
+    const raw = typeof data === "object" && data && "detail" in data ? (data as { detail: unknown }).detail : res.statusText;
     const detail =
-      typeof data === "object" && data && "detail" in data
-        ? String((data as { detail: unknown }).detail)
-        : res.statusText;
-    throw new ApiError(res.status, detail);
+      raw && typeof raw === "object" && "message" in raw ? String((raw as { message: unknown }).message) : String(raw);
+    throw new ApiError(res.status, detail, raw);
   }
   return data as T;
 }
@@ -471,6 +481,9 @@ export const api = {
       birthday?: string | null;
       vacation_days_year?: number | null;
       department_id?: number | null;
+      opening_balance_hours?: number;
+      opening_balance_on?: string | null;
+      confirm_closed?: boolean;
     },
   ) => request<User>(`/api/hr/users/${id}/account`, { method: "PATCH", body: JSON.stringify(body) }),
   models: () => request<WorkModel[]>("/api/hr/work-models"),
@@ -484,26 +497,34 @@ export const api = {
   deleteDepartment: (id: number) => request(`/api/hr/departments/${id}`, { method: "DELETE" }),
   deleteUser: (id: number) => request(`/api/hr/users/${id}`, { method: "DELETE" }),
   userModels: (userId: number) => request<WorkModelAssignment[]>(`/api/hr/users/${userId}/work-models`),
-  assignUserModel: (userId: number, body: { work_model_id: number; valid_from: string }) =>
+  assignUserModel: (userId: number, body: { work_model_id: number; valid_from: string; confirm_closed?: boolean }) =>
     request<WorkModelAssignment>(`/api/hr/users/${userId}/work-models`, { method: "POST", body: JSON.stringify(body) }),
-  deleteUserModel: (userId: number, assignmentId: number) =>
-    request(`/api/hr/users/${userId}/work-models/${assignmentId}`, { method: "DELETE" }),
+  deleteUserModel: (userId: number, assignmentId: number, confirmClosed = false) =>
+    request(`/api/hr/users/${userId}/work-models/${assignmentId}?confirm_closed=${confirmClosed ? "true" : "false"}`, {
+      method: "DELETE",
+    }),
   userDays: (id: number, month: string) =>
-    request<{ user: User; month: string; days: DaySummary[]; month_flex: number; total_flex: number }>(
+    request<{ user: User; month: string; days: DaySummary[]; month_flex: number; total_flex: number; closed?: boolean }>(
       `/api/hr/users/${id}/days?month=${month}`,
     ),
-  replaceDay: (userId: number, day: string, body: { reason: string; punches: { kind: PunchKind; time: string }[] }) =>
-    request(`/api/hr/users/${userId}/days/${day}`, { method: "PUT", body: JSON.stringify(body) }),
+  replaceDay: (
+    userId: number,
+    day: string,
+    body: { reason: string; punches: { kind: PunchKind; time: string }[]; confirm_closed?: boolean },
+  ) => request(`/api/hr/users/${userId}/days/${day}`, { method: "PUT", body: JSON.stringify(body) }),
   acceptDay: (userId: number, day: string, reason: string) =>
     request(`/api/hr/users/${userId}/days/${day}/accept`, { method: "POST", body: JSON.stringify({ reason }) }),
   revokeAccept: (userId: number, day: string) =>
     request(`/api/hr/users/${userId}/days/${day}/accept`, { method: "DELETE" }),
-  createAbsences: (userId: number, body: { kind: string; start: string; end: string; note?: string }) =>
-    request(`/api/hr/users/${userId}/absences`, { method: "POST", body: JSON.stringify(body) }),
-  deleteAbsence: (userId: number, day: string) => request(`/api/hr/users/${userId}/absences/${day}`, { method: "DELETE" }),
+  createAbsences: (
+    userId: number,
+    body: { kind: string; start: string; end: string; note?: string; confirm_closed?: boolean },
+  ) => request(`/api/hr/users/${userId}/absences`, { method: "POST", body: JSON.stringify(body) }),
+  deleteAbsence: (userId: number, day: string, confirmClosed = false) =>
+    request(`/api/hr/users/${userId}/absences/${day}?confirm_closed=${confirmClosed ? "true" : "false"}`, { method: "DELETE" }),
   orgSettings: () =>
     request<{ bundesland: string; bundesland_name: string; states: Record<string, string> }>("/api/hr/settings"),
-  patchOrgSettings: (body: { bundesland: string }) =>
+  patchOrgSettings: (body: { bundesland: string; confirm_closed?: boolean }) =>
     request<{ bundesland: string; bundesland_name: string; states: Record<string, string> }>("/api/hr/settings", {
       method: "PATCH",
       body: JSON.stringify(body),
@@ -558,9 +579,28 @@ export const api = {
     request<{ id: number | null; day: string; kind: string; name: string; source: string }[]>(
       `/api/hr/calendar?year=${year}`,
     ),
-  upsertCalendar: (body: { day: string; kind: string; name: string }) =>
+  upsertCalendar: (body: { day: string; kind: string; name: string; confirm_closed?: boolean }) =>
     request(`/api/hr/calendar`, { method: "POST", body: JSON.stringify(body) }),
-  deleteCalendar: (id: number) => request(`/api/hr/calendar/${id}`, { method: "DELETE" }),
+  deleteCalendar: (id: number, confirmClosed = false) =>
+    request(`/api/hr/calendar/${id}?confirm_closed=${confirmClosed ? "true" : "false"}`, { method: "DELETE" }),
+  closings: () =>
+    request<{ months: { year: number; month: number; people: number; closed_at: string | null }[] }>("/api/hr/closings"),
+  closingDetail: (year: number, month: number) =>
+    request<{
+      year: number;
+      month: number;
+      people: {
+        user_id: number;
+        display_name: string;
+        flex_hours: number;
+        opening_balance_hours: number;
+        opening_balance_on: string | null;
+      }[];
+    }>(`/api/hr/closings/${year}/${month}`),
+  closeMonth: (year: number, month: number) =>
+    request<{ ok: boolean; rows: number }>("/api/hr/closings", { method: "POST", body: JSON.stringify({ year, month }) }),
+  recalculateClosing: (year: number, month: number) =>
+    request<{ ok: boolean; people: number }>(`/api/hr/closings/${year}/${month}/recalculate`, { method: "POST" }),
   plausibility: (month: string) =>
     request<{
       month: string;

@@ -30,6 +30,8 @@ class UserOut(BaseModel):
     left_on: Optional[date] = None
     birthday: Optional[date] = None
     vacation_days_year: Optional[float] = None
+    opening_balance_hours: float = 0
+    opening_balance_on: Optional[date] = None
     totp_enabled: bool = False
     passkey_count: int = 0
     security_setup_required: Optional[str] = None
@@ -40,6 +42,7 @@ class UserOut(BaseModel):
 class WorkModelAssignIn(BaseModel):
     work_model_id: int
     valid_from: date
+    confirm_closed: bool = False
 
 
 class WorkModelAssignOut(BaseModel):
@@ -139,6 +142,7 @@ class CorrectionIn(BaseModel):
     kind: Literal["in", "out", "break_start", "break_end"]
     local_time: datetime
     reason: str = Field(min_length=3, max_length=300)
+    confirm_closed: bool = False
 
 
 class DayPunchDraft(BaseModel):
@@ -149,6 +153,7 @@ class DayPunchDraft(BaseModel):
 class DayReplaceIn(BaseModel):
     reason: str = Field(min_length=3, max_length=300)
     punches: list[DayPunchDraft]
+    confirm_closed: bool = False
 
 
 class DayAcceptIn(BaseModel):
@@ -160,6 +165,7 @@ class AbsenceRangeIn(BaseModel):
     start: date
     end: date
     note: Optional[str] = None
+    confirm_closed: bool = False
 
 
 class UserSettingsIn(BaseModel):
@@ -180,6 +186,9 @@ class UserAccountIn(BaseModel):
     birthday: Optional[date] = None
     vacation_days_year: Optional[float] = Field(default=None, ge=0, le=366)
     department_id: Optional[int] = None
+    opening_balance_hours: Optional[float] = None
+    opening_balance_on: Optional[date] = None
+    confirm_closed: bool = False
 
 
 class PasswordChangeIn(BaseModel):
@@ -284,8 +293,14 @@ class OrgSettingsOut(BaseModel):
     states: dict[str, str]
 
 
+class ClosingMonthIn(BaseModel):
+    year: int = Field(ge=2000, le=2100)
+    month: int = Field(ge=1, le=12)
+
+
 class OrgSettingsIn(BaseModel):
     bundesland: str
+    confirm_closed: bool = False
 
 
 class SecurityPolicyOut(BaseModel):
@@ -424,6 +439,7 @@ class CalendarIn(BaseModel):
     day: date
     kind: Literal["holiday", "company_off"]
     name: str = Field(min_length=2, max_length=160)
+    confirm_closed: bool = False
 
 
 class CalendarOut(BaseModel):

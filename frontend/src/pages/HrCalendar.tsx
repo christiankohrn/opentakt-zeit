@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
+import { useClosedMonth } from "../closedMonth";
 import LoadingNote from "../components/LoadingNote";
 import SearchField, { matchesQuery } from "../components/SearchField";
 import { useAuth } from "../auth";
@@ -22,6 +23,7 @@ function isoToday() {
 export default function HrCalendar() {
   const { user: me } = useAuth();
   const isAdmin = me?.role === "admin";
+  const closed = useClosedMonth();
   const [year, setYear] = useState(currentYear);
   const [land, setLand] = useState("NW");
   const [states, setStates] = useState<Record<string, string>>({});
@@ -70,12 +72,12 @@ export default function HrCalendar() {
     setBusy(true);
     setMsg("");
     try {
-      const next = await api.patchOrgSettings({ bundesland: code });
-      setLand(next.bundesland);
-      setRows(await api.calendar(year));
-      setMsg(`Standort: ${next.bundesland_name}`);
-    } catch (err) {
-      setMsg(err instanceof Error ? err.message : "Fehler");
+      await closed.attempt(async (confirmClosed) => {
+        const next = await api.patchOrgSettings({ bundesland: code, confirm_closed: confirmClosed });
+        setLand(next.bundesland);
+        setRows(await api.calendar(year));
+        setMsg(`Standort: ${next.bundesland_name}`);
+      }, setMsg);
     } finally {
       setBusy(false);
     }
@@ -86,16 +88,17 @@ export default function HrCalendar() {
     setBusy(true);
     setMsg("");
     try {
-      await api.upsertCalendar({
-        day,
-        kind,
-        name: name.trim() || (kind === "company_off" ? "Betriebsfrei" : "Feiertag"),
-      });
-      setName("");
-      setRows(await api.calendar(year));
-      setMsg("Tag gespeichert.");
-    } catch (err) {
-      setMsg(err instanceof Error ? err.message : "Fehler");
+      await closed.attempt(async (confirmClosed) => {
+        await api.upsertCalendar({
+          day,
+          kind,
+          name: name.trim() || (kind === "company_off" ? "Betriebsfrei" : "Feiertag"),
+          confirm_closed: confirmClosed,
+        });
+        setName("");
+        setRows(await api.calendar(year));
+        setMsg("Tag gespeichert.");
+      }, setMsg);
     } finally {
       setBusy(false);
     }
@@ -225,6 +228,7 @@ export default function HrCalendar() {
         ))}
       </div>
       : null}
+      {closed.dialog}
       {pendingDelete ? (
         <ConfirmDialog
           title="Eintrag löschen?"
@@ -237,18 +241,20 @@ export default function HrCalendar() {
             const id = pendingDelete.id;
             if (!id) return;
             setBusy(true);
-            void (async () => {
+            void closed.attempt(async (confirmClosed) => {
               try {
-                await api.deleteCalendar(id);
+                await api.deleteCalendar(id, confirmClosed);
                 setRows(await api.calendar(year));
                 setMsg("Eintrag gelöscht.");
-              } catch (err) {
-                setMsg(err instanceof Error ? err.message : "Fehler");
               } finally {
                 setBusy(false);
                 setPendingDelete(null);
               }
-            })();
+            }, (message) => {
+              setBusy(false);
+              setPendingDelete(null);
+              setMsg(message);
+            });
           }}
         />
       ) : null}

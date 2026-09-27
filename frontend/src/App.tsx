@@ -3,6 +3,7 @@ import { Navigate, Outlet, RouterProvider, createBrowserRouter } from "react-rou
 import { AuthProvider, useAuth } from "./auth";
 import Layout from "./components/Layout";
 import HrCalendar from "./pages/HrCalendar";
+import HrClosings from "./pages/HrClosings";
 import HrDay from "./pages/HrDay";
 import HrDepartments from "./pages/HrDepartments";
 import HrModels from "./pages/HrModels";
@@ -94,7 +95,10 @@ const router = createBrowserRouter([
       },
       {
         element: <AdminGuard />,
-        children: [{ path: "einstellungen", element: <Settings /> }],
+        children: [
+          { path: "einstellungen", element: <Settings /> },
+          { path: "abschluesse", element: <HrClosings /> },
+        ],
       },
     ],
   },

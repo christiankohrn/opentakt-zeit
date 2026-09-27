@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.auth import local_tz, now_utc
+from app.auth import as_local, local_tz, now_utc
 from app.config import get_config
 from app.models import Punch, User
 
@@ -94,6 +94,7 @@ def apply_import(db: Session, punches: list[dict]) -> dict[str, int]:
         for user in db.scalars(select(User).where(User.id.in_(user_ids))).all()
     } if user_ids else {}
     existing = _load_existing(db, [str(item.get("event_id") or "") for item, _user_id in resolved])
+    touched: set[tuple[int, date]] = set()
     for item, user_id in resolved:
         user = users.get(user_id)
         if user is None:
@@ -102,6 +103,8 @@ def apply_import(db: Session, punches: list[dict]) -> dict[str, int]:
         event_id = str(item.get("event_id") or "")
         known = existing.get((user.id, event_id))
         if item.get("void"):
+            if known is not None and known.server_time is not None and known.voided_at is None and known.voided_by_id is None and known.source == IMPORT_SOURCE:
+                touched.add((user.id, as_local(known.server_time).date()))
             _void(known, stats)
             continue
         kind = str(item.get("kind") or "")
@@ -123,6 +126,7 @@ def apply_import(db: Session, punches: list[dict]) -> dict[str, int]:
             db.add(punch)
             existing[(user.id, event_id)] = punch
             stats["stored"] += 1
+            touched.add((user.id, as_local(booked).date()))
             continue
         if known.source != IMPORT_SOURCE or known.voided_by_id is not None:
             stats["manuell" if known.voided_by_id is not None else "skipped"] += 1
@@ -132,6 +136,7 @@ def apply_import(db: Session, punches: list[dict]) -> dict[str, int]:
         if not changed and not restored:
             stats["duplicate"] += 1
             continue
+        previous_day = as_local(known.server_time).date() if known.server_time is not None else None
         known.kind = kind
         known.server_time = booked
         known.device_time = booked
@@ -141,6 +146,21 @@ def apply_import(db: Session, punches: list[dict]) -> dict[str, int]:
             known.voided_at = None
             known.void_reason = None
         stats["updated"] += 1
+        touched.add((user.id, as_local(booked).date()))
+        if previous_day is not None:
+            touched.add((user.id, previous_day))
+    db.flush()
+    from app.closings import refresh_closed_day
+
+    refreshed: set[int] = set()
+    for user_id, day in sorted(touched):
+        if user_id in refreshed:
+            continue
+        user = users.get(user_id)
+        if user is None:
+            continue
+        refresh_closed_day(db, user, day, None)
+        refreshed.add(user_id)
     db.commit()
     return stats
 

@@ -69,10 +69,16 @@ export default function Layout() {
           </>
         ) : null}
         {admin && variant === "side" ? (
-          <NavLink to="/einstellungen" className={({ isActive }) => cls(isActive)}>
-            <IconGear className={icon} />
-            Einstellungen
-          </NavLink>
+          <>
+            <NavLink to="/abschluesse" className={({ isActive }) => cls(isActive)}>
+              <IconChart className={icon} />
+              Abschlüsse
+            </NavLink>
+            <NavLink to="/einstellungen" className={({ isActive }) => cls(isActive)}>
+              <IconGear className={icon} />
+              Einstellungen
+            </NavLink>
+          </>
         ) : null}
       </>
     );
@@ -127,9 +133,14 @@ export default function Layout() {
               Konto
             </NavLink>
             {admin ? (
-              <NavLink to="/einstellungen" className="text-sm text-muted">
-                Einstellungen
-              </NavLink>
+              <>
+                <NavLink to="/abschluesse" className="text-sm text-muted">
+                  Abschlüsse
+                </NavLink>
+                <NavLink to="/einstellungen" className="text-sm text-muted">
+                  Einstellungen
+                </NavLink>
+              </>
             ) : null}
           </div>
         </header>

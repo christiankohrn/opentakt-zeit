@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, type DaySummary, type Department, type User, type WorkModel, type WorkModelAssignment } from "../api";
+import { useClosedMonth } from "../closedMonth";
 import { useAuth } from "../auth";
 import DayLegend from "../components/DayLegend";
 import ConfirmDialog from "../components/ConfirmDialog";
@@ -87,11 +88,21 @@ export default function HrUserMonth() {
   const [exportMsg, setExportMsg] = useState("");
   const [inviteMsg, setInviteMsg] = useState("");
   const [inviteBusy, setInviteBusy] = useState(false);
+  const [monthClosed, setMonthClosed] = useState(false);
+  const [openingHours, setOpeningHours] = useState("0");
+  const [openingOn, setOpeningOn] = useState("");
+  const [openingMsg, setOpeningMsg] = useState("");
+  const closed = useClosedMonth();
 
   async function reload() {
     if (!userId) return;
     const [r, m, a, d] = await Promise.all([api.userDays(userId, month), api.models(), api.userModels(userId), api.departments()]);
     setUser(r.user);
+    setMonthClosed(Boolean(r.closed));
+    setOpeningHours(
+      r.user.opening_balance_hours != null ? String(r.user.opening_balance_hours).replace(".", ",") : "0",
+    );
+    setOpeningOn(r.user.opening_balance_on ?? "");
     setDays(r.days);
     setMonthFlex(r.month_flex ?? 0);
     setTotalFlex(r.total_flex ?? 0);
@@ -203,35 +214,36 @@ export default function HrUserMonth() {
               });
               return;
             }
-            try {
-              const body: {
-                username: string;
-                display_name: string;
-                email: string | null;
-                role?: string;
-                active?: boolean;
-                password?: string;
-                hired_on: string | null;
-                left_on: string | null;
-                birthday: string | null;
-                vacation_days_year: number | null;
-                department_id: number | null;
-              } = {
-                username: account.username,
-                display_name: account.display_name,
-                email: account.email.trim() || null,
-                hired_on: account.hired_on || null,
-                left_on: account.left_on || null,
-                birthday: account.birthday || null,
-                vacation_days_year: account.vacation_days_year.trim() === "" ? null : Number(account.vacation_days_year.replace(",", ".")),
-                department_id: account.department_id ? Number(account.department_id) : null,
-              };
-              if (isAdmin) {
-                body.role = account.role;
-                body.active = account.active;
-                if (account.password.trim()) body.password = account.password.trim();
-              }
-              const next = await api.patchUserAccount(userId, body);
+            const body: {
+              username: string;
+              display_name: string;
+              email: string | null;
+              role?: string;
+              active?: boolean;
+              password?: string;
+              hired_on: string | null;
+              left_on: string | null;
+              birthday: string | null;
+              vacation_days_year: number | null;
+              department_id: number | null;
+              confirm_closed?: boolean;
+            } = {
+              username: account.username,
+              display_name: account.display_name,
+              email: account.email.trim() || null,
+              hired_on: account.hired_on || null,
+              left_on: account.left_on || null,
+              birthday: account.birthday || null,
+              vacation_days_year: account.vacation_days_year.trim() === "" ? null : Number(account.vacation_days_year.replace(",", ".")),
+              department_id: account.department_id ? Number(account.department_id) : null,
+            };
+            if (isAdmin) {
+              body.role = account.role;
+              body.active = account.active;
+              if (account.password.trim()) body.password = account.password.trim();
+            }
+            await closed.attempt(async (confirmClosed) => {
+              const next = await api.patchUserAccount(userId, { ...body, confirm_closed: confirmClosed });
               setUser(next);
               setGeneratedPassword("");
               setAccountErrors({});
@@ -251,9 +263,7 @@ export default function HrUserMonth() {
               });
               setAccountMsg("Benutzer gespeichert.");
               await reload();
-            } catch (err) {
-              setAccountMsg(err instanceof Error ? err.message : "Fehler");
-            }
+            }, setAccountMsg);
           }}
           id="user-account-form"
         >
@@ -706,6 +716,9 @@ export default function HrUserMonth() {
               Gesamt <span className={hoursTone(totalFlex)}>{signedHours(totalFlex)}</span>
             </p>
           ) : null}
+          {monthClosed ? (
+            <p className="mt-2 text-sm">Dieser Monat ist abgeschlossen. Änderungen rechnen die Abschlüsse neu.</p>
+          ) : null}
         </div>
         <input
           type="month"
@@ -714,6 +727,56 @@ export default function HrUserMonth() {
           className="month-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
         />
       </div>
+      <form
+        className="mt-3 space-y-2 rounded-2xl border border-line bg-card p-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          setOpeningMsg("");
+          const hours = Number(openingHours.trim().replace(",", "."));
+          if (!Number.isFinite(hours)) {
+            setOpeningMsg("Stunden als Zahl eingeben.");
+            return;
+          }
+          void closed.attempt(async (confirmClosed) => {
+            await api.patchUserAccount(userId, {
+              opening_balance_hours: hours,
+              opening_balance_on: openingOn || null,
+              confirm_closed: confirmClosed,
+            });
+            setOpeningMsg("Startkonto gespeichert.");
+            await reload();
+          }, setOpeningMsg);
+        }}
+      >
+        <p className="text-sm font-medium">Startkonto</p>
+        <p className="text-xs text-muted">
+          Stundenstand am Beginn des Stichtags. Tage davor zählen nicht mit. Für importierte Mitarbeiter, bevor der
+          erste Abschluss läuft.
+        </p>
+        <div className="flex flex-wrap gap-3">
+          <label className="text-sm">
+            Stunden
+            <input
+              value={openingHours}
+              onChange={(e) => setOpeningHours(e.target.value)}
+              className="mt-1 block w-28 rounded-lg border border-line bg-bg px-2 py-1"
+            />
+          </label>
+          <label className="text-sm">
+            Gültig ab
+            <input
+              type="date"
+              value={openingOn}
+              onChange={(e) => setOpeningOn(e.target.value)}
+              className="mt-1 block rounded-lg border border-line bg-bg px-2 py-1"
+            />
+          </label>
+        </div>
+        <button type="submit" className="rounded-xl bg-navy px-3 py-2 text-sm text-white">
+          Startkonto speichern
+        </button>
+        {openingMsg ? <p className="text-sm text-muted">{openingMsg}</p> : null}
+      </form>
       <div className="mt-2 flex flex-wrap items-center gap-3 text-sm">
         <button
           type="button"
@@ -873,16 +936,20 @@ export default function HrUserMonth() {
               <button
                 type="button"
                 className="flex-1 rounded-xl bg-navy py-2 text-white"
-                onClick={async () => {
-                  try {
-                    await api.assignUserModel(userId, { work_model_id: Number(modelId), valid_from: modelFrom });
+                onClick={() => {
+                  void closed.attempt(async (confirmClosed) => {
+                    await api.assignUserModel(userId, {
+                      work_model_id: Number(modelId),
+                      valid_from: modelFrom,
+                      confirm_closed: confirmClosed,
+                    });
                     setModelConfirm(false);
                     setModelMsg("Modell gesetzt.");
                     await reload();
-                  } catch (err) {
+                  }, (message) => {
                     setModelConfirm(false);
-                    setModelMsg(err instanceof Error ? err.message : "Fehler");
-                  }
+                    setModelMsg(message);
+                  });
                 }}
               >
                 Übernehmen
@@ -945,17 +1012,15 @@ export default function HrUserMonth() {
           onCancel={() => setModelDelete(null)}
           onConfirm={() => {
             const assignment = modelDelete;
-            void (async () => {
-              try {
-                await api.deleteUserModel(userId, assignment.id);
-                setModelDelete(null);
-                setModelMsg("Modellzuordnung gelöscht.");
-                await reload();
-              } catch (err) {
-                setModelDelete(null);
-                setModelMsg(err instanceof Error ? err.message : "Fehler");
-              }
-            })();
+            void closed.attempt(async (confirmClosed) => {
+              await api.deleteUserModel(userId, assignment.id, confirmClosed);
+              setModelDelete(null);
+              setModelMsg("Modellzuordnung gelöscht.");
+              await reload();
+            }, (message) => {
+              setModelDelete(null);
+              setModelMsg(message);
+            });
           }}
         />
       ) : null}
@@ -981,22 +1046,23 @@ export default function HrUserMonth() {
               <button
                 type="button"
                 className="flex-1 rounded-xl bg-present py-2 text-white"
-                onClick={async () => {
-                  try {
+                onClick={() => {
+                  void closed.attempt(async (confirmClosed) => {
                     await api.createAbsences(userId, {
                       kind: absKind,
                       start: absStart,
                       end: absEnd,
                       note: absNote || undefined,
+                      confirm_closed: confirmClosed,
                     });
                     setAbsNote("");
                     setAbsConfirm(false);
                     setAbsMsg("Abwesenheit eingetragen.");
                     await reload();
-                  } catch (err) {
+                  }, (message) => {
                     setAbsConfirm(false);
-                    setAbsMsg(err instanceof Error ? err.message : "Fehler");
-                  }
+                    setAbsMsg(message);
+                  });
                 }}
               >
                 Eintragen
@@ -1005,6 +1071,7 @@ export default function HrUserMonth() {
           </div>
         </div>
       ) : null}
+      {closed.dialog}
       {blocker.state === "blocked" ? (
         <UnsavedChangesDialog onStay={() => blocker.reset()} onDiscard={() => blocker.proceed()} />
       ) : null}

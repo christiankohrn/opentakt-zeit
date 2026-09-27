@@ -8,11 +8,20 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.auth import HR_ROLES, as_local, bump_session_rev, current_user, local_day_bounds, normalize_username, now_utc, require_admin, require_hr, write_session
 from app.balance import account_hours, days_in_range, summarize_user_day
+from app.closings import (
+    any_closing,
+    close_through,
+    earliest_per_user,
+    month_is_closed,
+    recalculate_pairs,
+    require_open,
+    users_for_day,
+)
 from app.datafox import normalize_badge
 from app.database import get_db
 from app.models import (
@@ -21,6 +30,7 @@ from app.models import (
     CalendarEntry,
     DayAcceptance,
     Department,
+    MonthClosing,
     MailToken,
     Punch,
     TotpBackupCode,
@@ -33,6 +43,7 @@ from app.schemas import (
     AbsenceRangeIn,
     CalendarIn,
     CalendarOut,
+    ClosingMonthIn,
     CorrectionIn,
     DayAcceptIn,
     DayReplaceIn,
@@ -471,8 +482,26 @@ def patch_user_account(user_id: int, payload: UserAccountIn, request: Request, d
         user.auth_source = "local"
     if privileged:
         bump_session_rev(user)
+    opening_changed = (
+        ("opening_balance_hours" in payload.model_fields_set and payload.opening_balance_hours != user.opening_balance_hours)
+        or ("opening_balance_on" in payload.model_fields_set and payload.opening_balance_on != user.opening_balance_on)
+        or ("hired_on" in payload.model_fields_set and payload.hired_on != user.hired_on)
+    )
+    recalc: list[tuple[int, int, int]] = []
+    if opening_changed:
+        earliest = db.scalar(
+            select(MonthClosing)
+            .where(MonthClosing.user_id == user.id)
+            .order_by(MonthClosing.year, MonthClosing.month)
+        )
+        if earliest is not None:
+            recalc = require_open(db, [(user.id, date(earliest.year, earliest.month, 1))], payload.confirm_closed)
     if "hired_on" in payload.model_fields_set:
         user.hired_on = payload.hired_on
+    if "opening_balance_hours" in payload.model_fields_set and payload.opening_balance_hours is not None:
+        user.opening_balance_hours = round(float(payload.opening_balance_hours), 1)
+    if "opening_balance_on" in payload.model_fields_set:
+        user.opening_balance_on = payload.opening_balance_on
     if "left_on" in payload.model_fields_set:
         user.left_on = payload.left_on
     if "birthday" in payload.model_fields_set:
@@ -496,10 +525,14 @@ def patch_user_account(user_id: int, payload: UserAccountIn, request: Request, d
                     "active": user.active,
                     "password_set": bool(payload.password),
                     "email": user.email,
+                    "opening_balance_hours": user.opening_balance_hours,
+                    "opening_balance_on": user.opening_balance_on.isoformat() if user.opening_balance_on else None,
                 }
             ),
         )
     )
+    db.flush()
+    recalculate_pairs(db, recalc, actor.id)
     db.commit()
     db.refresh(user)
     if actor.id == user.id:
@@ -519,6 +552,8 @@ def _drop_user_rows(db: Session, user: User, actor: User) -> None:
     db.execute(delete(Absence).where(Absence.user_id == uid))
     db.execute(update(DayAcceptance).where(DayAcceptance.accepted_by_id == uid).values(accepted_by_id=actor.id))
     db.execute(delete(DayAcceptance).where(DayAcceptance.user_id == uid))
+    db.execute(update(MonthClosing).where(MonthClosing.closed_by_id == uid).values(closed_by_id=None))
+    db.execute(delete(MonthClosing).where(MonthClosing.user_id == uid))
     db.execute(update(WorkModelAssignment).where(WorkModelAssignment.created_by_id == uid).values(created_by_id=actor.id))
     db.execute(delete(WorkModelAssignment).where(WorkModelAssignment.user_id == uid))
     db.execute(update(CalendarEntry).where(CalendarEntry.created_by_id == uid).values(created_by_id=actor.id))
@@ -694,6 +729,15 @@ def patch_settings(payload: OrgSettingsIn, request: Request, db: Session = Depen
     code = payload.bundesland.strip().upper()
     if code not in STATES:
         raise HTTPException(400, "Unbekanntes Bundesland")
+    current = bundesland_of(db)
+    recalc: list[tuple[int, int, int]] = []
+    if code != current and any_closing(db):
+        recalc = earliest_per_user(db)
+        if not payload.confirm_closed and recalc:
+            year, month = min((item[1], item[2]) for item in recalc)
+            from app.closings import closed_detail
+
+            raise HTTPException(status_code=409, detail=closed_detail(year, month))
     row = db.get(OrgSettings, 1)
     if row:
         row.bundesland = code
@@ -709,6 +753,8 @@ def patch_settings(payload: OrgSettingsIn, request: Request, db: Session = Depen
             payload=json.dumps({"bundesland": code}),
         )
     )
+    db.flush()
+    recalculate_pairs(db, recalc, actor.id)
     db.commit()
     return OrgSettingsOut(bundesland=code, bundesland_name=STATES[code], states=STATES)
 
@@ -809,6 +855,7 @@ def create_calendar(payload: CalendarIn, request: Request, db: Session = Depends
     actor = _actor(request, db)
     from app.models import CalendarEntry
 
+    recalc = require_open(db, users_for_day(db, payload.day), payload.confirm_closed)
     existing = db.scalar(select(CalendarEntry).where(CalendarEntry.day == payload.day))
     if existing:
         existing.kind = payload.kind
@@ -833,19 +880,27 @@ def create_calendar(payload: CalendarIn, request: Request, db: Session = Depends
             payload=json.dumps({"day": payload.day.isoformat(), "kind": payload.kind, "name": payload.name.strip()}, ensure_ascii=False),
         )
     )
+    db.flush()
+    recalculate_pairs(db, recalc, actor.id)
     db.commit()
     db.refresh(row)
     return CalendarOut(id=row.id, day=row.day, kind=row.kind, name=row.name, source="custom")
 
 
 @router.delete("/calendar/{entry_id}")
-def delete_calendar(entry_id: int, request: Request, db: Session = Depends(get_db)):
+def delete_calendar(
+    entry_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    confirm_closed: bool = Query(False),
+):
     actor = _actor(request, db)
     from app.models import CalendarEntry
 
     row = db.get(CalendarEntry, entry_id)
     if not row:
         raise HTTPException(404, "Nicht gefunden")
+    recalc = require_open(db, users_for_day(db, row.day), confirm_closed)
     db.delete(row)
     db.add(
         AuditEvent(
@@ -856,6 +911,8 @@ def delete_calendar(entry_id: int, request: Request, db: Session = Depends(get_d
             payload=json.dumps({"day": row.day.isoformat()}),
         )
     )
+    db.flush()
+    recalculate_pairs(db, recalc, actor.id)
     db.commit()
     return {"ok": True}
 
@@ -892,6 +949,7 @@ def assign_user_model(user_id: int, payload: WorkModelAssignIn, request: Request
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(404, "Nicht gefunden")
+    recalc = require_open(db, [(user_id, payload.valid_from)], payload.confirm_closed)
     try:
         row = upsert_assignment(db, user, payload.work_model_id, payload.valid_from, actor.id)
     except ValueError as exc:
@@ -908,6 +966,8 @@ def assign_user_model(user_id: int, payload: WorkModelAssignIn, request: Request
             ),
         )
     )
+    db.flush()
+    recalculate_pairs(db, recalc, actor.id)
     db.commit()
     row = db.scalar(
         select(WorkModelAssignment)
@@ -919,7 +979,13 @@ def assign_user_model(user_id: int, payload: WorkModelAssignIn, request: Request
 
 
 @router.delete("/users/{user_id}/work-models/{assignment_id}")
-def delete_user_model(user_id: int, assignment_id: int, request: Request, db: Session = Depends(get_db)):
+def delete_user_model(
+    user_id: int,
+    assignment_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    confirm_closed: bool = Query(False),
+):
     actor = _actor(request, db)
     user = db.get(User, user_id)
     if not user:
@@ -927,6 +993,7 @@ def delete_user_model(user_id: int, assignment_id: int, request: Request, db: Se
     row = db.get(WorkModelAssignment, assignment_id)
     if not row or row.user_id != user_id:
         raise HTTPException(404, "Nicht gefunden")
+    recalc = require_open(db, [(user_id, row.valid_from)], confirm_closed)
     db.delete(row)
     db.flush()
     remaining = load_timeline(db, user_id)
@@ -940,6 +1007,8 @@ def delete_user_model(user_id: int, assignment_id: int, request: Request, db: Se
             payload=json.dumps({"id": assignment_id}),
         )
     )
+    db.flush()
+    recalculate_pairs(db, recalc, actor.id)
     db.commit()
     return {"ok": True}
 
@@ -976,6 +1045,7 @@ def user_days(
         "days": days,
         "month_flex": month_flex,
         "total_flex": total_flex,
+        "closed": month_is_closed(db, user.id, start),
     }
 
 
@@ -990,18 +1060,24 @@ def correct(
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(404, "Nicht gefunden")
+    original = None
     if payload.punch_id:
         original = db.get(Punch, payload.punch_id)
         if not original or original.user_id != user_id:
             raise HTTPException(404, "Stempel nicht gefunden")
-        original.voided_at = now_utc()
-        original.voided_by_id = actor.id
-        original.void_reason = payload.reason
     aware = payload.local_time
     if aware.tzinfo is None:
         from app.auth import local_tz
 
         aware = aware.replace(tzinfo=local_tz())
+    touched = [as_local(aware).date()]
+    if original is not None:
+        touched.append(as_local(original.server_time).date())
+    recalc = require_open(db, [(user_id, day) for day in touched], payload.confirm_closed)
+    if original is not None:
+        original.voided_at = now_utc()
+        original.voided_by_id = actor.id
+        original.void_reason = payload.reason
     server_time = aware.astimezone(ZoneInfo("UTC"))
     punch = Punch(
         user_id=user_id,
@@ -1031,6 +1107,7 @@ def correct(
             ),
         )
     )
+    recalculate_pairs(db, recalc, actor.id)
     db.commit()
     return {"ok": True, "punch_id": punch.id}
 
@@ -1047,6 +1124,7 @@ def replace_day(
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(404, "Nicht gefunden")
+    recalc = require_open(db, [(user_id, day)], payload.confirm_closed)
     start, end = local_day_bounds(day)
     existing = list(
         db.scalars(
@@ -1078,7 +1156,7 @@ def replace_day(
             kind=draft.kind,
             server_time=local_dt.astimezone(ZoneInfo("UTC")),
             source="correction",
-            client_event_id=f"corr-{user_id}-{day.isoformat()}-{i}-{int(now_utc().timestamp())}",
+            client_event_id=f"corr-{user_id}-{day.isoformat()}-{i}-{now_utc().timestamp()}",
             note=payload.reason,
         )
         db.add(punch)
@@ -1102,6 +1180,7 @@ def replace_day(
             ),
         )
     )
+    recalculate_pairs(db, recalc, actor.id)
     db.commit()
     return {"ok": True, "voided": len(existing), "created": len(created)}
 
@@ -1192,6 +1271,12 @@ def create_absences(user_id: int, payload: AbsenceRangeIn, request: Request, db:
         raise HTTPException(400, "Ende liegt vor dem Beginn")
     if (payload.end - payload.start).days > 90:
         raise HTTPException(400, "Maximal 90 Tage am Stück")
+    span = []
+    cursor = payload.start
+    while cursor <= payload.end:
+        span.append((user_id, cursor))
+        cursor += timedelta(days=1)
+    recalc = require_open(db, span, payload.confirm_closed)
     created = 0
     cur = payload.start
     while cur <= payload.end:
@@ -1229,16 +1314,25 @@ def create_absences(user_id: int, payload: AbsenceRangeIn, request: Request, db:
             ),
         )
     )
+    db.flush()
+    recalculate_pairs(db, recalc, actor.id)
     db.commit()
     return {"ok": True, "created": created}
 
 
 @router.delete("/users/{user_id}/absences/{day}")
-def delete_absence(user_id: int, day: date, request: Request, db: Session = Depends(get_db)):
+def delete_absence(
+    user_id: int,
+    day: date,
+    request: Request,
+    db: Session = Depends(get_db),
+    confirm_closed: bool = Query(False),
+):
     actor = _actor(request, db)
     row = db.scalar(select(Absence).where(Absence.user_id == user_id, Absence.day == day))
     if not row:
         raise HTTPException(404, "Keine Abwesenheit")
+    recalc = require_open(db, [(user_id, day)], confirm_closed)
     kind = row.kind
     db.delete(row)
     db.add(
@@ -1250,11 +1344,116 @@ def delete_absence(user_id: int, day: date, request: Request, db: Session = Depe
             payload=json.dumps({"date": day.isoformat(), "kind": kind}),
         )
     )
+    db.flush()
+    recalculate_pairs(db, recalc, actor.id)
     db.commit()
     return {"ok": True}
 
 
 ISSUE_KEYS = ("missing_day", "checkout_missing", "break_short", "break_short_9h", "break_long", "over_10h")
+
+
+@router.get("/closings")
+def list_closings(request: Request, db: Session = Depends(get_db)):
+    _actor_admin(request, db)
+    rows = db.execute(
+        select(
+            MonthClosing.year,
+            MonthClosing.month,
+            func.count(MonthClosing.id),
+            func.min(MonthClosing.closed_at),
+            func.max(MonthClosing.closed_at),
+        )
+        .group_by(MonthClosing.year, MonthClosing.month)
+        .order_by(MonthClosing.year.desc(), MonthClosing.month.desc())
+    )
+    return {
+        "months": [
+            {
+                "year": year,
+                "month": month,
+                "people": people,
+                "closed_at": (closed_max or closed_min).isoformat() if (closed_max or closed_min) else None,
+            }
+            for year, month, people, closed_min, closed_max in rows
+        ]
+    }
+
+
+@router.get("/closings/{year}/{month}")
+def closing_detail(year: int, month: int, request: Request, db: Session = Depends(get_db)):
+    _actor_admin(request, db)
+    if not 1 <= month <= 12:
+        raise HTTPException(400, "Ungültiger Monat")
+    rows = db.execute(
+        select(MonthClosing, User)
+        .join(User, User.id == MonthClosing.user_id)
+        .where(MonthClosing.year == year, MonthClosing.month == month)
+        .order_by(User.display_name)
+    )
+    return {
+        "year": year,
+        "month": month,
+        "people": [
+            {
+                "user_id": user.id,
+                "display_name": user.display_name,
+                "flex_hours": row.flex_hours,
+                "opening_balance_hours": user.opening_balance_hours,
+                "opening_balance_on": user.opening_balance_on.isoformat() if user.opening_balance_on else None,
+            }
+            for row, user in rows
+        ],
+    }
+
+
+@router.post("/closings")
+def create_closing(payload: ClosingMonthIn, request: Request, db: Session = Depends(get_db)):
+    actor = _actor_admin(request, db)
+    written = close_through(db, payload.year, payload.month, actor.id)
+    db.add(
+        AuditEvent(
+            actor_id=actor.id,
+            action="month.close",
+            entity_type="month_closing",
+            entity_id=f"{payload.year:04d}-{payload.month:02d}",
+            payload=json.dumps({"year": payload.year, "month": payload.month, "rows": written}),
+        )
+    )
+    db.commit()
+    return {"ok": True, "rows": written}
+
+
+@router.post("/closings/{year}/{month}/recalculate")
+def recalculate_closing(year: int, month: int, request: Request, db: Session = Depends(get_db)):
+    actor = _actor_admin(request, db)
+    if not 1 <= month <= 12:
+        raise HTTPException(400, "Ungültiger Monat")
+    pairs = [
+        (user_id, year, month)
+        for user_id in db.scalars(
+            select(MonthClosing.user_id)
+            .where(
+                or_(
+                    MonthClosing.year > year,
+                    and_(MonthClosing.year == year, MonthClosing.month >= month),
+                )
+            )
+            .distinct()
+        ).all()
+    ]
+    recalculate_pairs(db, pairs, actor.id)
+    db.add(
+        AuditEvent(
+            actor_id=actor.id,
+            action="month.recalculate",
+            entity_type="month_closing",
+            entity_id=f"{year:04d}-{month:02d}",
+            payload=json.dumps({"year": year, "month": month, "people": len(pairs)}),
+        )
+    )
+    db.commit()
+    return {"ok": True, "people": len(pairs)}
 
 
 @router.get("/balances")

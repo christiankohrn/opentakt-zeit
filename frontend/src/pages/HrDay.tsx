@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, type DaySummary, type PunchKind, type User } from "../api";
+import { useClosedMonth } from "../closedMonth";
 import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
 import LoadingNote from "../components/LoadingNote";
 import { IconTrash } from "../components/Icons";
@@ -48,6 +49,8 @@ export default function HrDay() {
   const [reason, setReason] = useState("");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
+  const [monthClosed, setMonthClosed] = useState(false);
+  const closed = useClosedMonth();
 
   const punchesDirty = rowsKey(rows) !== rowsKey(baselineRows);
   const dirty = punchesDirty || pendingAbsence !== null || pendingAccept;
@@ -58,6 +61,7 @@ export default function HrDay() {
     try {
       const r = await api.userDays(userId, month || day.slice(0, 7));
       setUser(r.user);
+      setMonthClosed(Boolean(r.closed));
       const found = r.days.find((d) => d.date === day) ?? null;
       setSummary(found);
       const next = (found?.punches.filter((p) => !p.voided) ?? []).map((p) => ({
@@ -100,11 +104,11 @@ export default function HrDay() {
     setRows((cur) => [...cur, { kind: "in", time: "08:00" }]);
   }
 
-  async function applyPending(acceptReason?: string) {
+  async function applyPending(confirmClosed: boolean, acceptReason?: string) {
     if (pendingAbsence === "clear") {
-      await api.deleteAbsence(userId, day);
+      await api.deleteAbsence(userId, day, confirmClosed);
     } else if (pendingAbsence === "vacation" || pendingAbsence === "sick") {
-      await api.createAbsences(userId, { kind: pendingAbsence, start: day, end: day });
+      await api.createAbsences(userId, { kind: pendingAbsence, start: day, end: day, confirm_closed: confirmClosed });
     }
     if (pendingAccept && acceptReason) {
       await api.acceptDay(userId, day, acceptReason);
@@ -127,11 +131,11 @@ export default function HrDay() {
     setBusy(true);
     setMsg("");
     try {
-      await applyPending();
-      await load();
-      setMsg("Gespeichert.");
-    } catch (err) {
-      setMsg(err instanceof Error ? err.message : "Speichern fehlgeschlagen");
+      await closed.attempt(async (confirmClosed) => {
+        await applyPending(confirmClosed);
+        await load();
+        setMsg("Gespeichert.");
+      }, setMsg);
     } finally {
       setBusy(false);
     }
@@ -143,17 +147,18 @@ export default function HrDay() {
     setBusy(true);
     setMsg("");
     try {
-      await api.replaceDay(userId, day, {
-        reason: reason.trim(),
-        punches: rows.map((r) => ({ kind: r.kind, time: r.time })),
-      });
-      await applyPending(pendingAccept ? reason.trim() : undefined);
-      setReasonOpen(false);
-      setReason("");
-      await load();
-      setMsg("Korrektur gespeichert und protokolliert.");
-    } catch (err) {
-      setMsg(err instanceof Error ? err.message : "Speichern fehlgeschlagen");
+      await closed.attempt(async (confirmClosed) => {
+        await api.replaceDay(userId, day, {
+          reason: reason.trim(),
+          punches: rows.map((r) => ({ kind: r.kind, time: r.time })),
+          confirm_closed: confirmClosed,
+        });
+        await applyPending(confirmClosed, pendingAccept ? reason.trim() : undefined);
+        setReasonOpen(false);
+        setReason("");
+        await load();
+        setMsg("Korrektur gespeichert und protokolliert.");
+      }, setMsg);
     } finally {
       setBusy(false);
     }
@@ -165,7 +170,7 @@ export default function HrDay() {
     setBusy(true);
     setMsg("");
     try {
-      await applyPending(reason.trim());
+      await applyPending(false, reason.trim());
       setAcceptOpen(false);
       setReason("");
       await load();
@@ -218,6 +223,11 @@ export default function HrDay() {
       <p className="mt-1 text-sm text-muted">
         Zeiten ändern, dann speichern. Der Originalstand bleibt im Protokoll. Nachtschicht: Gehen am Folgetag eintragen.
       </p>
+      {monthClosed ? (
+        <p className="mt-3 rounded-2xl border border-line bg-card px-4 py-3 text-sm">
+          Dieser Monat ist abgeschlossen. Eine Änderung wird gespeichert und die Abschlüsse danach neu gerechnet.
+        </p>
+      ) : null}
       {summary?.calendar ? (
         <div
           className={`mt-3 rounded-2xl border px-4 py-3 ${
@@ -421,6 +431,7 @@ export default function HrDay() {
           </form>
         </div>
       ) : null}
+      {closed.dialog}
       {blocker.state === "blocked" ? (
         <UnsavedChangesDialog onStay={() => blocker.reset()} onDiscard={() => blocker.proceed()} />
       ) : null}

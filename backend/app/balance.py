@@ -103,17 +103,19 @@ def month_days(db: Session, user: User, year: int, month: int) -> list[dict]:
 
 
 def account_hours(db: Session, user: User, when=None, month: str | None = None) -> tuple[float, float]:
+    from app.closings import flex_as_of, month_delta
+
     if user.work_model is None:
         user = db.scalar(select(User).options(selectinload(User.work_model)).where(User.id == user.id)) or user
     local = as_local(when or now_utc())
     today = local.date()
-    start = hired_on(user)
     last = employment_end(user, today)
-    if start > last:
-        return 0.0, 0.0
-    days = days_in_range(db, user, start, last)
-    month_key = month or local.strftime("%Y-%m")
-    return _flex_sum(days, month_key), _flex_sum(days)
+    total = flex_as_of(db, user, last)
+    if month:
+        year, mon = (int(part) for part in month.split("-"))
+    else:
+        year, mon = today.year, today.month
+    return month_delta(db, user, year, mon, today), total
 
 
 def month_flex_hours(db: Session, user: User, when=None) -> float:

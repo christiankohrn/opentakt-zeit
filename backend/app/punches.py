@@ -98,6 +98,10 @@ def record_punch(
         note=note,
     )
     db.add(punch)
+    db.flush()
+    from app.closings import refresh_closed_day
+
+    refresh_closed_day(db, user, as_local(booked).date(), None)
     db.commit()
     db.refresh(punch)
     return punch
