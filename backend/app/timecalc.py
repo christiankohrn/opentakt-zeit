@@ -76,6 +76,11 @@ def _as_utc(dt: datetime) -> datetime:
     return dt.astimezone(ZoneInfo("UTC"))
 
 
+def _as_minute(dt: datetime) -> datetime:
+    """Clock minute used for durations. The display already hides seconds."""
+    return _as_utc(dt).replace(second=0, microsecond=0)
+
+
 def work_intervals(
     punches: list[Punch],
     day: date,
@@ -96,7 +101,7 @@ def work_intervals(
     open_in: datetime | None = start_utc if prev_state == "in" else None
     open_break: datetime | None = start_utc if prev_state == "break" else None
     for p in events:
-        t = _as_utc(p.server_time)
+        t = _as_minute(p.server_time)
         if p.kind == "in":
             open_in = t
         elif p.kind == "break_start" and open_in:
@@ -112,7 +117,7 @@ def work_intervals(
             if open_in:
                 intervals.append((open_in, t))
                 open_in = None
-    day_end = min(now, end_utc)
+    day_end = _as_minute(min(now, end_utc))
     if open_in:
         intervals.append((open_in, day_end))
     return intervals
@@ -150,7 +155,7 @@ def summarize_day(
         open_break = start_utc
 
     for p in events:
-        t = _as_utc(p.server_time)
+        t = _as_minute(p.server_time)
         if p.kind == "in":
             open_in = t
             if first_in is None:
@@ -172,7 +177,7 @@ def summarize_day(
                 open_in = None
             last_out = t
 
-    day_end = min(now, end_utc)
+    day_end = _as_minute(min(now, end_utc))
     if open_break:
         pause += day_end - open_break
         still_open = True
@@ -224,10 +229,10 @@ def summarize_day(
         "date": day.isoformat(),
         "first_in": fmt(first_in),
         "last_out": fmt(last_out),
-        "work_hours": round(work_h, 2),
-        "break_hours": round(pause_h, 2),
+        "work_hours": work_h,
+        "break_hours": pause_h,
         "soll_hours": soll,
-        "delta_hours": round(work_h - soll, 2),
+        "delta_hours": work_h - soll,
         "open": still_open,
         "warnings": warnings,
         "auto_break_minutes": int(round(auto_applied * 60)) if auto_applied else 0,
@@ -267,15 +272,15 @@ def summarize_day(
             if not events:
                 result["break_hours"] = 0.0
                 result["auto_break_minutes"] = 0
-            result["work_hours"] = round(float(result["soll_hours"]) + stamped, 2)
-            result["delta_hours"] = round(stamped, 2)
+            result["work_hours"] = float(result["soll_hours"]) + stamped
+            result["delta_hours"] = stamped
         elif not events:
             result["work_hours"] = 0.0
             result["break_hours"] = 0.0
             result["auto_break_minutes"] = 0
             result["delta_hours"] = 0.0
         else:
-            result["delta_hours"] = round(result["work_hours"] - result["soll_hours"], 2)
+            result["delta_hours"] = result["work_hours"] - result["soll_hours"]
     today = as_local(now).date()
     if (
         result["soll_hours"] > 0

@@ -159,6 +159,33 @@ def test_auto_break_deducts_when_none_stamped():
     assert abs(auto["work_hours"] - (raw["work_hours"] - 0.5)) < 0.05
 
 
+def test_seconds_are_dropped_before_the_duration():
+    day = date(2026, 9, 9)
+
+    def at(kind: str, hour: int, minute: int, second: int) -> Punch:
+        t = datetime(day.year, day.month, day.day, hour, minute, second, tzinfo=ZoneInfo("Europe/Berlin")).astimezone(
+            ZoneInfo("UTC")
+        )
+        return Punch(user_id=1, kind=kind, server_time=t, source="test")
+
+    punches = [at("in", 7, 50, 40), at("out", 16, 18, 50)]
+    result = summarize_day(
+        punches,
+        day,
+        _full_week(),
+        now=datetime(2026, 9, 10, tzinfo=ZoneInfo("UTC")),
+        auto_break=True,
+    )
+    assert result["first_in"] == "07:50"
+    assert result["last_out"] == "16:18"
+    assert result["auto_break_minutes"] == 30
+    assert abs(result["work_hours"] - (8 + 28 / 60 - 0.5)) < 1e-9
+    from app.balance import format_hm
+
+    assert format_hm(result["work_hours"]) == "7:58"
+    assert format_hm(result["delta_hours"], signed=True) == "-0:02"
+
+
 def test_auto_break_skips_if_break_stamped():
     punches = [_p("in", 8), _p("break_start", 12), _p("break_end", 12, 30), _p("out", 16, 30)]
     day = summarize_day(
