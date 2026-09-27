@@ -186,6 +186,48 @@ def test_seconds_are_dropped_before_the_duration():
     assert format_hm(result["delta_hours"], signed=True) == "-0:02"
 
 
+def test_auto_break_follows_the_six_and_nine_hour_steps():
+    from app.balance import format_hm
+
+    def span(day: date, start: tuple[int, int], end: tuple[int, int]) -> dict:
+        punches = [_p_on(day, "in", *start), _p_on(day, "out", *end)]
+        return summarize_day(
+            punches,
+            day,
+            _full_week(),
+            now=datetime(day.year, day.month, day.day, 22, tzinfo=ZoneInfo("Europe/Berlin")),
+            auto_break=True,
+        )
+
+    partial = span(date(2026, 9, 17), (8, 0), (14, 13))
+    assert partial["auto_break_minutes"] == 13
+    assert format_hm(partial["work_hours"]) == "6:00"
+    assert format_hm(partial["delta_hours"], signed=True) == "-2:00"
+
+    split = summarize_day(
+        [
+            _p_on(date(2026, 9, 17), "in", 7, 43),
+            _p_on(date(2026, 9, 17), "out", 11, 12),
+            _p_on(date(2026, 9, 17), "in", 14, 0),
+            _p_on(date(2026, 9, 17), "out", 16, 44),
+        ],
+        date(2026, 9, 17),
+        _full_week(),
+        now=datetime(2026, 9, 18, tzinfo=ZoneInfo("UTC")),
+        auto_break=True,
+    )
+    assert split["auto_break_minutes"] == 13
+    assert format_hm(split["work_hours"]) == "6:00"
+
+    nine = span(date(2026, 9, 7), (7, 20), (16, 38))
+    assert nine["auto_break_minutes"] == 30
+    assert format_hm(nine["work_hours"]) == "8:48"
+
+    long = span(date(2026, 9, 8), (7, 0), (16, 31))
+    assert long["auto_break_minutes"] == 45
+    assert format_hm(long["work_hours"]) == "8:46"
+
+
 def test_auto_break_skips_if_break_stamped():
     punches = [_p("in", 8), _p("break_start", 12), _p("break_end", 12, 30), _p("out", 16, 30)]
     day = summarize_day(

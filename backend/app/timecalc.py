@@ -185,19 +185,24 @@ def summarize_day(
         work += day_end - open_in
         still_open = True
 
-    work_h = work.total_seconds() / 3600
-    pause_h = pause.total_seconds() / 3600
-    auto_applied = 0.0
+    work_minutes = int(work.total_seconds() // 60)
+    pause_minutes = int(pause.total_seconds() // 60)
+    auto_minutes = 0
     if auto_break and not still_open:
-        stamped_break = pause_h > 0.001 or any(p.kind in {"break_start", "break_end"} for p in events)
+        stamped_break = pause_minutes > 0 or any(p.kind in {"break_start", "break_end"} for p in events)
         if not stamped_break:
-            if work_h > 9:
-                auto_applied = 0.75
-            elif work_h > 6:
-                auto_applied = 0.5
-            if auto_applied:
-                work_h -= auto_applied
-                pause_h = auto_applied
+            if work_minutes - 30 > 9 * 60:
+                auto_minutes = 45
+            elif work_minutes > 6 * 60 + 30:
+                auto_minutes = 30
+            elif work_minutes > 6 * 60:
+                auto_minutes = work_minutes - 6 * 60
+            if auto_minutes:
+                work_minutes -= auto_minutes
+                pause_minutes = auto_minutes
+    work_h = work_minutes / 60
+    pause_h = pause_minutes / 60
+    auto_applied = auto_minutes / 60
 
     soll = soll_hours(model, day)
     warnings: list[str] = []
