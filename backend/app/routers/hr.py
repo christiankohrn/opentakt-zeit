@@ -16,6 +16,7 @@ from app.balance import account_hours, days_in_range, summarize_user_day
 from app.closing_job import job_status, start_close, start_recalculate
 from app.closings import (
     any_closing,
+    drop_closings_before,
     earliest_per_user,
     listed_total,
     month_is_closed,
@@ -715,11 +716,22 @@ def delete_department(department_id: int, request: Request, db: Session = Depend
     return {"ok": True}
 
 
+def _settings_out(db: Session, code: str) -> OrgSettingsOut:
+    from app.models import OrgSettings
+
+    row = db.get(OrgSettings, 1)
+    return OrgSettingsOut(
+        bundesland=code,
+        bundesland_name=STATES.get(code, code),
+        states=STATES,
+        ledger_from=row.ledger_from if row else None,
+    )
+
+
 @router.get("/settings", response_model=OrgSettingsOut)
 def get_settings(request: Request, db: Session = Depends(get_db)):
     _actor(request, db)
-    code = bundesland_of(db)
-    return OrgSettingsOut(bundesland=code, bundesland_name=STATES.get(code, code), states=STATES)
+    return _settings_out(db, bundesland_of(db))
 
 
 @router.patch("/settings", response_model=OrgSettingsOut)
@@ -731,33 +743,60 @@ def patch_settings(payload: OrgSettingsIn, request: Request, db: Session = Depen
     if code not in STATES:
         raise HTTPException(400, "Unbekanntes Bundesland")
     current = bundesland_of(db)
+    row = db.get(OrgSettings, 1)
+    if row is None:
+        row = OrgSettings(id=1, bundesland=code)
+        db.add(row)
+    ledger_changed = "ledger_from" in payload.model_fields_set and payload.ledger_from != row.ledger_from
+    bundesland_changed = code != current
     recalc: list[tuple[int, int, int]] = []
-    if code != current and any_closing(db):
+    if (bundesland_changed or ledger_changed) and any_closing(db):
         recalc = earliest_per_user(db)
         if not payload.confirm_closed and recalc:
             year, month = min((item[1], item[2]) for item in recalc)
             from app.closings import closed_detail
 
             raise HTTPException(status_code=409, detail=closed_detail(year, month))
-    row = db.get(OrgSettings, 1)
-    if row:
-        row.bundesland = code
-    else:
-        row = OrgSettings(id=1, bundesland=code)
-        db.add(row)
+    row.bundesland = code
+    if ledger_changed:
+        row.ledger_from = payload.ledger_from
+        if payload.ledger_from is not None:
+            drop_closings_before(db, payload.ledger_from.year, payload.ledger_from.month)
+            db.flush()
+            recalc = [
+                (user_id, payload.ledger_from.year, payload.ledger_from.month)
+                for user_id in db.scalars(
+                    select(MonthClosing.user_id)
+                    .where(
+                        or_(
+                            MonthClosing.year > payload.ledger_from.year,
+                            and_(
+                                MonthClosing.year == payload.ledger_from.year,
+                                MonthClosing.month >= payload.ledger_from.month,
+                            ),
+                        )
+                    )
+                    .distinct()
+                ).all()
+            ]
     db.add(
         AuditEvent(
             actor_id=actor.id,
             action="org.settings",
             entity_type="org",
             entity_id="1",
-            payload=json.dumps({"bundesland": code}),
+            payload=json.dumps(
+                {
+                    "bundesland": code,
+                    "ledger_from": row.ledger_from.isoformat() if row.ledger_from else None,
+                }
+            ),
         )
     )
     db.flush()
     recalculate_pairs(db, recalc, actor.id)
     db.commit()
-    return OrgSettingsOut(bundesland=code, bundesland_name=STATES[code], states=STATES)
+    return _settings_out(db, code)
 
 
 @router.get("/security-policy", response_model=SecurityPolicyOut)

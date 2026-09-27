@@ -541,9 +541,13 @@ export const api = {
   deleteAbsence: (userId: number, day: string, confirmClosed = false) =>
     request(`/api/hr/users/${userId}/absences/${day}?confirm_closed=${confirmClosed ? "true" : "false"}`, { method: "DELETE" }),
   orgSettings: () =>
-    request<{ bundesland: string; bundesland_name: string; states: Record<string, string> }>("/api/hr/settings"),
-  patchOrgSettings: (body: { bundesland: string; confirm_closed?: boolean }) =>
-    request<{ bundesland: string; bundesland_name: string; states: Record<string, string> }>("/api/hr/settings", {
+    request<{ bundesland: string; bundesland_name: string; states: Record<string, string>; ledger_from?: string | null }>(
+      "/api/hr/settings",
+    ),
+  patchOrgSettings: (body: { bundesland: string; confirm_closed?: boolean; ledger_from?: string | null }) =>
+    request<{ bundesland: string; bundesland_name: string; states: Record<string, string>; ledger_from?: string | null }>(
+      "/api/hr/settings",
+      {
       method: "PATCH",
       body: JSON.stringify(body),
     }),

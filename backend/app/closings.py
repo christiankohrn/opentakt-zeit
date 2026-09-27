@@ -48,17 +48,26 @@ def opening_hours(user: User) -> float:
     return round(float(user.opening_balance_hours or 0), 1)
 
 
-def calc_start(user: User) -> date:
-    if user.opening_balance_on:
-        return user.opening_balance_on
-    return hired_on(user)
+def ledger_from(db: Session) -> date | None:
+    from app.models import OrgSettings
+
+    row = db.get(OrgSettings, 1)
+    if row is None:
+        return None
+    return row.ledger_from
 
 
-def first_closable(user: User) -> tuple[int, int]:
-    if user.opening_balance_on:
-        day = user.opening_balance_on - timedelta(days=1)
-    else:
-        day = hired_on(user)
+def calc_start(db: Session, user: User) -> date:
+    """Erster Tag, der in den Saldo eingeht. Eintritt darf davor liegen."""
+    personal = user.opening_balance_on or hired_on(user)
+    floor = ledger_from(db)
+    if floor is not None and personal < floor:
+        return floor
+    return personal
+
+
+def first_closable(db: Session, user: User) -> tuple[int, int]:
+    day = calc_start(db, user)
     return day.year, day.month
 
 
@@ -68,7 +77,7 @@ def _delta(day: dict) -> float:
 
 def _walk(db: Session, user: User, last: date) -> tuple[float, dict[tuple[int, int], float]]:
     """Saldo am `last` und den Stand am Ende jedes Monats ab dem ersten abschließbaren Monat."""
-    start = calc_start(user)
+    start = calc_start(db, user)
     running = opening_hours(user)
     if last < start:
         floor = start - timedelta(days=1)
@@ -81,7 +90,7 @@ def _walk(db: Session, user: User, last: date) -> tuple[float, dict[tuple[int, i
         for day in days_in_range(db, user, start, end):
             by_day[str(day["date"])] = _delta(day)
     snapshots: dict[tuple[int, int], float] = {}
-    first = first_closable(user)
+    first = first_closable(db, user)
     year, month = first
     target = (last.year, last.month)
     while (year, month) <= target:
@@ -99,7 +108,7 @@ def _walk(db: Session, user: User, last: date) -> tuple[float, dict[tuple[int, i
 
 
 def flex_as_of(db: Session, user: User, last: date) -> float:
-    start = calc_start(user)
+    start = calc_start(db, user)
     chosen = _latest_usable(db, user.id, last, start)
     if chosen is not None:
         base = round(float(chosen.flex_hours), 1)
@@ -120,7 +129,7 @@ def flex_as_of(db: Session, user: User, last: date) -> float:
 
 
 def month_delta(db: Session, user: User, year: int, month: int, today: date) -> float:
-    start = max(date(year, month, 1), calc_start(user))
+    start = max(date(year, month, 1), calc_start(db, user))
     end = min(month_end(year, month), employment_end(user, today))
     if end < start:
         return 0.0
@@ -262,7 +271,7 @@ def assert_past_month(year: int, month: int) -> None:
 
 
 def close_one(db: Session, user: User, year: int, month: int, actor_id: int | None) -> int:
-    first = first_closable(user)
+    first = first_closable(db, user)
     if first > (year, month):
         return 0
     latest = db.scalar(
@@ -333,10 +342,26 @@ def recalculate_pairs(
             on_user(index, total)
 
 
+def drop_closings_before(db: Session, year: int, month: int) -> int:
+    rows = list(
+        db.scalars(
+            select(MonthClosing).where(
+                or_(
+                    MonthClosing.year < year,
+                    and_(MonthClosing.year == year, MonthClosing.month < month),
+                )
+            )
+        )
+    )
+    for row in rows:
+        db.delete(row)
+    return len(rows)
+
+
 def listed_total(db: Session, user: User, today: date) -> float | None:
     """Gesamtsaldo für Listen. Ohne Abschluss und bei langer Historie nicht die ganzen Jahre lesen."""
     last = employment_end(user, today)
-    start = calc_start(user)
+    start = calc_start(db, user)
     if _latest_usable(db, user.id, last, start) is None and (last - start).days > 120:
         return None
     return flex_as_of(db, user, last)

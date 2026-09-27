@@ -215,17 +215,16 @@ def person_month_snapshot(
     hist_last = max(last, hours_until, year_end)
     if hire > hist_last:
         return None
-    days = days_in_range(db, user, hire, hist_last)
-    flex_prev = flex_month = 0.0
+    from app.closings import flex_as_of, month_delta
+
+    flex_prev = flex_as_of(db, user, min(prev_last, hours_until))
+    flex_month = month_delta(db, user, start.year, start.month, hours_until)
+    days = days_in_range(db, user, year_start, hist_last)
     vac_prev = vac_ytd = vac_year = 0
     sick_prev = sick_ytd = 0
     for summary in days:
         day = date.fromisoformat(str(summary["date"]))
         kind = ((summary.get("absence") or {}) or {}).get("kind") or ""
-        if day < start and day <= hours_until:
-            flex_prev += float(summary["delta_hours"] or 0)
-        elif start <= day <= last and day <= hours_until and is_employed(user, day):
-            flex_month += float(summary["delta_hours"] or 0)
         if not is_employed(user, day) or day < year_start or day > year_end:
             continue
         if kind == "vacation":

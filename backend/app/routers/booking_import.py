@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hmac
 import re
-from datetime import datetime
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_config
 from app.database import get_db
-from app.import_punches import apply_import
+from app.import_punches import apply_import, apply_openings
 
 router = APIRouter(prefix="/import", tags=["import"])
 
@@ -31,6 +31,23 @@ class ImportPunchIn(BaseModel):
     def check_event_id(cls, value: str) -> str:
         if not _EVENT_ID.fullmatch(value):
             raise ValueError("ungültige Kennung")
+        return value
+
+
+class OpeningIn(BaseModel):
+    pnr: str
+    hours: float
+    on: date
+
+
+class OpeningsIn(BaseModel):
+    people: list[OpeningIn] = Field(default_factory=list)
+
+    @field_validator("people")
+    @classmethod
+    def check_people(cls, value: list[OpeningIn]) -> list[OpeningIn]:
+        if len(value) > 1000:
+            raise ValueError("höchstens 1000 Personen je Aufruf")
         return value
 
 
@@ -77,3 +94,18 @@ def import_punches(
     except ValueError:
         raise HTTPException(409, "pnr-map.json ist ungültig") from None
     return stats
+
+
+@router.post("/openings")
+def import_openings(
+    payload: OpeningsIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    require_token(request)
+    try:
+        return apply_openings(db, [item.model_dump() for item in payload.people])
+    except FileNotFoundError:
+        raise HTTPException(409, "pnr-map.json fehlt neben der Datenbank") from None
+    except ValueError:
+        raise HTTPException(409, "pnr-map.json ist ungültig") from None

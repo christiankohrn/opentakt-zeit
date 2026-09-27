@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, ApiError, type DfcomSettings, type EspTerminalSettings, type SecurityPolicyValue, type SmtpSettings } from "../api";
+import { useClosedMonth } from "../closedMonth";
 import PasswordField from "../components/PasswordField";
 import LoadingNote from "../components/LoadingNote";
 
@@ -932,6 +933,67 @@ function DfcomCard() {
   );
 }
 
+function LedgerCard() {
+  const closed = useClosedMonth();
+  const [day, setDay] = useState("");
+  const [land, setLand] = useState("NW");
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    void api.orgSettings().then((settings) => {
+      setDay(settings.ledger_from ?? "");
+      setLand(settings.bundesland);
+    });
+  }, []);
+
+  return (
+    <form
+      className="mb-4 space-y-2 rounded-2xl border border-line bg-card p-4"
+      onSubmit={(e: FormEvent) => {
+        e.preventDefault();
+        setBusy(true);
+        setMsg("");
+        void closed
+          .attempt(async (confirmClosed) => {
+            const next = await api.patchOrgSettings({
+              bundesland: land,
+              ledger_from: day || null,
+              confirm_closed: confirmClosed,
+            });
+            setDay(next.ledger_from ?? "");
+            setMsg(
+              next.ledger_from
+                ? `Abrechnung ab ${new Date(next.ledger_from + "T12:00:00").toLocaleDateString("de-DE")}.`
+                : "Abrechnung ab dem Eintritt.",
+            );
+          }, setMsg)
+          .finally(() => setBusy(false));
+      }}
+    >
+      <p className="text-sm font-medium">Abrechnung ab</p>
+      <p className="text-xs text-muted">
+        Ab diesem Tag wird der Saldo gerechnet und können Monate abgeschlossen werden. Der Eintritt darf früher liegen
+        und bleibt für Jubiläen gespeichert. Leer lassen rechnet ab dem Eintritt.
+      </p>
+      <label className="block text-sm">
+        Stichtag
+        <input
+          type="date"
+          value={day}
+          onChange={(e) => setDay(e.target.value)}
+          className="mt-1 block rounded-lg border border-line bg-bg px-2 py-1"
+        />
+      </label>
+      <button type="submit" disabled={busy} className="rounded-xl bg-navy px-3 py-2 text-sm text-white">
+        {busy ? "Speichern …" : "Stichtag speichern"}
+      </button>
+      {msg ? <p className="text-sm text-muted">{msg}</p> : null}
+      {closed.dialog}
+    </form>
+  );
+}
+
 export default function Settings() {
   const [params, setParams] = useSearchParams();
   const tab = parseTab(params.get("tab"));
@@ -946,6 +1008,9 @@ export default function Settings() {
         ← Personal
       </Link>
       <h1 className="mt-2 text-xl font-medium">Einstellungen</h1>
+      <div className="mt-4">
+        <LedgerCard />
+      </div>
       <div className="mt-3 flex gap-1 rounded-2xl border border-line bg-card p-1">
         {TABS.map((item) => (
           <button

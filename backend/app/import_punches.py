@@ -7,18 +7,18 @@ from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.auth import as_local, local_tz, now_utc
 from app.config import get_config
-from app.models import Punch, User
+from app.models import MonthClosing, Punch, User
 
 IMPORT_SOURCE = "import"
 IMPORT_PLACE = "Import"
 DELETE_REASON = "In der Quelle gelöscht"
 KINDS = {"in", "out", "break_start", "break_end"}
-STAT_KEYS = ("stored", "updated", "voided", "duplicate", "unknown_pnr", "skipped", "manuell")
+STAT_KEYS = ("stored", "updated", "voided", "duplicate", "unknown_pnr", "skipped", "manuell", "before_ledger")
 
 
 def pnr_key(value: str | None) -> str:
@@ -94,6 +94,9 @@ def apply_import(db: Session, punches: list[dict]) -> dict[str, int]:
         for user in db.scalars(select(User).where(User.id.in_(user_ids))).all()
     } if user_ids else {}
     existing = _load_existing(db, [str(item.get("event_id") or "") for item, _user_id in resolved])
+    from app.closings import ledger_from
+
+    floor = ledger_from(db)
     touched: set[tuple[int, date]] = set()
     for item, user_id in resolved:
         user = users.get(user_id)
@@ -103,6 +106,9 @@ def apply_import(db: Session, punches: list[dict]) -> dict[str, int]:
         event_id = str(item.get("event_id") or "")
         known = existing.get((user.id, event_id))
         if item.get("void"):
+            if known is not None and known.server_time is not None and _before(floor, known.server_time):
+                stats["before_ledger"] += 1
+                continue
             if known is not None and known.server_time is not None and known.voided_at is None and known.voided_by_id is None and known.source == IMPORT_SOURCE:
                 touched.add((user.id, as_local(known.server_time).date()))
             _void(known, stats)
@@ -113,6 +119,9 @@ def apply_import(db: Session, punches: list[dict]) -> dict[str, int]:
             stats["skipped"] += 1
             continue
         booked = _incoming_utc(at)
+        if _before(floor, booked):
+            stats["before_ledger"] += 1
+            continue
         if known is None:
             punch = Punch(
                 user_id=user.id,
@@ -161,6 +170,67 @@ def apply_import(db: Session, punches: list[dict]) -> dict[str, int]:
             continue
         refresh_closed_day(db, user, day, None)
         refreshed.add(user_id)
+    db.commit()
+    return stats
+
+
+def _before(floor: date | None, moment: datetime | None) -> bool:
+    if floor is None or moment is None:
+        return False
+    return as_local(moment).date() < floor
+
+
+def apply_openings(db: Session, people: list[dict]) -> dict[str, int]:
+    """Übernimmt den Endsaldo je Personalnummer. Das ist der Stand am Beginn von `on`."""
+    from app.closings import recalculate_pairs
+
+    stats = {"updated": 0, "unknown_pnr": 0}
+    mapping = load_pnr_map()
+    changed: list[tuple[User, date]] = []
+    for item in people:
+        key = pnr_key(str(item.get("pnr") or ""))
+        user_id = mapping.get(key)
+        if not key or user_id is None:
+            stats["unknown_pnr"] += 1
+            continue
+        user = db.get(User, user_id)
+        on = item.get("on")
+        if user is None or not isinstance(on, date):
+            stats["unknown_pnr"] += 1
+            continue
+        user.opening_balance_hours = round(float(item.get("hours") or 0), 1)
+        user.opening_balance_on = on
+        changed.append((user, on))
+        stats["updated"] += 1
+    db.flush()
+    pairs: list[tuple[int, int, int]] = []
+    for user, on in changed:
+        early = list(
+            db.scalars(
+                select(MonthClosing).where(
+                    MonthClosing.user_id == user.id,
+                    or_(
+                        MonthClosing.year < on.year,
+                        and_(MonthClosing.year == on.year, MonthClosing.month < on.month),
+                    ),
+                )
+            )
+        )
+        for row in early:
+            db.delete(row)
+        later = db.scalar(
+            select(MonthClosing.id).where(
+                MonthClosing.user_id == user.id,
+                or_(
+                    MonthClosing.year > on.year,
+                    and_(MonthClosing.year == on.year, MonthClosing.month >= on.month),
+                ),
+            )
+        )
+        if later is not None:
+            pairs.append((user.id, on.year, on.month))
+    db.flush()
+    recalculate_pairs(db, pairs, None)
     db.commit()
     return stats
 

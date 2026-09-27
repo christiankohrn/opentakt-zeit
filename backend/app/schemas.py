@@ -291,6 +291,7 @@ class OrgSettingsOut(BaseModel):
     bundesland: str
     bundesland_name: str
     states: dict[str, str]
+    ledger_from: Optional[date] = None
 
 
 class ClosingMonthIn(BaseModel):
@@ -301,6 +302,7 @@ class ClosingMonthIn(BaseModel):
 class OrgSettingsIn(BaseModel):
     bundesland: str
     confirm_closed: bool = False
+    ledger_from: Optional[date] = None
 
 
 class SecurityPolicyOut(BaseModel):

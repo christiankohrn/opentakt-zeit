@@ -174,6 +174,7 @@ class OrgSettings(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     bundesland: Mapped[str] = mapped_column(String(8), default="NW")
+    ledger_from: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     smtp_configured: Mapped[bool] = mapped_column(default=False)
     smtp_enabled: Mapped[bool] = mapped_column(default=False)
     smtp_host: Mapped[str] = mapped_column(String(200), default="")

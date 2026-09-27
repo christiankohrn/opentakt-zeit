@@ -130,3 +130,87 @@ def _run_close(client, person, day: date) -> None:
     login(client, "personal", "change-me")
     denied = client.get("/api/hr/closings")
     assert denied.status_code == 403
+
+
+def test_ledger_from_limits_close_and_import(client, monkeypatch):
+    from pathlib import Path
+
+    from sqlalchemy import select
+
+    from app.config import get_config
+    from app.database import SessionLocal
+    from app.models import MonthClosing
+
+    login(client)
+    person = users_by_name(client)["mitarbeiter"]
+    day = ended_weekday()
+    settings = client.get("/api/hr/settings")
+    assert settings.status_code == 200, settings.text
+    land = settings.json()["bundesland"]
+    try:
+        hired = client.patch(f"/api/hr/users/{person['id']}/account", json={"hired_on": "2010-01-01"})
+        assert hired.status_code == 200, hired.text
+        db = SessionLocal()
+        try:
+            db.add(MonthClosing(user_id=person["id"], year=2010, month=1, flex_hours=99))
+            db.commit()
+        finally:
+            db.close()
+        blocked = client.patch("/api/hr/settings", json={"bundesland": land, "ledger_from": day.isoformat()})
+        assert blocked.status_code == 409
+        assert blocked.json()["detail"]["code"] == "closed_month"
+        saved = client.patch(
+            "/api/hr/settings",
+            json={"bundesland": land, "ledger_from": day.isoformat(), "confirm_closed": True},
+        )
+        assert saved.status_code == 200, saved.text
+        assert saved.json()["ledger_from"] == day.isoformat()
+        db = SessionLocal()
+        try:
+            old = db.scalar(select(MonthClosing).where(MonthClosing.user_id == person["id"], MonthClosing.year == 2010))
+            assert old is None
+        finally:
+            db.close()
+
+        stored = put_day(client, person["id"], day, "08:00", "16:00")
+        assert stored.status_code == 200, stored.text
+        closed = client.post("/api/hr/closings", json={"year": day.year, "month": day.month})
+        assert closed.status_code == 200, closed.text
+        finished = wait_job(client)
+        assert finished["error"] is None
+        listed = client.get("/api/hr/closings")
+        assert listed.status_code == 200, listed.text
+        months = listed.json()["months"]
+        assert any(row["year"] == day.year and row["month"] == day.month for row in months)
+        assert all((row["year"], row["month"]) >= (day.year, day.month) for row in months)
+        assert flex_of(client, day.year, day.month, person["id"]) == 0
+
+        monkeypatch.setattr(
+            "app.routers.booking_import.get_config",
+            lambda: get_config().model_copy(update={"import_token": "secret"}),
+        )
+        path = Path(get_config().database_path).resolve().parent / "pnr-map.json"
+        path.write_text(f'{{"9001": {person["id"]}}}\n', encoding="utf-8")
+        headers = {"Authorization": "Bearer secret"}
+        early = client.post(
+            "/api/import/punches",
+            json={"punches": [{"pnr": "9001", "event_id": "t-ledger-early", "kind": "in", "at": "2010-06-01T08:00:00"}]},
+            headers=headers,
+        )
+        assert early.status_code == 200, early.text
+        assert early.json()["before_ledger"] == 1
+        assert early.json()["stored"] == 0
+        openings = client.post(
+            "/api/import/openings",
+            json={"people": [{"pnr": "09001", "hours": 4.5, "on": day.isoformat()}]},
+            headers=headers,
+        )
+        assert openings.status_code == 200, openings.text
+        assert openings.json()["updated"] == 1
+        again = users_by_name(client)["mitarbeiter"]
+        assert again["opening_balance_hours"] == 4.5
+        assert again["opening_balance_on"] == day.isoformat()
+        assert flex_of(client, day.year, day.month, person["id"]) == 4.5
+    finally:
+        _reset_person(person["id"], day)
+        client.patch("/api/hr/settings", json={"bundesland": land, "ledger_from": None, "confirm_closed": True})

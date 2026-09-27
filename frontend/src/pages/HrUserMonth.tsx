@@ -92,6 +92,7 @@ export default function HrUserMonth() {
   const [openingHours, setOpeningHours] = useState("0");
   const [openingOn, setOpeningOn] = useState("");
   const [openingMsg, setOpeningMsg] = useState("");
+  const [openingOpen, setOpeningOpen] = useState(false);
   const closed = useClosedMonth();
 
   async function reload() {
@@ -727,56 +728,65 @@ export default function HrUserMonth() {
           className="month-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
         />
       </div>
-      <form
-        className="mt-3 space-y-2 rounded-2xl border border-line bg-card p-4"
-        onSubmit={(e) => {
-          e.preventDefault();
-          setOpeningMsg("");
-          const hours = Number(openingHours.trim().replace(",", "."));
-          if (!Number.isFinite(hours)) {
-            setOpeningMsg("Stunden als Zahl eingeben.");
-            return;
-          }
-          void closed.attempt(async (confirmClosed) => {
-            await api.patchUserAccount(userId, {
-              opening_balance_hours: hours,
-              opening_balance_on: openingOn || null,
-              confirm_closed: confirmClosed,
-            });
-            setOpeningMsg("Startkonto gespeichert.");
-            await reload();
-          }, setOpeningMsg);
-        }}
-      >
-        <p className="text-sm font-medium">Startkonto</p>
-        <p className="text-xs text-muted">
-          Stundenstand am Beginn des Stichtags. Tage davor zählen nicht mit. Für importierte Mitarbeiter, bevor der
-          erste Abschluss läuft.
-        </p>
-        <div className="flex flex-wrap gap-3">
-          <label className="text-sm">
-            Stunden
-            <input
-              value={openingHours}
-              onChange={(e) => setOpeningHours(e.target.value)}
-              className="mt-1 block w-28 rounded-lg border border-line bg-bg px-2 py-1"
-            />
-          </label>
-          <label className="text-sm">
-            Gültig ab
-            <input
-              type="date"
-              value={openingOn}
-              onChange={(e) => setOpeningOn(e.target.value)}
-              className="mt-1 block rounded-lg border border-line bg-bg px-2 py-1"
-            />
-          </label>
-        </div>
-        <button type="submit" className="rounded-xl bg-navy px-3 py-2 text-sm text-white">
-          Startkonto speichern
+      <div className="mt-3">
+        <button type="button" className="text-sm text-present" onClick={() => setOpeningOpen((open) => !open)}>
+          {openingOpen ? "Startkonto schließen" : "Startkonto"}
         </button>
-        {openingMsg ? <p className="text-sm text-muted">{openingMsg}</p> : null}
-      </form>
+        {openingOpen ? (
+          <form
+            className="mt-2 space-y-2 rounded-2xl border border-line bg-card p-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              setOpeningMsg("");
+              const hours = Number(openingHours.trim().replace(",", "."));
+              if (!Number.isFinite(hours)) {
+                setOpeningMsg("Stunden als Zahl eingeben.");
+                return;
+              }
+              void closed.attempt(async (confirmClosed) => {
+                await api.patchUserAccount(userId, {
+                  opening_balance_hours: hours,
+                  opening_balance_on: openingOn || null,
+                  confirm_closed: confirmClosed,
+                });
+                setOpeningMsg("Startkonto gespeichert.");
+                await reload();
+              }, setOpeningMsg);
+            }}
+          >
+            <p className="text-sm font-medium">Startkonto</p>
+            <p className="text-xs text-muted">
+              Normalerweise setzt das der Import aus dem letzten Abschluss, zusammen mit dem Stichtag unter
+              Einstellungen. Hier nur, wenn eine Person einen anderen Anfangsstand braucht. Die Stunden gelten am
+              Beginn des Datums. Tage davor zählen nicht. Liegt das Datum vor dem zentralen Stichtag, gilt der
+              Stichtag.
+            </p>
+            <div className="flex flex-wrap gap-3">
+              <label className="text-sm">
+                Stunden
+                <input
+                  value={openingHours}
+                  onChange={(e) => setOpeningHours(e.target.value)}
+                  className="mt-1 block w-28 rounded-lg border border-line bg-bg px-2 py-1"
+                />
+              </label>
+              <label className="text-sm">
+                Gültig ab
+                <input
+                  type="date"
+                  value={openingOn}
+                  onChange={(e) => setOpeningOn(e.target.value)}
+                  className="mt-1 block rounded-lg border border-line bg-bg px-2 py-1"
+                />
+              </label>
+            </div>
+            <button type="submit" className="rounded-xl bg-navy px-3 py-2 text-sm text-white">
+              Startkonto speichern
+            </button>
+            {openingMsg ? <p className="text-sm text-muted">{openingMsg}</p> : null}
+          </form>
+        ) : null}
+      </div>
       <div className="mt-2 flex flex-wrap items-center gap-3 text-sm">
         <button
           type="button"

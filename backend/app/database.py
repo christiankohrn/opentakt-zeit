@@ -83,6 +83,8 @@ def ensure_schema() -> None:
     if "totp_confirmed_at" not in cols:
         alters.append("ALTER TABLE users ADD COLUMN totp_confirmed_at DATETIME")
     org_cols = {c["name"] for c in inspect(engine).get_columns("org_settings")} if inspect(engine).has_table("org_settings") else set()
+    if "ledger_from" not in org_cols:
+        alters.append("ALTER TABLE org_settings ADD COLUMN ledger_from DATE")
     if "smtp_configured" not in org_cols:
         alters.append("ALTER TABLE org_settings ADD COLUMN smtp_configured BOOLEAN NOT NULL DEFAULT 0")
     if "smtp_enabled" not in org_cols:
