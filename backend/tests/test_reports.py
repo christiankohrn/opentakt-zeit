@@ -143,6 +143,30 @@ def test_vacation_days_period_and_year(client):
     assert_pdf(client.get("/api/hr/reports/vacation-days.pdf?year=2026"))
 
 
+def test_vacation_weekends_consume_no_quota(client):
+    login(client)
+    person = create_person(
+        client, "urlaub-willi", "Willi Urlaub", hired_on="2025-01-01", vacation_days_year=30
+    )
+    booked = client.post(
+        f"/api/hr/users/{person['id']}/absences",
+        json={"kind": "vacation", "start": "2026-03-02", "end": "2026-03-08"},
+    )
+    assert booked.status_code == 200, booked.text
+    res = client.get(
+        f"/api/hr/reports/vacation-days?from=2026-03-01&to=2026-03-31&user_ids={person['id']}"
+    )
+    assert res.status_code == 200, res.text
+    row = res.json()["people"][0]
+    assert row["period_days"] == 5
+    assert row["year_days"] == 5
+    journal = client.get(f"/api/hr/reports/journal?month=2026-03&user_ids={person['id']}")
+    assert journal.status_code == 200, journal.text
+    accounts = journal.json()["people"][0]["accounts"]
+    assert accounts["vacation_month"] == 5
+    assert accounts["vacation_remaining"] == 25
+
+
 def test_month_balances_count_future_vacation(client):
     login(client)
     person = create_person(client, "urlaub-clara", "Clara Urlaub", hired_on="2025-01-01")
