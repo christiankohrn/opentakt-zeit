@@ -121,7 +121,7 @@ class UserWrite(BaseModel):
     last_name: str = ""
     display_name: str = ""
     email: Optional[str] = None
-    password: Optional[str] = None
+    password: Optional[str] = Field(default=None, min_length=8, max_length=200)
     role: str = "employee"
     active: bool = True
     work_model_id: Optional[int] = None

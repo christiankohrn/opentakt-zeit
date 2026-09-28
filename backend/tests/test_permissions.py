@@ -259,6 +259,37 @@ def test_admin_deletes_person_and_their_punches(client):
     assert "weg-mit" not in names
 
 
+def test_admin_cannot_set_short_password(client):
+    login(client)
+    models = client.get("/api/hr/work-models").json()
+    created = client.post(
+        "/api/hr/users",
+        json={
+            "username": "kurz-pw",
+            "display_name": "Kurz Pw",
+            "role": "employee",
+            "password": "x",
+            "work_model_id": models[0]["id"],
+            "web_login": True,
+        },
+    )
+    assert created.status_code == 422
+    people = users_by_name(client)
+    target = people["mitarbeiter"]
+    patched = client.patch(
+        f"/api/hr/users/{target['id']}",
+        json={
+            "username": target["username"],
+            "display_name": target["display_name"],
+            "role": "employee",
+            "active": True,
+            "web_login": True,
+            "password": "y",
+        },
+    )
+    assert patched.status_code == 422
+
+
 def test_admin_cannot_delete_self(client):
     me = login(client)
     res = client.delete(f"/api/hr/users/{me['id']}")
