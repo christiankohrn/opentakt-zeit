@@ -435,6 +435,32 @@ def test_journal_month_row_matches_flex_in_current_month(client):
     assert month_row["delta_hours"] == report["accounts"]["flex_month"]
 
 
+def test_csv_neutralizes_formula_cells(client):
+    from app.reports import safe_csv_cell
+
+    assert safe_csv_cell("=1+1") == "'=1+1"
+    assert safe_csv_cell("+2+2") == "'+2+2"
+    assert safe_csv_cell("-2+2") == "'-2+2"
+    assert safe_csv_cell("@SUM(A1)") == "'@SUM(A1)"
+    assert safe_csv_cell("Normal, Name") == "Normal, Name"
+    assert safe_csv_cell(4) == 4
+    login(client)
+    person = create_person(client, "formel-fritz", "=1+1")
+    res = client.get("/api/hr/reports/sick-days.csv?year=2026")
+    assert res.status_code == 200, res.text
+    assert "'=1+1;" in res.text
+    assert "\n=1+1;" not in res.text
+    booked = client.post(
+        f"/api/hr/users/{person['id']}/absences",
+        json={"kind": "vacation", "start": "2026-03-02", "end": "2026-03-02"},
+    )
+    assert booked.status_code == 200, booked.text
+    export = client.get(f"/api/hr/export.csv?month=2026-03&user_id={person['id']}")
+    assert export.status_code == 200, export.text
+    assert "'=1+1;" in export.text
+    assert "\n=1+1;" not in export.text
+
+
 def test_work_intervals_split_overnight():
     punches = [
         Punch(

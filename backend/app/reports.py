@@ -52,6 +52,16 @@ MONTHS = (
 )
 
 
+CSV_UNSAFE_LEAD = ("=", "+", "-", "@", "\t", "\r", "\n")
+
+
+def safe_csv_cell(value):
+    """Prefix spreadsheet formula triggers so exports stay plain text."""
+    if isinstance(value, str) and value.startswith(CSV_UNSAFE_LEAD):
+        return "'" + value
+    return value
+
+
 def year_bounds(year: int) -> tuple[date, date]:
     return date(year, 1, 1), date(year, 12, 31)
 
