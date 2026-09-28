@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 from app.models import Punch
-from app.timecalc import model_on_day, status_from_punches, summarize_day
+from app.timecalc import model_on_day, status_from_punches, summarize_day, work_intervals
 
 
 def _p(kind: str, hour: int, minute: int = 0) -> Punch:
@@ -109,6 +109,40 @@ def test_forgotten_checkout_not_overnight_when_next_day_starts_anew():
     forgotten = summarize_day(punches, date(2026, 8, 24), None, now=now)
     assert "checkout_missing" in forgotten["warnings"]
     assert "overnight" not in forgotten["warnings"]
+
+
+def test_forgotten_checkout_accrues_no_phantom_time():
+    punches = [
+        _p_on(date(2026, 8, 24), "in", 14, 0),
+        _p_on(date(2026, 8, 25), "in", 6, 0),
+        _p_on(date(2026, 8, 25), "out", 14, 0),
+    ]
+    now = datetime(2026, 8, 26, tzinfo=ZoneInfo("UTC"))
+    forgotten = summarize_day(punches, date(2026, 8, 24), _full_week(), now=now)
+    assert "checkout_missing" in forgotten["warnings"]
+    assert forgotten["work_hours"] == 0
+    assert forgotten["open"] is True
+    assert work_intervals(punches, date(2026, 8, 24), now=now) == []
+
+
+def test_forgotten_checkout_without_any_later_punch():
+    punches = [_p_on(date(2026, 8, 24), "in", 14, 0)]
+    now = datetime(2026, 8, 26, tzinfo=ZoneInfo("UTC"))
+    forgotten = summarize_day(punches, date(2026, 8, 24), _full_week(), now=now)
+    assert "checkout_missing" in forgotten["warnings"]
+    assert forgotten["work_hours"] == 0
+
+
+def test_overnight_shift_still_accrues_until_midnight():
+    punches = [
+        _p_on(date(2026, 8, 7), "in", 22, 0),
+        _p_on(date(2026, 8, 8), "out", 6, 0),
+    ]
+    now = datetime(2026, 8, 9, tzinfo=ZoneInfo("UTC"))
+    night = summarize_day(punches, date(2026, 8, 7), None, now=now)
+    assert "overnight" in night["warnings"]
+    assert abs(night["work_hours"] - 2.0) < 0.05
+    assert len(work_intervals(punches, date(2026, 8, 7), now=now)) == 1
 
 
 def test_missing_workday_without_booking():
