@@ -243,6 +243,12 @@ export type EspTerminalSettings = {
   placeholders: string[];
 };
 
+export type ImportTokenSettings = {
+  token: string;
+  configured: boolean;
+  source: string;
+};
+
 export type DfcomSettings = {
   library_ok: boolean;
   library_path: string | null;
@@ -585,6 +591,10 @@ export const api = {
   patchEspTerminalSettings: (body: { ok_line1?: string; ok_line2?: string; secret?: string }) =>
     request<EspTerminalSettings>("/api/hr/esp-terminal", { method: "PATCH", body: JSON.stringify(body) }),
   generateEspSecret: () => request<EspTerminalSettings>("/api/hr/esp-terminal/secret", { method: "POST" }),
+  importTokenSettings: () => request<ImportTokenSettings>("/api/hr/import"),
+  patchImportToken: (body: { token?: string }) =>
+    request<ImportTokenSettings>("/api/hr/import", { method: "PATCH", body: JSON.stringify(body) }),
+  rotateImportToken: () => request<ImportTokenSettings>("/api/hr/import/token", { method: "POST" }),
   patchEspDevice: (
     id: number,
     body: { name?: string; wifi_ssid?: string; wifi_pass?: string; clear_wifi?: boolean },

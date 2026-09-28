@@ -72,6 +72,7 @@ def create_app() -> FastAPI:
     app.include_router(esp_terminal.hr_router, prefix="/api")
     app.include_router(terminals.router, prefix="/api")
     app.include_router(booking_import.router, prefix="/api")
+    app.include_router(booking_import.hr_router, prefix="/api")
 
     dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
     if dist.is_dir():

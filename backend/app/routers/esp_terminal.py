@@ -27,6 +27,7 @@ from app.esp_service import (
     secret_source,
     touch_device,
 )
+from app.ratelimit import ESP_MAX, ESP_WINDOW, check, clear, client_key, record
 from app.models import AuditEvent, EspTerminal, Punch, User
 from app.schemas import (
     EspDeviceOut,
@@ -62,10 +63,14 @@ def _provided_key(request: Request) -> str:
 
 
 def _require_terminal(request: Request, db: Session) -> None:
+    key = client_key(request, "esp")
+    check(key, ESP_MAX, ESP_WINDOW)
     if not _secret(db):
         raise HTTPException(503, "ESP-Terminal nicht konfiguriert")
     if not _secret_ok(db, _provided_key(request)):
+        record(key, ESP_WINDOW)
         raise HTTPException(401, "Falsches Secret")
+    clear(key)
 
 
 def _client_ip(request: Request) -> str:

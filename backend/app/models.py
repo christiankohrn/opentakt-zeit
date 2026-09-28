@@ -201,6 +201,7 @@ class OrgSettings(Base):
     esp_ok_line2: Mapped[str] = mapped_column(String(80), default="{kind} {flex_month}")
     esp_terminal_secret: Mapped[str] = mapped_column(String(200), default="")
     esp_firmware_version: Mapped[int] = mapped_column(Integer, default=0)
+    import_token: Mapped[str] = mapped_column(String(200), default="")
 
 
 class EspTerminal(Base):

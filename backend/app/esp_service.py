@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import hmac
 from pathlib import Path
 
 from sqlalchemy import select
@@ -10,30 +8,11 @@ from sqlalchemy.orm import Session
 from app.auth import now_utc
 from app.config import get_config
 from app.models import EspTerminal, OrgSettings
+from app.security import check_secret as check_terminal_secret
+from app.security import hash_secret as hash_terminal_secret
+from app.security import is_secret_hash as _is_secret_hash
 
 FIRMWARE_MAX_BYTES = 4 * 1024 * 1024
-
-
-def hash_terminal_secret(value: str) -> str:
-    """ESP-Secret als SHA-256-Hex ablegen, damit ein DB-Abzug es nicht verrät."""
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()
-
-
-def _is_secret_hash(value: str) -> bool:
-    return len(value) == 64 and all(c in "0123456789abcdef" for c in value.lower())
-
-
-def check_terminal_secret(provided: str, stored: str) -> bool:
-    provided = (provided or "").strip()
-    stored = (stored or "").strip()
-    if not provided or not stored:
-        return False
-    candidate = hash_terminal_secret(provided) if _is_secret_hash(stored) else provided
-    left = candidate.encode("utf-8")
-    right = stored.encode("utf-8")
-    if len(left) != len(right):
-        return False
-    return hmac.compare_digest(left, right)
 
 
 def org_row(db: Session) -> OrgSettings:

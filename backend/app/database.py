@@ -128,6 +128,8 @@ def ensure_schema() -> None:
         alters.append("ALTER TABLE org_settings ADD COLUMN esp_ok_line2 VARCHAR(80) NOT NULL DEFAULT '{kind} {flex_month}'")
     if "esp_terminal_secret" not in org_cols:
         alters.append("ALTER TABLE org_settings ADD COLUMN esp_terminal_secret VARCHAR(200) NOT NULL DEFAULT ''")
+    if "import_token" not in org_cols:
+        alters.append("ALTER TABLE org_settings ADD COLUMN import_token VARCHAR(200) NOT NULL DEFAULT ''")
     if "esp_firmware_version" not in org_cols:
         alters.append("ALTER TABLE org_settings ADD COLUMN esp_firmware_version INTEGER NOT NULL DEFAULT 0")
     punch_cols = {c["name"] for c in inspect(engine).get_columns("punches")} if inspect(engine).has_table("punches") else set()

@@ -296,3 +296,25 @@ def test_esp_punch_auto_kommen_gehen_and_templates(client):
     assert dup.status_code == 200, dup.text
     assert dup.json()["ok"] is True
     assert punch_count() == before + 2
+
+
+def test_esp_failures_are_rate_limited(client):
+    from app.ratelimit import reset as reset_limits
+
+    reset_limits()
+    try:
+        for _ in range(60):
+            res = client.post(
+                "/api/terminals/esp/hello",
+                json={"device_id": "RATE-LIMIT-PROBE", "fw": 1},
+                headers={"X-Terminal-Key": "falsch"},
+            )
+            assert res.status_code == 401, res.text
+        blocked = client.post(
+            "/api/terminals/esp/hello",
+            json={"device_id": "RATE-LIMIT-PROBE", "fw": 1},
+            headers={"X-Terminal-Key": "falsch"},
+        )
+        assert blocked.status_code == 429, blocked.text
+    finally:
+        reset_limits()

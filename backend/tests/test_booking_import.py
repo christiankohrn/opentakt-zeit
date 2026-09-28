@@ -168,3 +168,113 @@ def test_import_requires_map(client, monkeypatch):
         headers={"Authorization": "Bearer secret"},
     )
     assert response.status_code == 409
+
+
+def _login_admin(client):
+    res = client.post("/api/auth/login", json={"username": "admin", "password": "change-me"})
+    assert res.status_code == 200, res.text
+
+
+def test_import_token_rotation_is_masked_and_hashed(client):
+    from app.models import AuditEvent, OrgSettings
+
+    _login_admin(client)
+    status = client.get("/api/hr/import")
+    assert status.status_code == 200, status.text
+    assert status.json()["configured"] is False
+    rotated = client.post("/api/hr/import/token")
+    assert rotated.status_code == 200, rotated.text
+    plaintext = rotated.json()["token"]
+    assert len(plaintext) >= 20
+    masked = client.get("/api/hr/import")
+    assert masked.json()["token"] == ""
+    assert masked.json()["configured"] is True
+    assert masked.json()["source"] == "db"
+    db = SessionLocal()
+    try:
+        stored = db.get(OrgSettings, 1).import_token
+        assert len(stored) == 64 and stored != plaintext
+        rotation = db.scalar(select(AuditEvent).where(AuditEvent.action == "import.token").order_by(AuditEvent.id.desc()))
+        assert rotation is not None and rotation.payload == "neu"
+    finally:
+        db.close()
+    _map(_user_id())
+    _cleanup()
+    try:
+        ok = client.post(
+            "/api/import/punches",
+            json={"punches": [{"pnr": "9001", "event_id": "t-imp-rot-1", "kind": "in", "at": "2024-03-01T08:15:00"}]},
+            headers={"Authorization": f"Bearer {plaintext}"},
+        )
+        assert ok.status_code == 200, ok.text
+        assert ok.json()["stored"] == 1
+    finally:
+        _cleanup()
+    cleared = client.patch("/api/hr/import", json={"token": ""})
+    assert cleared.json()["configured"] is False
+    assert client.post("/api/import/punches", json={"punches": []}).status_code == 503
+
+
+def test_import_batches_and_denials_are_audited(client, monkeypatch):
+    import json as jsonlib
+
+    from app.models import AuditEvent
+
+    monkeypatch.setattr("app.routers.booking_import.get_config", lambda: _cfg("secret"))
+    headers = {"Authorization": "Bearer secret"}
+    _map(_user_id())
+    _cleanup()
+    try:
+        stored = client.post(
+            "/api/import/punches",
+            json={"punches": [{"pnr": "9001", "event_id": "t-imp-audit-1", "kind": "in", "at": "2024-03-01T08:15:00"}]},
+            headers=headers,
+        )
+        assert stored.json()["stored"] == 1
+        db = SessionLocal()
+        try:
+            row = db.scalar(
+                select(AuditEvent).where(AuditEvent.action == "import.punches").order_by(AuditEvent.id.desc())
+            )
+            assert row is not None
+            assert jsonlib.loads(row.payload)["stored"] == 1
+            before = row.id
+        finally:
+            db.close()
+        dupe = client.post(
+            "/api/import/punches",
+            json={"punches": [{"pnr": "9001", "event_id": "t-imp-audit-1", "kind": "in", "at": "2024-03-01T08:15:00"}]},
+            headers=headers,
+        )
+        assert dupe.json()["duplicate"] == 1
+        db = SessionLocal()
+        try:
+            after = db.scalar(select(AuditEvent).where(AuditEvent.action == "import.punches").order_by(AuditEvent.id.desc()))
+            assert after.id == before
+        finally:
+            db.close()
+    finally:
+        _cleanup()
+    denied = client.post("/api/import/punches", json={"punches": []}, headers={"Authorization": "Bearer wrong"})
+    assert denied.status_code == 401
+    db = SessionLocal()
+    try:
+        row = db.scalar(select(AuditEvent).where(AuditEvent.action == "import.denied").order_by(AuditEvent.id.desc()))
+        assert row is not None and row.entity_id == "punches"
+    finally:
+        db.close()
+
+
+def test_import_failures_are_rate_limited(client, monkeypatch):
+    from app.ratelimit import reset as reset_limits
+
+    monkeypatch.setattr("app.routers.booking_import.get_config", lambda: _cfg("secret"))
+    reset_limits()
+    try:
+        for _ in range(30):
+            res = client.post("/api/import/punches", json={"punches": []}, headers={"Authorization": "Bearer wrong"})
+            assert res.status_code == 401, res.text
+        blocked = client.post("/api/import/punches", json={"punches": []}, headers={"Authorization": "Bearer wrong"})
+        assert blocked.status_code == 429, blocked.text
+    finally:
+        reset_limits()

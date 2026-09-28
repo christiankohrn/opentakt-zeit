@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { api, ApiError, type DfcomSettings, type EspTerminalSettings, type SecurityPolicyValue, type SmtpSettings } from "../api";
+import { api, ApiError, type DfcomSettings, type EspTerminalSettings, type ImportTokenSettings, type SecurityPolicyValue, type SmtpSettings } from "../api";
 import ConfirmDialog from "../components/ConfirmDialog";
 import PasswordField from "../components/PasswordField";
 import LoadingNote from "../components/LoadingNote";
@@ -943,6 +943,120 @@ function formatLedgerDay(value: string) {
   return new Date(value + "T12:00:00").toLocaleDateString("de-DE");
 }
 
+function ImportCard() {
+  const [state, setState] = useState<ImportTokenSettings>({ token: "", configured: false, source: "" });
+  const [edited, setEdited] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    api
+      .importTokenSettings()
+      .then(setState)
+      .catch(() => setErr("Import-Token konnte nicht geladen werden."))
+      .finally(() => setReady(true));
+  }, []);
+
+  async function save() {
+    setMsg("");
+    setErr("");
+    setBusy(true);
+    try {
+      const next = await api.patchImportToken(edited ? { token: state.token } : {});
+      setState(next);
+      setEdited(false);
+      setMsg("Import-Token gespeichert.");
+    } catch (ex) {
+      setErr(ex instanceof ApiError ? ex.message : "Fehler");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function rotate() {
+    setMsg("");
+    setErr("");
+    setBusy(true);
+    try {
+      const next = await api.rotateImportToken();
+      setState(next);
+      setEdited(false);
+      setMsg("Neues Token erzeugt. Jetzt kopieren — es wird nicht erneut angezeigt.");
+    } catch (ex) {
+      setErr(ex instanceof ApiError ? ex.message : "Fehler");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!ready) {
+    return (
+      <div className="space-y-3">
+        {err ? <p className="text-sm text-danger">{err}</p> : <LoadingNote className="mt-2" />}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3 rounded-2xl border border-line bg-card p-4">
+      <p className="text-sm font-medium">Buchungs-Import</p>
+      <p className="text-sm text-muted">
+        Token für die laufende Buchungs-Übernahme (Header Authorization: Bearer). Verdeckt gespeichert, Rotation wird
+        protokolliert.
+      </p>
+      {err ? <p className="text-sm text-danger">{err}</p> : null}
+      {msg ? <p className="text-sm text-present">{msg}</p> : null}
+      <label className="block text-xs text-muted">
+        Token (verdeckt gespeichert)
+        <PasswordField
+          autoComplete="off"
+          className="mt-1 w-full rounded-lg border border-line bg-bg px-3 py-2 text-sm text-ink"
+          value={state.token}
+          onChange={(e) => {
+            setState({ ...state, token: e.target.value });
+            setEdited(true);
+          }}
+          placeholder={state.configured ? "verdeckt — Neues eingeben zum Ändern" : "leer = Import aus"}
+        />
+      </label>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void save()}
+          className="flex-1 rounded-xl bg-navy py-2 text-sm text-white disabled:opacity-60"
+        >
+          Speichern
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void rotate()}
+          className="flex-1 rounded-xl border border-line py-2 text-sm disabled:opacity-60"
+        >
+          Neu erzeugen
+        </button>
+        <button
+          type="button"
+          disabled={!state.token}
+          onClick={() => {
+            void navigator.clipboard.writeText(state.token).then(
+              () => setMsg("Token kopiert."),
+              () => setErr("Kopieren nicht möglich."),
+            );
+          }}
+          className="flex-1 rounded-xl border border-line py-2 text-sm disabled:opacity-60"
+        >
+          Kopieren
+        </button>
+      </div>
+      <p className="text-xs text-muted">{state.configured ? "Import ist an." : "Kein Token — Import abgewiesen."}</p>
+    </div>
+  );
+}
+
 function LedgerCard() {
   const [day, setDay] = useState("");
   const [land, setLand] = useState("NW");
@@ -1092,6 +1206,9 @@ export default function Settings() {
       </div>
       <div className="mt-8 border-t border-line pt-6">
         <LedgerCard />
+      </div>
+      <div className="mt-3">
+        <ImportCard />
       </div>
     </div>
   );
