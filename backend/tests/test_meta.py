@@ -35,3 +35,28 @@ def test_production_refuses_default_secret_key(monkeypatch):
     monkeypatch.setattr("app.main.get_config", lambda: bad)
     with pytest.raises(RuntimeError, match="secret_key"):
         create_app()
+
+
+def test_security_headers_present():
+    with TestClient(app) as client:
+        res = client.get("/api/meta")
+        assert res.status_code == 200
+        assert res.headers["x-content-type-options"] == "nosniff"
+        assert res.headers["x-frame-options"] == "DENY"
+        assert res.headers["referrer-policy"] == "same-origin"
+        assert "strict-transport-security" not in {k.lower() for k in res.headers}
+
+
+def test_production_enables_hsts_and_secure_cookie(monkeypatch):
+    from app.config import get_config
+    from app.main import create_app
+
+    prod = get_config().model_copy(update={"environment": "production", "public_url": "https://app.test"})
+    monkeypatch.setattr("app.main.get_config", lambda: prod)
+    prod_app = create_app()
+    with TestClient(prod_app) as client:
+        res = client.get("/api/meta")
+        assert res.headers["strict-transport-security"] == "max-age=31536000"
+        login = client.post("/api/auth/login", json={"username": "admin", "password": "change-me"})
+        assert login.status_code == 200, login.text
+        assert "secure" in login.headers["set-cookie"].lower()

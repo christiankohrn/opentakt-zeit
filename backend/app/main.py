@@ -7,6 +7,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.branding import PRODUCT_NAME
@@ -49,11 +50,28 @@ async def lifespan(_app: FastAPI):
     stop_background()
 
 
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app, *, hsts: bool):
+        super().__init__(app)
+        self.hsts = hsts
+
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "same-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        if self.hsts:
+            response.headers["Strict-Transport-Security"] = "max-age=31536000"
+        return response
+
+
 def create_app() -> FastAPI:
     cfg = get_config()
     if not cfg.is_dev and (cfg.secret_key or "").strip() in {"", "dev-only-change-me", "change-me"}:
         raise RuntimeError("secret_key steht noch auf dem Standardwert. Bitte in config.toml ändern.")
     app = FastAPI(title=PRODUCT_NAME, version=APP_VERSION, lifespan=lifespan)
+    app.add_middleware(SecurityHeadersMiddleware, hsts=cfg.environment == "production")
     app.add_middleware(
         SessionMiddleware,
         secret_key=cfg.secret_key,
