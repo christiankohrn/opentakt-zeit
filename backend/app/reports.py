@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.auth import as_local, now_utc
 from app.balance import days_in_range, hired_on, is_employed, month_days
-from app.models import Absence, Punch, User
+from app.models import Absence, AccountEntry, Punch, User
 from app.names import name_sort_key
 from app.timecalc import punches_window_for_month, work_intervals
 
@@ -19,7 +19,7 @@ NIGHT_WINDOWS = (
     ("hours_4_6", time(4, 0), time(6, 0)),
 )
 VACATION_NOTE = "Urlaub „inkl. Zukunft“ enthält gebuchte Tage nach dem Stichtag im Kalenderjahr."
-JOURNAL_ACCOUNT_NOTE = "Resturlaub = Jahresanspruch - genommen - verplant. Anspruch am Stammsatz unter Urlaubstage/Jahr."
+JOURNAL_ACCOUNT_NOTE = "Resturlaub = Jahresanspruch - genommen - verplant + manuelle Buchungen. Anspruch am Stammsatz unter Urlaubstage/Jahr."
 PUNCH_LABELS = {
     "in": "Kommen",
     "out": "Gehen",
@@ -219,6 +219,7 @@ def person_month_snapshot(
     hist_last = max(last, hours_until, year_end)
     if hire > hist_last:
         return None
+    from app.accounts import vacation_days
     from app.closings import flex_as_of, month_delta
 
     flex_prev = flex_as_of(db, user, min(prev_last, hours_until))
@@ -245,10 +246,12 @@ def person_month_snapshot(
     vac_month = vac_ytd - vac_prev
     vac_planned = vac_year - vac_ytd
     allowance = user.vacation_days_year
+    booked_prev = vacation_days(db, user.id, year_start, prev_last)
+    booked_year = vacation_days(db, user.id, year_start, year_end)
     remaining_prev = remaining = None
     if allowance is not None:
-        remaining_prev = round(float(allowance) - vac_prev, 1)
-        remaining = round(float(allowance) - vac_ytd - vac_planned, 1)
+        remaining_prev = float(allowance) - vac_prev + booked_prev
+        remaining = float(allowance) - vac_ytd - vac_planned + booked_year
     return {
         "user_id": user.id,
         "display_name": user.display_name,
@@ -399,9 +402,24 @@ def night_hours_report(db: Session, month: str, now: datetime | None = None, use
 
 
 def journal_report(db: Session, user: User, month: str) -> dict:
+    from app.closings import calc_start
+
     year, mon = (int(part) for part in month.split("-"))
     _start, last = month_bounds(month)
     days = month_days(db, user, year, mon)
+    entry_from = max(_start, calc_start(db, user))
+    entry_by_day: dict[str, float] = {}
+    if last >= entry_from:
+        for row in db.scalars(
+            select(AccountEntry).where(
+                AccountEntry.user_id == user.id,
+                AccountEntry.kind == "time",
+                AccountEntry.day >= entry_from,
+                AccountEntry.day <= last,
+            )
+        ):
+            key = row.day.isoformat()
+            entry_by_day[key] = entry_by_day.get(key, 0.0) + float(row.amount)
     rows: list[dict] = []
     week_work = week_soll = week_delta = 0.0
     month_work = month_soll = month_delta = 0.0
@@ -416,12 +434,13 @@ def journal_report(db: Session, user: User, month: str) -> dict:
                 "delta_hours": float(day["delta_hours"] or 0),
             }
         )
+        booked = entry_by_day.get(str(day["date"]), 0.0)
         week_work += float(day["work_hours"] or 0)
         week_soll += float(day["soll_hours"] or 0)
-        week_delta += float(day["delta_hours"] or 0)
+        week_delta += float(day["delta_hours"] or 0) + booked
         month_work += float(day["work_hours"] or 0)
         month_soll += float(day["soll_hours"] or 0)
-        month_delta += float(day["delta_hours"] or 0)
+        month_delta += float(day["delta_hours"] or 0) + booked
         nxt = days[index + 1] if index + 1 < len(days) else None
         if day.get("weekday") == 6 or nxt is None:
             rows.append(

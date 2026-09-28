@@ -8,9 +8,10 @@ from fastapi import HTTPException
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
+from app.accounts import time_hours
 from app.auth import now_utc
 from app.balance import days_in_range, employment_end, hired_on
-from app.models import MonthClosing, User
+from app.models import AccountEntry, MonthClosing, User
 
 MONTH_NAMES = (
     "Januar",
@@ -89,6 +90,16 @@ def _walk(db: Session, user: User, last: date) -> tuple[float, dict[tuple[int, i
     if end >= start:
         for day in days_in_range(db, user, start, end):
             by_day[str(day["date"])] = _delta(day)
+        for row in db.scalars(
+            select(AccountEntry).where(
+                AccountEntry.user_id == user.id,
+                AccountEntry.kind == "time",
+                AccountEntry.day >= start,
+                AccountEntry.day <= end,
+            )
+        ):
+            key = row.day.isoformat()
+            by_day[key] = by_day.get(key, 0.0) + float(row.amount)
     snapshots: dict[tuple[int, int], float] = {}
     first = first_closable(db, user)
     year, month = first
@@ -124,7 +135,8 @@ def flex_as_of(db: Session, user: User, last: date) -> float:
     end = min(last, employment_end(user, last))
     if end < calc_from:
         return base
-    return base + sum(_delta(day) for day in days_in_range(db, user, calc_from, end))
+    worked = sum(_delta(day) for day in days_in_range(db, user, calc_from, end))
+    return base + worked + time_hours(db, user.id, calc_from, end)
 
 
 def month_delta(db: Session, user: User, year: int, month: int, today: date) -> float:
@@ -132,7 +144,8 @@ def month_delta(db: Session, user: User, year: int, month: int, today: date) -> 
     end = min(month_end(year, month), employment_end(user, today))
     if end < start:
         return 0.0
-    return sum(_delta(day) for day in days_in_range(db, user, start, end))
+    worked = sum(_delta(day) for day in days_in_range(db, user, start, end))
+    return worked + time_hours(db, user.id, start, end)
 
 
 def _latest_usable(db: Session, user_id: int, last: date, start: date) -> MonthClosing | None:

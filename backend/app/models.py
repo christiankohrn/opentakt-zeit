@@ -146,6 +146,19 @@ class Absence(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
 
+class AccountEntry(Base):
+    __tablename__ = "account_entries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(16))  # time, vacation
+    day: Mapped[date] = mapped_column(Date, index=True)
+    amount: Mapped[float] = mapped_column(Float)  # hours for time, days for vacation
+    reason: Mapped[str] = mapped_column(String(200))
+    created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
 class DayAcceptance(Base):
     __tablename__ = "day_acceptances"
     __table_args__ = (UniqueConstraint("user_id", "day", name="uq_day_acceptance"),)

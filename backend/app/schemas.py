@@ -164,6 +164,14 @@ class DayAcceptIn(BaseModel):
     reason: str = Field(min_length=3, max_length=300)
 
 
+class AccountEntryIn(BaseModel):
+    kind: Literal["time", "vacation"]
+    day: date
+    amount: float
+    reason: str = Field(min_length=2, max_length=200)
+    confirm_closed: bool = False
+
+
 class AbsenceRangeIn(BaseModel):
     kind: Literal["vacation", "sick", "holiday"]
     start: date

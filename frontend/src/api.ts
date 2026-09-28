@@ -37,6 +37,25 @@ export type User = {
   security_setup_required?: string | null;
 };
 
+export type LedgerEntry = {
+  id: number;
+  kind: "time" | "vacation";
+  day: string;
+  amount: number;
+  reason: string;
+};
+
+export type UserLedger = {
+  year: number;
+  opening_balance_hours: number | null;
+  opening_balance_on: string | null;
+  time_entries: LedgerEntry[];
+  vacation_allowance: number | null;
+  vacation_days: { day: string; note: string }[];
+  vacation_entries: LedgerEntry[];
+  vacation_remaining: number | null;
+};
+
 export type SecurityPolicyValue = "off" | "totp" | "passkey" | "any";
 
 export type SecurityPolicy = {
@@ -508,6 +527,14 @@ export const api = {
       confirm_closed?: boolean;
     },
   ) => request<User>(`/api/hr/users/${id}/account`, { method: "PATCH", body: JSON.stringify(body) }),
+  userLedger: (id: number, year: number) =>
+    request<UserLedger>(`/api/hr/users/${id}/ledger?year=${year}`),
+  createLedgerEntry: (
+    id: number,
+    body: { kind: "time" | "vacation"; day: string; amount: number; reason: string; confirm_closed?: boolean },
+  ) => request<LedgerEntry>(`/api/hr/users/${id}/ledger`, { method: "POST", body: JSON.stringify(body) }),
+  deleteLedgerEntry: (id: number, entryId: number, confirmClosed = false) =>
+    request(`/api/hr/users/${id}/ledger/${entryId}?confirm_closed=${confirmClosed ? "true" : "false"}`, { method: "DELETE" }),
   models: () => request<WorkModel[]>("/api/hr/work-models"),
   createModel: (body: Record<string, unknown>) =>
     request<WorkModel>("/api/hr/work-models", { method: "POST", body: JSON.stringify(body) }),
