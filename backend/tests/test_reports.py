@@ -399,6 +399,18 @@ def test_journal_account_matches_the_month_row_to_the_minute(client):
     assert pdf_page_count(pdf.bytes()) == 1
 
 
+def test_journal_month_row_matches_flex_in_current_month(client):
+    login(client)
+    person = create_person(client, "journal-karla", "Karla Journal", hired_on="2026-01-01")
+    today = date.today()
+    month = f"{today.year}-{today.month:02d}"
+    res = client.get(f"/api/hr/reports/journal?month={month}&user_id={person['id']}")
+    assert res.status_code == 200, res.text
+    report = res.json()["people"][0]
+    month_row = next(row for row in report["rows"] if row["type"] == "month")
+    assert month_row["delta_hours"] == report["accounts"]["flex_month"]
+
+
 def test_work_intervals_split_overnight():
     punches = [
         Punch(

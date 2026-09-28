@@ -172,6 +172,15 @@ def test_stray_clock_in_during_break_counts_nothing_twice():
     assert abs(day["break_hours"] - 1.0) < 0.05
 
 
+def test_future_workday_has_no_delta():
+    now = datetime(2026, 8, 18, tzinfo=ZoneInfo("UTC"))
+    future = summarize_day([], date(2026, 8, 19), _full_week(), now=now)
+    assert future["soll_hours"] == 8
+    assert future["work_hours"] == 0
+    assert future["delta_hours"] == 0
+    assert future["warnings"] == []
+
+
 def test_missing_workday_without_booking():
     model = SimpleNamespace(
         hours_mon=8,

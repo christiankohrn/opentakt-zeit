@@ -300,6 +300,11 @@ def summarize_day(
         else:
             result["delta_hours"] = result["work_hours"] - result["soll_hours"]
     today = as_local(now).date()
+    if day > today:
+        # Nothing settled yet: future days carry no delta and no warnings,
+        # so journals and balances agree without capping each sum separately.
+        result["delta_hours"] = 0.0
+        result["warnings"] = []
     if (
         result["soll_hours"] > 0
         and not events
