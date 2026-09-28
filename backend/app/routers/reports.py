@@ -9,7 +9,7 @@ from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.auth import as_local, current_user, now_utc, require_hr
+from app.auth import as_local, current_user, now_utc, require_hr_full
 from app.config import get_config
 from app.database import get_db
 from app.models import User
@@ -55,7 +55,7 @@ BALANCE_COLUMNS = [
 
 
 def _actor(request: Request, db: Session) -> User:
-    return require_hr(current_user(request, db))
+    return require_hr_full(current_user(request, db))
 
 
 def _org() -> str:

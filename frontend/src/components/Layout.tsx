@@ -22,6 +22,7 @@ export default function Layout() {
   const { user, setUser, orgName } = useAuth();
   const nav = useNavigate();
   const hr = user && ["hr", "admin", "supervisor"].includes(user.role);
+  const hrFull = user && ["hr", "admin"].includes(user.role);
   const admin = user?.role === "admin";
   const { dark, cycle, theme } = useTheme();
   const [logoutConfirm, setLogoutConfirm] = useState(false);
@@ -62,10 +63,12 @@ export default function Layout() {
               <IconUsers className={icon} />
               Personal
             </NavLink>
-            <NavLink to="/auswertungen" className={({ isActive }) => cls(isActive)}>
-              <IconChart className={icon} />
-              Auswertungen
-            </NavLink>
+            {hrFull ? (
+              <NavLink to="/auswertungen" className={({ isActive }) => cls(isActive)}>
+                <IconChart className={icon} />
+                Auswertungen
+              </NavLink>
+            ) : null}
           </>
         ) : null}
         {admin && variant === "side" ? (

@@ -1,10 +1,13 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type Department } from "../api";
+import { useAuth } from "../auth";
 import LoadingNote from "../components/LoadingNote";
 import SearchField, { matchesQuery } from "../components/SearchField";
 
 export default function HrDepartments() {
+  const { user: me } = useAuth();
+  const canManage = me?.role === "hr" || me?.role === "admin";
   const [departments, setDepartments] = useState<Department[]>([]);
   const [name, setName] = useState("");
   const [editing, setEditing] = useState<number | null>(null);
@@ -102,21 +105,23 @@ export default function HrDepartments() {
                     {dept.user_count === 1 ? "1 Person" : `${dept.user_count} Personen`}
                   </p>
                 </div>
-                <div className="flex gap-3 text-sm">
-                  <button
-                    type="button"
-                    className="text-present"
-                    onClick={() => {
-                      setEditing(dept.id);
-                      setEditName(dept.name);
-                    }}
-                  >
-                    Umbenennen
-                  </button>
-                  <button type="button" className="text-muted" onClick={() => void remove(dept.id)}>
-                    Löschen
-                  </button>
-                </div>
+                {canManage ? (
+                  <div className="flex gap-3 text-sm">
+                    <button
+                      type="button"
+                      className="text-present"
+                      onClick={() => {
+                        setEditing(dept.id);
+                        setEditName(dept.name);
+                      }}
+                    >
+                      Umbenennen
+                    </button>
+                    <button type="button" className="text-muted" onClick={() => void remove(dept.id)}>
+                      Löschen
+                    </button>
+                  </div>
+                ) : null}
               </div>
             )}
           </li>
@@ -128,18 +133,20 @@ export default function HrDepartments() {
           {query.trim() ? "Keine Abteilung in dieser Auswahl." : "Noch keine Abteilungen."}
         </p>
       ) : null}
-      <form onSubmit={onSubmit} className="mt-6 space-y-3 rounded-2xl border border-line bg-card p-4">
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="z. B. Produktion"
-          className="w-full rounded-lg border border-line bg-bg px-3 py-2"
-          required
-        />
-        <button type="submit" className="w-full rounded-xl bg-present py-2 text-white">
-          Abteilung anlegen
-        </button>
-      </form>
+      {canManage ? (
+        <form onSubmit={onSubmit} className="mt-6 space-y-3 rounded-2xl border border-line bg-card p-4">
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="z. B. Produktion"
+            className="w-full rounded-lg border border-line bg-bg px-3 py-2"
+            required
+          />
+          <button type="submit" className="w-full rounded-xl bg-present py-2 text-white">
+            Abteilung anlegen
+          </button>
+        </form>
+      ) : null}
     </div>
   );
 }

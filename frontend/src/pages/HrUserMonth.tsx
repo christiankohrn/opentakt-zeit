@@ -39,6 +39,7 @@ const ROLE: Record<string, string> = {
 export default function HrUserMonth() {
   const { user: me } = useAuth();
   const isAdmin = me?.role === "admin";
+  const canManage = me?.role === "hr" || me?.role === "admin";
   const nav = useNavigate();
   const { id } = useParams();
   const [params, setParams] = useSearchParams();
@@ -805,20 +806,22 @@ export default function HrUserMonth() {
         ) : null}
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-3 text-sm">
-        <button
-          type="button"
-          className="text-present"
-          onClick={async () => {
-            setExportMsg("");
-            try {
-              await api.downloadExportCsv(month, userId);
-            } catch (err) {
-              setExportMsg(err instanceof Error ? err.message : "CSV-Export fehlgeschlagen.");
-            }
-          }}
-        >
-          CSV exportieren
-        </button>
+        {canManage ? (
+          <button
+            type="button"
+            className="text-present"
+            onClick={async () => {
+              setExportMsg("");
+              try {
+                await api.downloadExportCsv(month, userId);
+              } catch (err) {
+                setExportMsg(err instanceof Error ? err.message : "CSV-Export fehlgeschlagen.");
+              }
+            }}
+          >
+            CSV exportieren
+          </button>
+        ) : null}
         {from === "pruefung" ? (
           <Link to="/personal" className="text-muted">
             Zur Personalliste
@@ -950,7 +953,9 @@ export default function HrUserMonth() {
           </>
           )}
         </div>
-        <div className="order-1 space-y-3 xl:order-2 xl:sticky xl:top-6">{settings}</div>
+        {canManage ? (
+          <div className="order-1 space-y-3 xl:order-2 xl:sticky xl:top-6">{settings}</div>
+        ) : null}
       </div>
       {modelConfirm ? (
         <div className="fixed inset-0 z-20 flex items-end justify-center bg-black/40 p-4 sm:items-center">

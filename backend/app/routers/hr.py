@@ -11,7 +11,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.orm import Session, selectinload
 
-from app.auth import HR_ROLES, as_local, bump_session_rev, current_user, local_day_bounds, normalize_username, now_utc, require_admin, require_hr, write_session
+from app.auth import HR_ROLES, as_local, bump_session_rev, current_user, local_day_bounds, normalize_username, now_utc, require_admin, require_hr, require_hr_full, write_session
 from app.balance import account_hours, days_in_range, format_hm, summarize_user_day
 from app.closing_job import job_status, start_close, start_recalculate
 from app.closings import (
@@ -103,6 +103,10 @@ def _actor(request: Request, db: Session) -> User:
     return require_hr(current_user(request, db))
 
 
+def _actor_full(request: Request, db: Session) -> User:
+    return require_hr_full(current_user(request, db))
+
+
 def _actor_admin(request: Request, db: Session) -> User:
     return require_admin(_actor(request, db))
 
@@ -169,14 +173,15 @@ def _user_with_rels():
     return select(User).options(selectinload(User.work_model), selectinload(User.department))
 
 
-def _user_out(user: User) -> UserOut:
+def _user_out(user: User, *, redact_pii: bool = False) -> UserOut:
     out = UserOut.model_validate(user)
-    return out.model_copy(
-        update={
-            "work_model_name": user.work_model.name if user.work_model else None,
-            "department_name": user.department.name if user.department else None,
-        }
-    )
+    update: dict = {
+        "work_model_name": user.work_model.name if user.work_model else None,
+        "department_name": user.department.name if user.department else None,
+    }
+    if redact_pii:
+        update.update({"email": None, "birthday": None, "transponder_id": None})
+    return out.model_copy(update=update)
 
 
 def _department_by_id(db: Session, department_id: int | None) -> Department | None:
@@ -268,15 +273,16 @@ def _check_employment_dates(user: User) -> None:
 
 @router.get("/users", response_model=list[UserOut])
 def list_users(request: Request, db: Session = Depends(get_db)):
-    _actor(request, db)
+    actor = _actor(request, db)
     users = sorted(db.scalars(_user_with_rels()), key=_by_name)
     counts = passkey_counts(db, [u.id for u in users])
-    return [_user_out(u).model_copy(update={"passkey_count": counts.get(u.id, 0)}) for u in users]
+    redact = actor.role == "supervisor"
+    return [_user_out(u, redact_pii=redact).model_copy(update={"passkey_count": counts.get(u.id, 0)}) for u in users]
 
 
 @router.post("/users", response_model=UserCreateOut)
 def create_user(payload: UserWrite, request: Request, db: Session = Depends(get_db)):
-    actor = _actor(request, db)
+    actor = _actor_full(request, db)
     _require_admin_for(actor, payload.role != "employee", ADMIN_ROLE_MSG)
     _require_admin_for(actor, not payload.active, ADMIN_ACTIVE_MSG)
     _require_admin_for(actor, bool(payload.password), ADMIN_PASSWORD_MSG)
@@ -362,7 +368,7 @@ def create_user(payload: UserWrite, request: Request, db: Session = Depends(get_
 
 @router.patch("/users/{user_id}", response_model=UserOut)
 def patch_user(user_id: int, payload: UserWrite, request: Request, db: Session = Depends(get_db)):
-    actor = _actor(request, db)
+    actor = _actor_full(request, db)
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(404, "Nicht gefunden")
@@ -436,7 +442,7 @@ def patch_user(user_id: int, payload: UserWrite, request: Request, db: Session =
 
 @router.patch("/users/{user_id}/settings", response_model=UserOut)
 def patch_user_settings(user_id: int, payload: UserSettingsIn, request: Request, db: Session = Depends(get_db)):
-    actor = _actor(request, db)
+    actor = _actor_full(request, db)
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(404, "Nicht gefunden")
@@ -476,7 +482,7 @@ ALLOWED_ROLES = {"employee", "supervisor", "hr", "admin"}
 
 @router.patch("/users/{user_id}/account", response_model=UserOut)
 def patch_user_account(user_id: int, payload: UserAccountIn, request: Request, db: Session = Depends(get_db)):
-    actor = _actor(request, db)
+    actor = _actor_full(request, db)
     user = db.scalar(_user_with_rels().where(User.id == user_id))
     if not user:
         raise HTTPException(404, "Nicht gefunden")
@@ -630,7 +636,7 @@ def delete_user(user_id: int, request: Request, db: Session = Depends(get_db)):
 
 @router.post("/users/{user_id}/access-mail")
 def send_user_access_mail(user_id: int, request: Request, db: Session = Depends(get_db)):
-    actor = _actor(request, db)
+    actor = _actor_full(request, db)
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(404, "Nicht gefunden")
@@ -658,7 +664,7 @@ def list_models(request: Request, db: Session = Depends(get_db)):
 
 @router.post("/work-models", response_model=WorkModelOut)
 def create_model(payload: WorkModelIn, request: Request, db: Session = Depends(get_db)):
-    actor = _actor(request, db)
+    actor = _actor_full(request, db)
     model = WorkModel(**payload.model_dump())
     db.add(model)
     db.flush()
@@ -684,7 +690,7 @@ def list_departments(request: Request, db: Session = Depends(get_db)):
 
 @router.post("/departments", response_model=DepartmentOut)
 def create_department(payload: DepartmentIn, request: Request, db: Session = Depends(get_db)):
-    actor = _actor(request, db)
+    actor = _actor_full(request, db)
     name = _norm_dept_name(payload.name)
     if _dept_name_taken(db, name):
         raise HTTPException(409, "Abteilung gibt es schon")
@@ -707,7 +713,7 @@ def create_department(payload: DepartmentIn, request: Request, db: Session = Dep
 
 @router.patch("/departments/{department_id}", response_model=DepartmentOut)
 def patch_department(department_id: int, payload: DepartmentIn, request: Request, db: Session = Depends(get_db)):
-    actor = _actor(request, db)
+    actor = _actor_full(request, db)
     dept = db.get(Department, department_id)
     if not dept:
         raise HTTPException(404, "Nicht gefunden")
@@ -731,7 +737,7 @@ def patch_department(department_id: int, payload: DepartmentIn, request: Request
 
 @router.delete("/departments/{department_id}")
 def delete_department(department_id: int, request: Request, db: Session = Depends(get_db)):
-    actor = _actor(request, db)
+    actor = _actor_full(request, db)
     dept = db.get(Department, department_id)
     if not dept:
         raise HTTPException(404, "Nicht gefunden")
@@ -928,7 +934,7 @@ def list_calendar(request: Request, db: Session = Depends(get_db), year: int = Q
 
 @router.post("/calendar", response_model=CalendarOut)
 def create_calendar(payload: CalendarIn, request: Request, db: Session = Depends(get_db)):
-    actor = _actor(request, db)
+    actor = _actor_full(request, db)
     from app.models import CalendarEntry
 
     recalc = require_open(db, users_for_day(db, payload.day), payload.confirm_closed)
@@ -970,7 +976,7 @@ def delete_calendar(
     db: Session = Depends(get_db),
     confirm_closed: bool = Query(False),
 ):
-    actor = _actor(request, db)
+    actor = _actor_full(request, db)
     from app.models import CalendarEntry
 
     row = db.get(CalendarEntry, entry_id)
@@ -1021,7 +1027,7 @@ def list_user_models(user_id: int, request: Request, db: Session = Depends(get_d
 
 @router.post("/users/{user_id}/work-models", response_model=WorkModelAssignOut)
 def assign_user_model(user_id: int, payload: WorkModelAssignIn, request: Request, db: Session = Depends(get_db)):
-    actor = _actor(request, db)
+    actor = _actor_full(request, db)
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(404, "Nicht gefunden")
@@ -1062,7 +1068,7 @@ def delete_user_model(
     db: Session = Depends(get_db),
     confirm_closed: bool = Query(False),
 ):
-    actor = _actor(request, db)
+    actor = _actor_full(request, db)
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(404, "Nicht gefunden")
@@ -1640,7 +1646,7 @@ def plausibility(
 
 @router.get("/audit")
 def audit(request: Request, db: Session = Depends(get_db), limit: int = 100):
-    _actor(request, db)
+    _actor_full(request, db)
     rows = db.scalars(select(AuditEvent).order_by(AuditEvent.at.desc()).limit(min(limit, 500))).all()
     return [
         {
@@ -1663,7 +1669,7 @@ def export_csv(
     month: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
     user_id: int | None = None,
 ):
-    _actor(request, db)
+    _actor_full(request, db)
     q = _user_with_rels()
     if user_id:
         q = q.where(User.id == user_id)

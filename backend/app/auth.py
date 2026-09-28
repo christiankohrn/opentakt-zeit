@@ -12,6 +12,7 @@ from app.models import User
 from app.security import verify_password
 
 HR_ROLES = {"hr", "admin", "supervisor"}
+HR_FULL_ROLES = {"hr", "admin"}
 
 
 def normalize_username(value: str) -> str:
@@ -67,6 +68,14 @@ def bump_session_rev(user: User) -> None:
 
 def require_hr(user: User) -> User:
     if user.role not in HR_ROLES:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Keine Berechtigung")
+    return user
+
+
+def require_hr_full(user: User) -> User:
+    """Personal und Admin. Vorgesetzte prüfen Zeiten, verwalten aber kein Personal."""
+
+    if user.role not in HR_FULL_ROLES:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Keine Berechtigung")
     return user
 
