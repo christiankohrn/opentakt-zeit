@@ -65,6 +65,7 @@ class User(Base):
     opening_balance_hours: Mapped[float] = mapped_column(Float, default=0.0)
     opening_balance_on: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     session_rev: Mapped[int] = mapped_column(Integer, default=0)
+    must_change_password: Mapped[bool] = mapped_column(default=False)
     totp_secret: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     totp_enabled: Mapped[bool] = mapped_column(default=False)
     totp_confirmed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

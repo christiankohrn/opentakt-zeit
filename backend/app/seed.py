@@ -46,6 +46,10 @@ def seed_if_empty(db: Session) -> None:
     lager = Department(name="Lager")
     db.add_all([produktion, lager])
     db.flush()
+    # Absichtlich nur ein Administrator. Weitere bekannte Konten mit
+    # bekannten Passwörtern wären ein Einfallstor; Personal legt der Admin
+    # in der UI an. Der Seed-Admin muss beim ersten Login ein eigenes
+    # Passwort vergeben.
     users = [
         User(
             username=normalize_username(cfg.seed.admin_username),
@@ -54,32 +58,7 @@ def seed_if_empty(db: Session) -> None:
             password_hash=hash_password(cfg.seed.admin_password),
             role="admin",
             work_model_id=model.id,
-        ),
-        User(
-            username=normalize_username(cfg.seed.hr_username),
-            display_name="Personal",
-            email="personal@localhost",
-            password_hash=hash_password(cfg.seed.hr_password),
-            role="hr",
-            work_model_id=model.id,
-        ),
-        User(
-            username=normalize_username(cfg.seed.employee_username),
-            display_name="Max Mustermann",
-            email="mitarbeiter@localhost",
-            password_hash=hash_password(cfg.seed.employee_password),
-            role="employee",
-            work_model_id=model.id,
-            department_id=produktion.id,
-        ),
-        User(
-            username=normalize_username(cfg.seed.shift_username),
-            display_name="Erika Schicht",
-            email="erika@localhost",
-            password_hash=hash_password(cfg.seed.shift_password),
-            role="employee",
-            work_model_id=shift.id,
-            department_id=lager.id,
+            must_change_password=True,
         ),
     ]
     db.add_all(users)

@@ -15,6 +15,7 @@ export default function SecuritySetup() {
 
   if (loading) return <div className="p-8 text-muted">Laden …</div>;
   if (!user) return <Navigate to="/login" replace />;
+  if (user.security_setup_required === "password") return <Navigate to="/konto" replace />;
 
   const required = user.security_setup_required;
   if (!required) return <Navigate to="/" replace />;

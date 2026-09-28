@@ -212,7 +212,7 @@ def logout(request: Request):
 
 @router.get("/me", response_model=UserOut)
 def me(request: Request, db: Session = Depends(get_db)):
-    return _user_out(db, current_user(request, db))
+    return _user_out(db, current_user(request, db, allow_password_change=True))
 
 
 @router.post("/forgot")
@@ -273,6 +273,7 @@ def consume_password_token(payload: ResetIn, request: Request, db: Session = Dep
         raise HTTPException(400, "Keine Web-Anmeldung für diesen Benutzer")
     clear(key)
     user.password_hash = hash_password(payload.password)
+    user.must_change_password = False
     row.used_at = now_utc()
     bump_session_rev(user)
     db.add(

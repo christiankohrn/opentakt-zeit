@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Navigate, Outlet, RouterProvider, createBrowserRouter } from "react-router-dom";
+import { Navigate, Outlet, RouterProvider, createBrowserRouter, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./auth";
 import Layout from "./components/Layout";
 import HrCalendar from "./pages/HrCalendar";
@@ -29,11 +29,17 @@ import { ThemeProvider } from "./theme";
 
 function Guard({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
+  const location = useLocation();
   if (loading) {
     return <div className="p-8 text-muted">Laden …</div>;
   }
   if (!user) return <Navigate to="/login" replace />;
-  if (user.security_setup_required) return <Navigate to="/sicherheit-einrichten" replace />;
+  if (user.security_setup_required === "password" && location.pathname !== "/konto") {
+    return <Navigate to="/konto" replace />;
+  }
+  if (user.security_setup_required && user.security_setup_required !== "password") {
+    return <Navigate to="/sicherheit-einrichten" replace />;
+  }
   return <>{children}</>;
 }
 

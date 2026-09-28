@@ -39,7 +39,7 @@ def local_day_bounds(day) -> tuple[datetime, datetime]:
     return start.astimezone(ZoneInfo("UTC")), end.astimezone(ZoneInfo("UTC"))
 
 
-def current_user(request: Request, db: Session) -> User:
+def current_user(request: Request, db: Session, *, allow_password_change: bool = False) -> User:
     uid = request.session.get("uid")
     if not uid:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Nicht angemeldet")
@@ -50,6 +50,8 @@ def current_user(request: Request, db: Session) -> User:
     if int(request.session.get("rev") or 0) != int(user.session_rev or 0):
         request.session.clear()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Nicht angemeldet")
+    if user.must_change_password and not allow_password_change:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bitte zuerst das Passwort ändern")
     return user
 
 

@@ -26,12 +26,6 @@ import_token = ""
 [seed]
 admin_username = "admin"
 admin_password = "change-me"
-hr_username = "personal"
-hr_password = "change-me"
-employee_username = "mitarbeiter"
-employee_password = "change-me"
-shift_username = "erika"
-shift_password = "change-me"
 
 [smtp]
 enabled = false

@@ -66,6 +66,8 @@ def ensure_schema() -> None:
         alters.append("ALTER TABLE users ADD COLUMN web_login BOOLEAN NOT NULL DEFAULT 1")
     if "session_rev" not in cols:
         alters.append("ALTER TABLE users ADD COLUMN session_rev INTEGER NOT NULL DEFAULT 0")
+    if "must_change_password" not in cols:
+        alters.append("ALTER TABLE users ADD COLUMN must_change_password BOOLEAN NOT NULL DEFAULT 0")
     if "hired_on" not in cols:
         alters.append("ALTER TABLE users ADD COLUMN hired_on DATE")
     if "left_on" not in cols:
