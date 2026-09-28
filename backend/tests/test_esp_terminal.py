@@ -113,6 +113,13 @@ def test_esp_device_named_and_punch_location(client):
     login(client)
     people = users_by_name(client)
     client.patch(f"/api/hr/users/{people['erika']['id']}/settings", json={"transponder_id": "ESPCHIP"})
+    punch = client.post(
+        "/api/terminals/esp/punch",
+        json={"badge": "ESPCHIP", "event_id": "esp-place-in-01", "device_id": "AABBCCDDEEFF", "fw": 2},
+        headers={"X-Terminal-Key": "test-esp-secret"},
+    )
+    assert punch.status_code == 200, punch.text
+    assert punch.json()["ok"] is True
     hello = client.post(
         "/api/terminals/esp/hello",
         json={"device_id": "aa:bb:cc:dd:ee:ff", "fw": 2, "ssid": "Office", "ip": "10.0.0.8"},
@@ -127,13 +134,13 @@ def test_esp_device_named_and_punch_location(client):
     named = client.patch(f"/api/hr/esp-terminal/devices/{pk}", json={"name": "Eingang"})
     assert named.status_code == 200
     assert named.json()["name"] == "Eingang"
-    punch = client.post(
+    second = client.post(
         "/api/terminals/esp/punch",
-        json={"badge": "ESPCHIP", "event_id": "esp-place-in-01", "device_id": "AABBCCDDEEFF", "fw": 2},
+        json={"badge": "ESPCHIP", "event_id": "esp-place-out-01", "device_id": "AABBCCDDEEFF", "fw": 2},
         headers={"X-Terminal-Key": "test-esp-secret"},
     )
-    assert punch.status_code == 200, punch.text
-    assert punch.json()["ok"] is True
+    assert second.status_code == 200, second.text
+    assert second.json()["ok"] is True
     month = client.get(f"/api/hr/users/{people['erika']['id']}/days?month={date.today().strftime('%Y-%m')}")
     assert month.status_code == 200, month.text
     found = None
@@ -148,6 +155,14 @@ def test_esp_device_named_and_punch_location(client):
 
 def test_esp_hello_offers_firmware_and_wifi(client):
     login(client)
+    people = users_by_name(client)
+    client.patch(f"/api/hr/users/{people['erika']['id']}/settings", json={"transponder_id": "ESPCHIP"})
+    seed = client.post(
+        "/api/terminals/esp/punch",
+        json={"badge": "ESPCHIP", "event_id": "esp-wifi-seed-01", "device_id": "112233445566", "fw": 1},
+        headers={"X-Terminal-Key": "test-esp-secret"},
+    )
+    assert seed.status_code == 200, seed.text
     hello = client.post(
         "/api/terminals/esp/hello",
         json={"device_id": "112233445566", "fw": 1},
@@ -189,6 +204,24 @@ def test_esp_hello_offers_firmware_and_wifi(client):
     assert dl.content[:1] == b"\xe9"
     denied = client.get("/api/terminals/esp/firmware.bin")
     assert denied.status_code in {401, 503}
+
+
+def test_esp_hello_unknown_device_gets_no_provisioning(client):
+    login(client)
+    hello = client.post(
+        "/api/terminals/esp/hello",
+        json={"device_id": "FFEEDDCCBBAA", "fw": 1},
+        headers={"X-Terminal-Key": "test-esp-secret"},
+    )
+    assert hello.status_code == 200, hello.text
+    body = hello.json()
+    assert body["name"] == ""
+    assert body["fw"] == 0
+    assert body["firmware_url"] == ""
+    assert body["wifi_ssid"] == ""
+    assert body["wifi_pass"] == ""
+    settings = client.get("/api/hr/esp-terminal")
+    assert "FFEEDDCCBBAA" not in {d["device_id"] for d in settings.json()["devices"]}
 
 
 def test_esp_punch_auto_kommen_gehen_and_templates(client):

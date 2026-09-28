@@ -52,6 +52,13 @@ def normalize_device_id(value: str | None) -> str:
     return raw.upper()[:80]
 
 
+def get_device(db: Session, device_id: str) -> EspTerminal | None:
+    key = normalize_device_id(device_id)
+    if not key:
+        return None
+    return db.scalar(select(EspTerminal).where(EspTerminal.device_id == key))
+
+
 def touch_device(
     db: Session,
     device_id: str,

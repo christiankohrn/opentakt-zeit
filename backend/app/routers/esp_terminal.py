@@ -20,6 +20,7 @@ from app.esp_service import (
     effective_secret,
     firmware_path,
     firmware_url,
+    get_device,
     normalize_device_id,
     org_row,
     secret_source,
@@ -180,6 +181,12 @@ def punch(payload: EspPunchIn, request: Request, db: Session = Depends(get_db)):
 @router.post("/hello", response_model=EspHelloOut)
 def hello(payload: EspHelloIn, request: Request, db: Session = Depends(get_db)):
     _require_terminal(request, db)
+    # Unbekannte IDs bekommen bewusst eine leere Antwort und legen keine
+    # Geräte an: Sonst könnte jeder Secret-Inhaber fremde Geräte-IDs
+    # aufzählen und deren WLAN-Zugangsdaten abholen. Geräte entstehen bei
+    # der ersten Buchung und erhalten danach ihre Provisionierung.
+    if get_device(db, payload.device_id) is None:
+        return EspHelloOut()
     device = touch_device(
         db,
         payload.device_id,
