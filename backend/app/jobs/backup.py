@@ -14,9 +14,10 @@ def _backup_root() -> Path:
         root = Path(cfg.backup_dir)
     else:
         root = Path(cfg.database_path).resolve().parent / "backups"
-    (root / "daily").mkdir(parents=True, exist_ok=True)
-    (root / "monthly").mkdir(parents=True, exist_ok=True)
-    (root / "yearly").mkdir(parents=True, exist_ok=True)
+    # Backups enthalten dieselben Secrets wie die Datenbank: nur der Besitzer.
+    for folder in (root, root / "daily", root / "monthly", root / "yearly"):
+        folder.mkdir(parents=True, exist_ok=True)
+        folder.chmod(0o700)
     return root
 
 
@@ -31,6 +32,7 @@ def _copy_sqlite(src: Path, dest: Path) -> None:
             target.close()
     finally:
         source.close()
+    dest.chmod(0o600)
 
 
 def _prune(folder: Path, keep: int) -> None:

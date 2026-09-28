@@ -50,6 +50,7 @@ chown -R deploy:zeiterfassung "$APP_ROOT"
 chown -R zeiterfassung:zeiterfassung "$DATA"
 chown root:zeiterfassung "$CONF"
 chmod 750 "$DATA" "$CONF"
+chmod 700 "$DATA/backups"
 chmod a+x "$APP_ROOT/deploy/"*.sh
 
 if [ ! -f "$CONF/config.toml" ]; then

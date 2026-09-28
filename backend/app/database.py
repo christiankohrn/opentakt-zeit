@@ -161,6 +161,22 @@ def ensure_schema() -> None:
         db.commit()
     finally:
         db.close()
+    _restrict_db_permissions()
+
+
+def _restrict_db_permissions() -> None:
+    """Datenbankdateien nur für den Besitzer lesbar machen (Secrets!)."""
+    try:
+        base = Path(get_config().database_path)
+    except Exception:
+        return
+    for suffix in ("", "-wal", "-shm", "-journal"):
+        try:
+            candidate = base if not suffix else base.parent / (base.name + suffix)
+            if candidate.is_file():
+                candidate.chmod(0o600)
+        except OSError:
+            continue
 
 
 def get_db() -> Generator[Session, None, None]:

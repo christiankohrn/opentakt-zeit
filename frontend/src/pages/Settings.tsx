@@ -346,6 +346,7 @@ function formatSeen(value: string | null) {
 
 function EspCard() {
   const [esp, setEsp] = useState<EspTerminalSettings>(emptyEsp);
+  const [secretEdited, setSecretEdited] = useState(false);
   const [fwFile, setFwFile] = useState<File | null>(null);
   const [fwVersion, setFwVersion] = useState(2);
   const [devicePass, setDevicePass] = useState<Record<number, string>>({});
@@ -373,9 +374,10 @@ function EspCard() {
       const next = await api.patchEspTerminalSettings({
         ok_line1: esp.ok_line1,
         ok_line2: esp.ok_line2,
-        secret: esp.secret,
+        ...(secretEdited ? { secret: esp.secret } : {}),
       });
       setEsp(next);
+      setSecretEdited(false);
       setMsg("ESP-Terminal gespeichert.");
     } catch (ex) {
       setErr(ex instanceof ApiError ? ex.message : "Fehler");
@@ -391,7 +393,8 @@ function EspCard() {
     try {
       const next = await api.generateEspSecret();
       setEsp(next);
-      setMsg("Neues Secret erzeugt. Am Gerät BOOT 4 Sekunden halten und eintragen.");
+      setSecretEdited(false);
+      setMsg("Neues Secret erzeugt. Jetzt kopieren — es wird nicht erneut angezeigt.");
     } catch (ex) {
       setErr(ex instanceof ApiError ? ex.message : "Fehler");
     } finally {
@@ -419,13 +422,16 @@ function EspCard() {
           werden abgeschnitten. Platzhalter: {esp.placeholders.map((name) => `{${name}}`).join(", ")}.
         </p>
         <label className="block text-xs text-muted">
-          Secret {esp.secret_source === "config" ? "(aus der Server-Config, speichern legt es in der App ab)" : ""}
+          Secret (verdeckt gespeichert)
           <PasswordField
             autoComplete="off"
             className="mt-1 w-full rounded-lg border border-line bg-bg px-3 py-2 text-sm text-ink"
             value={esp.secret}
-            onChange={(e) => setEsp({ ...esp, secret: e.target.value })}
-            placeholder="leer = API aus"
+            onChange={(e) => {
+              setEsp({ ...esp, secret: e.target.value });
+              setSecretEdited(true);
+            }}
+            placeholder={esp.secret_configured ? "verdeckt — Neues eingeben zum Ändern" : "leer = API aus"}
           />
         </label>
         <div className="flex gap-2">

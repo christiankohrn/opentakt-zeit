@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 
 from app.database import SessionLocal
 from app.esp_display import render_line
-from app.models import Punch
+from app.models import OrgSettings, Punch
 
 
 def login(client, username="admin", password="change-me"):
@@ -80,12 +80,20 @@ def test_admin_can_set_esp_secret(client):
     login(client)
     shown = client.get("/api/hr/esp-terminal")
     assert shown.status_code == 200, shown.text
-    assert shown.json()["secret"] == "test-esp-secret"
+    assert shown.json()["secret"] == ""
+    assert shown.json()["secret_configured"] is True
     assert shown.json()["secret_source"] == "config"
     saved = client.patch("/api/hr/esp-terminal", json={"secret": "ui-esp-secret-value"})
     assert saved.status_code == 200, saved.text
-    assert saved.json()["secret"] == "ui-esp-secret-value"
+    assert saved.json()["secret"] == ""
     assert saved.json()["secret_source"] == "db"
+    db = SessionLocal()
+    try:
+        stored = db.get(OrgSettings, 1).esp_terminal_secret
+    finally:
+        db.close()
+    assert len(stored) == 64
+    assert stored != "ui-esp-secret-value"
     old = client.post(
         "/api/terminals/esp/punch",
         json={"badge": "X", "event_id": "abcdefgh"},
@@ -103,10 +111,39 @@ def test_admin_can_set_esp_secret(client):
     fresh = generated.json()["secret"]
     assert len(fresh) >= 20
     assert fresh != "ui-esp-secret-value"
+    masked = client.get("/api/hr/esp-terminal")
+    assert masked.json()["secret"] == ""
     reset = client.patch("/api/hr/esp-terminal", json={"secret": ""})
     assert reset.status_code == 200
-    assert reset.json()["secret"] == "test-esp-secret"
+    assert reset.json()["secret"] == ""
+    assert reset.json()["secret_configured"] is True
     assert reset.json()["secret_source"] == "config"
+
+
+def test_legacy_esp_secret_is_migrated_to_hash(client):
+    login(client)
+    db = SessionLocal()
+    try:
+        row = db.get(OrgSettings, 1)
+        row.esp_terminal_secret = "legacy-klartext"
+        db.commit()
+    finally:
+        db.close()
+    res = client.post(
+        "/api/terminals/esp/punch",
+        json={"badge": "NOSUCHCHIP", "event_id": "event-legacy-hash1"},
+        headers={"X-Terminal-Key": "legacy-klartext"},
+    )
+    assert res.status_code == 200, res.text
+    db = SessionLocal()
+    try:
+        stored = db.get(OrgSettings, 1).esp_terminal_secret
+    finally:
+        db.close()
+    assert len(stored) == 64
+    assert stored != "legacy-klartext"
+    reset = client.patch("/api/hr/esp-terminal", json={"secret": ""})
+    assert reset.status_code == 200
 
 
 def test_esp_device_named_and_punch_location(client):

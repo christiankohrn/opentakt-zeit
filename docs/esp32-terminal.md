@@ -6,7 +6,7 @@ Firmware und Gehäuse: [`firmware/esp32-terminal/`](../firmware/esp32-terminal/)
 
 ## Server
 
-Das Shared-Secret stellt ein Administrator unter **Einstellungen → ESP-Terminal** ein (oder als Fallback `esp_terminal_secret` in `/etc/zeiterfassung/config.toml`). Leer = API aus.
+Das Shared-Secret stellt ein Administrator unter **Einstellungen → ESP-Terminal** ein (oder als Fallback `esp_terminal_secret` in `/etc/zeiterfassung/config.toml`). Leer = API aus. In der App liegt nur ein Hash; das Secret ist nur direkt beim Erzeugen sichtbar und muss dann kopiert werden.
 
 `POST /api/terminals/esp/punch` und `POST /api/terminals/esp/hello` mit Header `X-Terminal-Key` oder `Authorization: Bearer …`.
 

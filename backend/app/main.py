@@ -51,6 +51,8 @@ async def lifespan(_app: FastAPI):
 
 def create_app() -> FastAPI:
     cfg = get_config()
+    if not cfg.is_dev and (cfg.secret_key or "").strip() in {"", "dev-only-change-me", "change-me"}:
+        raise RuntimeError("secret_key steht noch auf dem Standardwert. Bitte in config.toml ändern.")
     app = FastAPI(title=PRODUCT_NAME, version=APP_VERSION, lifespan=lifespan)
     app.add_middleware(
         SessionMiddleware,

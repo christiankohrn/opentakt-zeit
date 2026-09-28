@@ -19,6 +19,7 @@ if [ -f "$DATA/app.db" ]; then
   mkdir -p "$DATA/backups/pre-update"
   sqlite3 "$DATA/app.db" ".backup '$DATA/backups/pre-update/app-$STAMP.db'"
   chown zeiterfassung:zeiterfassung "$DATA/backups/pre-update/app-$STAMP.db" || true
+  chmod 600 "$DATA/backups/pre-update/app-$STAMP.db"
 fi
 
 if [ -x "$APP_ROOT/venv/bin/pip" ]; then
