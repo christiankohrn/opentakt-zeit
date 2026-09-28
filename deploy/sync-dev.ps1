@@ -28,7 +28,8 @@ $excludes = @(
     "--exclude=data",
     "--exclude=lib",
     "--exclude=__pycache__",
-    "--exclude=*.pyc"
+    "--exclude=*.pyc",
+    "--exclude=lab"
 )
 if (Test-Path $tgz) { Remove-Item $tgz }
 & tar -C $root -czf $tgz @excludes .

@@ -461,6 +461,66 @@ def test_csv_neutralizes_formula_cells(client):
     assert "\n=1+1;" not in export.text
 
 
+def test_manual_bookings_move_time_and_vacation_accounts(client):
+    from app.balance import format_hm
+
+    login(client)
+    person = create_person(client, "auszahlung", "Auszahlung", hired_on="2026-08-03", left_on="2026-08-03")
+    opening = client.patch(
+        f"/api/hr/users/{person['id']}/account",
+        json={"opening_balance_hours": 0, "opening_balance_on": "2026-08-03"},
+    )
+    assert opening.status_code == 200, opening.text
+    early = client.post(
+        f"/api/hr/users/{person['id']}/ledger",
+        json={"kind": "time", "day": "2026-08-02", "amount": -10, "reason": "vor dem Start"},
+    )
+    assert early.status_code == 200, early.text
+    payout = client.post(
+        f"/api/hr/users/{person['id']}/ledger",
+        json={"kind": "time", "day": "2026-08-03", "amount": -35, "reason": "Auszahlung"},
+    )
+    assert payout.status_code == 200, payout.text
+    days = client.get(f"/api/hr/users/{person['id']}/days?month=2026-08")
+    assert days.status_code == 200, days.text
+    body = days.json()
+    worked = sum(float(day["delta_hours"] or 0) for day in body["days"] if day["date"] == "2026-08-03")
+    assert format_hm(body["month_flex"]) == format_hm(worked - 35)
+    journal = client.get(f"/api/hr/reports/journal?month=2026-08&user_ids={person['id']}")
+    assert journal.status_code == 200, journal.text
+    report = journal.json()["people"][0]
+    month = next(row for row in report["rows"] if row["type"] == "month")
+    assert format_hm(month["delta_hours"]) == format_hm(worked - 35)
+    assert format_hm(report["accounts"]["flex_month"]) == format_hm(worked - 35)
+    ledger = client.get(f"/api/hr/users/{person['id']}/ledger?year=2026")
+    assert ledger.status_code == 200, ledger.text
+    reasons = [row["reason"] for row in ledger.json()["time_entries"]]
+    assert reasons == ["vor dem Start", "Auszahlung"]
+
+    holiday = create_person(client, "urlaub-buchung", "Urlaub Buchung", hired_on="2025-01-01", vacation_days_year=30)
+    added = client.post(
+        f"/api/hr/users/{holiday['id']}/absences",
+        json={"kind": "vacation", "start": "2026-08-10", "end": "2026-08-10"},
+    )
+    assert added.status_code == 200, added.text
+    correction = client.post(
+        f"/api/hr/users/{holiday['id']}/ledger",
+        json={"kind": "vacation", "day": "2026-08-01", "amount": -2, "reason": "Korrektur"},
+    )
+    assert correction.status_code == 200, correction.text
+    accounts = client.get(f"/api/hr/reports/journal?month=2026-08&user_ids={holiday['id']}")
+    assert accounts.status_code == 200, accounts.text
+    vacation = accounts.json()["people"][0]["accounts"]
+    assert vacation["vacation_remaining_prev"] == 30
+    assert vacation["vacation_remaining"] == 27
+    book = client.get(f"/api/hr/users/{holiday['id']}/ledger?year=2026")
+    assert book.status_code == 200, book.text
+    shown = book.json()
+    assert shown["vacation_allowance"] == 30
+    assert shown["vacation_remaining"] == 27
+    assert len(shown["vacation_days"]) == 1
+
+
 def test_work_intervals_split_overnight():
     punches = [
         Punch(

@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { api, type DaySummary, type Department, type User, type WorkModel, type WorkModelAssignment } from "../api";
 import { useClosedMonth } from "../closedMonth";
 import { useAuth } from "../auth";
+import AccountBooks from "../components/AccountBooks";
 import DayLegend from "../components/DayLegend";
 import ConfirmDialog from "../components/ConfirmDialog";
 import LoadingNote from "../components/LoadingNote";
@@ -508,26 +509,6 @@ export default function HrUserMonth() {
         </div>
       ) : null}
       {user ? (
-        <label className="flex items-start gap-3 rounded-2xl border border-line bg-card px-4 py-3 text-sm">
-          <input
-            type="checkbox"
-            className="mt-1"
-            checked={Boolean(user.auto_break)}
-            onChange={async (e) => {
-              const next = await api.patchUserSettings(userId, { auto_break: e.target.checked });
-              setUser(next);
-              await reload();
-            }}
-          />
-          <span>
-            <span className="font-medium">Pausenautomatik</span>
-            <span className="mt-0.5 block text-xs text-muted">
-              Ohne gestempelte Pause: über 6 Stunden nur der Überhang bis 30 Minuten, über 9 Stunden nur der Überhang bis 45 Minuten.
-            </span>
-          </span>
-        </label>
-      ) : null}
-      {user ? (
         <form
           className="space-y-2 rounded-2xl border border-line bg-card p-4"
           onSubmit={async (e: FormEvent) => {
@@ -560,7 +541,25 @@ export default function HrUserMonth() {
           <label className="flex items-start gap-3 text-sm">
             <input
               type="checkbox"
-              className="mt-1"
+              className="mt-0.5 h-4 w-4 shrink-0"
+              checked={Boolean(user.auto_break)}
+              onChange={async (e) => {
+                const next = await api.patchUserSettings(userId, { auto_break: e.target.checked });
+                setUser(next);
+                await reload();
+              }}
+            />
+            <span>
+              Pausenautomatik
+              <span className="mt-0.5 block text-xs text-muted">
+                Ohne gestempelte Pause: über 6 Stunden nur der Überhang bis 30 Minuten, über 9 Stunden nur der Überhang bis 45 Minuten.
+              </span>
+            </span>
+          </label>
+          <label className="flex items-start gap-3 text-sm">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 shrink-0"
               checked={webLogin}
               disabled={!isAdmin || ["hr", "admin", "supervisor"].includes(user.role)}
               onChange={(e) => setWebLogin(e.target.checked)}
@@ -745,13 +744,22 @@ export default function HrUserMonth() {
           className="month-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
         />
       </div>
-      <div className="mt-3">
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
         <button type="button" className="text-sm text-present" onClick={() => setOpeningOpen((open) => !open)}>
           {openingOpen ? "Startkonto schließen" : "Startkonto"}
         </button>
+        {user ? (
+          <AccountBooks
+            userId={userId}
+            year={Number(month.slice(0, 4))}
+            attempt={closed.attempt}
+            onChanged={reload}
+          />
+        ) : null}
         {openingOpen ? (
+          <div className="w-full">
           <form
-            className="mt-2 space-y-2 rounded-2xl border border-line bg-card p-4"
+            className="max-w-lg space-y-2 rounded-2xl border border-line bg-card p-4"
             onSubmit={(e) => {
               e.preventDefault();
               setOpeningMsg("");
@@ -802,6 +810,7 @@ export default function HrUserMonth() {
             </button>
             {openingMsg ? <p className="text-sm text-muted">{openingMsg}</p> : null}
           </form>
+          </div>
         ) : null}
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-3 text-sm">

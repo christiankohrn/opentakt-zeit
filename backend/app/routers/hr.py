@@ -27,8 +27,10 @@ from app.closings import (
 from app.datafox import normalize_badge
 from app.database import get_db
 from app.names import compose_display_name, name_sort_key, person_sort_key, split_person_name
+from app.accounts import vacation_days
 from app.models import (
     Absence,
+    AccountEntry,
     AuditEvent,
     CalendarEntry,
     DayAcceptance,
@@ -44,6 +46,7 @@ from app.models import (
 )
 from app.schemas import (
     AbsenceRangeIn,
+    AccountEntryIn,
     CalendarIn,
     CalendarOut,
     ClosingMonthIn,
@@ -593,6 +596,8 @@ def _drop_user_rows(db: Session, user: User, actor: User) -> None:
     db.execute(delete(DayAcceptance).where(DayAcceptance.user_id == uid))
     db.execute(update(MonthClosing).where(MonthClosing.closed_by_id == uid).values(closed_by_id=None))
     db.execute(delete(MonthClosing).where(MonthClosing.user_id == uid))
+    db.execute(update(AccountEntry).where(AccountEntry.created_by_id == uid).values(created_by_id=actor.id))
+    db.execute(delete(AccountEntry).where(AccountEntry.user_id == uid))
     db.execute(update(WorkModelAssignment).where(WorkModelAssignment.created_by_id == uid).values(created_by_id=actor.id))
     db.execute(delete(WorkModelAssignment).where(WorkModelAssignment.user_id == uid))
     db.execute(update(CalendarEntry).where(CalendarEntry.created_by_id == uid).values(created_by_id=actor.id))
@@ -1335,6 +1340,127 @@ def revoke_accept(user_id: int, day: date, request: Request, db: Session = Depen
             payload=json.dumps({"date": day.isoformat()}),
         )
     )
+    db.commit()
+    return {"ok": True}
+
+
+def _entry_out(row: AccountEntry) -> dict:
+    return {
+        "id": row.id,
+        "kind": row.kind,
+        "day": row.day.isoformat(),
+        "amount": row.amount,
+        "reason": row.reason,
+    }
+
+
+@router.get("/users/{user_id}/ledger")
+def user_ledger(
+    user_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    year: int = Query(..., ge=2000, le=2100),
+):
+    _actor(request, db)
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(404, "Nicht gefunden")
+    start = date(year, 1, 1)
+    end = date(year, 12, 31)
+    entries = list(
+        db.scalars(
+            select(AccountEntry)
+            .where(AccountEntry.user_id == user_id, AccountEntry.day >= start, AccountEntry.day <= end)
+            .order_by(AccountEntry.day, AccountEntry.id)
+        )
+    )
+    absences = list(
+        db.scalars(
+            select(Absence)
+            .where(Absence.user_id == user_id, Absence.kind == "vacation", Absence.day >= start, Absence.day <= end)
+            .order_by(Absence.day)
+        )
+    )
+    time_rows = [_entry_out(row) for row in entries if row.kind == "time"]
+    vacation_rows = [_entry_out(row) for row in entries if row.kind == "vacation"]
+    allowance = user.vacation_days_year
+    taken = len(absences)
+    booked = vacation_days(db, user.id, start, end)
+    remaining = None if allowance is None else float(allowance) - taken + booked
+    return {
+        "year": year,
+        "opening_balance_hours": user.opening_balance_hours,
+        "opening_balance_on": user.opening_balance_on.isoformat() if user.opening_balance_on else None,
+        "time_entries": time_rows,
+        "vacation_allowance": allowance,
+        "vacation_days": [{"day": row.day.isoformat(), "note": row.note or ""} for row in absences],
+        "vacation_entries": vacation_rows,
+        "vacation_remaining": remaining,
+    }
+
+
+@router.post("/users/{user_id}/ledger")
+def create_ledger_entry(user_id: int, payload: AccountEntryIn, request: Request, db: Session = Depends(get_db)):
+    actor = _actor(request, db)
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(404, "Nicht gefunden")
+    if payload.amount == 0:
+        raise HTTPException(400, "Betrag ist 0")
+    recalc = require_open(db, [(user_id, payload.day)], payload.confirm_closed)
+    row = AccountEntry(
+        user_id=user_id,
+        kind=payload.kind,
+        day=payload.day,
+        amount=float(payload.amount),
+        reason=payload.reason.strip(),
+        created_by_id=actor.id,
+    )
+    db.add(row)
+    db.flush()
+    db.add(
+        AuditEvent(
+            actor_id=actor.id,
+            action="account.entry",
+            entity_type="user",
+            entity_id=str(user_id),
+            payload=json.dumps(
+                {"id": row.id, "kind": row.kind, "day": row.day.isoformat(), "amount": row.amount, "reason": row.reason},
+                ensure_ascii=False,
+            ),
+        )
+    )
+    db.flush()
+    recalculate_pairs(db, recalc, actor.id)
+    db.commit()
+    return _entry_out(row)
+
+
+@router.delete("/users/{user_id}/ledger/{entry_id}")
+def delete_ledger_entry(
+    user_id: int,
+    entry_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    confirm_closed: bool = Query(False),
+):
+    actor = _actor(request, db)
+    row = db.scalar(select(AccountEntry).where(AccountEntry.id == entry_id, AccountEntry.user_id == user_id))
+    if row is None:
+        raise HTTPException(404, "Nicht gefunden")
+    recalc = require_open(db, [(user_id, row.day)], confirm_closed)
+    db.delete(row)
+    db.add(
+        AuditEvent(
+            actor_id=actor.id,
+            action="account.entry.delete",
+            entity_type="user",
+            entity_id=str(user_id),
+            payload=json.dumps({"id": entry_id, "day": row.day.isoformat()}, ensure_ascii=False),
+        )
+    )
+    db.flush()
+    recalculate_pairs(db, recalc, actor.id)
     db.commit()
     return {"ok": True}
 
