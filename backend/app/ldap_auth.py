@@ -15,11 +15,12 @@ def try_ldap_login(db: Session, username: str, password: str, existing: User | N
         return None
     try:
         from ldap3 import ALL, Connection, Server
+        from ldap3.utils.conv import escape_filter_chars
     except ImportError:
         return None
 
     server = Server(cfg.url, get_info=ALL, connect_timeout=5)
-    user_filter = cfg.user_filter.format(username=username)
+    user_filter = cfg.user_filter.format(username=escape_filter_chars(username))
     bind_kwargs = {}
     if cfg.bind_dn:
         bind_kwargs = {"user": cfg.bind_dn, "password": cfg.bind_password}
