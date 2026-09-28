@@ -41,6 +41,17 @@ def enable_smtp(client):
     return data
 
 
+def test_disabled_mail_logs_no_body(monkeypatch, capsys):
+    from app.config import SmtpConfig
+    from app.mail import send_mail
+
+    monkeypatch.setattr("app.mail.effective_smtp", lambda db=None: SmtpConfig())
+    assert send_mail("a@example.com", "Betreff", "geheimer Inhalt", required=False) is False
+    out = capsys.readouterr().out
+    assert "geheimer Inhalt" not in out
+    assert "a@example.com" in out
+
+
 def test_valid_email():
     assert valid_email("a@example.com")
     assert valid_email("Admin@LocalHost")
