@@ -145,6 +145,33 @@ def test_overnight_shift_still_accrues_until_midnight():
     assert len(work_intervals(punches, date(2026, 8, 7), now=now)) == 1
 
 
+def test_second_clock_in_keeps_earliest_start():
+    punches = [
+        _p_on(date(2026, 8, 5), "in", 8, 0),
+        _p_on(date(2026, 8, 5), "in", 8, 5),
+        _p_on(date(2026, 8, 5), "out", 17, 0),
+    ]
+    day = summarize_day(punches, date(2026, 8, 5), None, now=datetime(2026, 8, 6, tzinfo=ZoneInfo("UTC")))
+    assert day["first_in"] == "08:00"
+    assert abs(day["work_hours"] - 9.0) < 0.05
+    spans = work_intervals(punches, date(2026, 8, 5), now=datetime(2026, 8, 6, tzinfo=ZoneInfo("UTC")))
+    assert len(spans) == 1
+    assert (spans[0][1] - spans[0][0]).total_seconds() == 9 * 3600
+
+
+def test_stray_clock_in_during_break_counts_nothing_twice():
+    punches = [
+        _p_on(date(2026, 8, 5), "in", 8, 0),
+        _p_on(date(2026, 8, 5), "break_start", 12, 0),
+        _p_on(date(2026, 8, 5), "in", 12, 30),
+        _p_on(date(2026, 8, 5), "break_end", 13, 0),
+        _p_on(date(2026, 8, 5), "out", 17, 0),
+    ]
+    day = summarize_day(punches, date(2026, 8, 5), None, now=datetime(2026, 8, 6, tzinfo=ZoneInfo("UTC")))
+    assert abs(day["work_hours"] - 8.0) < 0.05
+    assert abs(day["break_hours"] - 1.0) < 0.05
+
+
 def test_missing_workday_without_booking():
     model = SimpleNamespace(
         hours_mon=8,

@@ -103,7 +103,10 @@ def work_intervals(
     for p in events:
         t = _as_minute(p.server_time)
         if p.kind == "in":
-            open_in = t
+            # Batch imports store stamps verbatim; a second "in" must not
+            # move the start forward and drop the earlier time.
+            if open_in is None and open_break is None:
+                open_in = t
         elif p.kind == "break_start" and open_in:
             intervals.append((open_in, t))
             open_in = None
@@ -169,9 +172,10 @@ def summarize_day(
     for p in events:
         t = _as_minute(p.server_time)
         if p.kind == "in":
-            open_in = t
-            if first_in is None:
-                first_in = t
+            if open_in is None and open_break is None:
+                open_in = t
+                if first_in is None:
+                    first_in = t
         elif p.kind == "break_start" and open_in:
             work += t - open_in
             open_in = None
