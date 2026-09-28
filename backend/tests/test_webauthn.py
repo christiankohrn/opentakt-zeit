@@ -185,3 +185,22 @@ def test_rename_and_delete_passkey(client):
     deleted = client.delete(f"/api/me/passkeys/{pk['id']}")
     assert deleted.status_code == 200
     assert client.get("/api/me/passkeys").json() == []
+
+
+def test_passkey_options_hide_user_state(client):
+    unknown = client.post("/api/auth/passkey/options", json={"username": "gibt-es-nicht"})
+    assert unknown.status_code == 200, unknown.text
+    nobody = unknown.json()
+    assert len(nobody["allowCredentials"]) == 3
+    known = client.post("/api/auth/passkey/options", json={"username": "mitarbeiter"})
+    assert known.status_code == 200, known.text
+    assert set(known.json()) == set(nobody)
+    assert len(known.json()["allowCredentials"]) == 3
+    assert known.json()["allowCredentials"] != nobody["allowCredentials"]
+    login(client)
+    register_passkey(client)
+    client.post("/api/auth/logout")
+    with_key = client.post("/api/auth/passkey/options", json={"username": "admin"})
+    assert with_key.status_code == 200, with_key.text
+    assert set(with_key.json()) == set(nobody)
+    assert len(with_key.json()["allowCredentials"]) == 3

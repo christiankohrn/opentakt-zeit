@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import secrets
 from urllib.parse import urlparse
 
 from fastapi import Request
@@ -104,13 +105,21 @@ def verify_registration(request: Request, credential: dict, expected_challenge: 
     )
 
 
+# Antwort immer auf dieselbe Mindestgröße auffüllen, damit Unbekannte,
+# Konten ohne Passkeys und Konten mit wenigen Passkeys gleich aussehen.
+MIN_ALLOW_CREDENTIALS = 3
+
+
 def authentication_options(
     request: Request, creds: list[WebAuthnCredential]
 ) -> tuple[PublicKeyCredentialRequestOptions, str]:
     rp_id, _ = resolve_rp(request)
+    descriptors = _descriptors(creds)
+    while len(descriptors) < MIN_ALLOW_CREDENTIALS:
+        descriptors.append(PublicKeyCredentialDescriptor(id=secrets.token_bytes(64)))
     options = generate_authentication_options(
         rp_id=rp_id,
-        allow_credentials=_descriptors(creds) or None,
+        allow_credentials=descriptors,
         user_verification=UserVerificationRequirement.PREFERRED,
     )
     return options, rp_id
