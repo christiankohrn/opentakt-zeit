@@ -345,6 +345,38 @@ def test_supervisor_reviews_but_manages_nothing(client):
     assert client.get("/api/hr/reports/journal?month=2026-08").status_code == 403
 
 
+def test_unknown_roles_rejected_on_create_and_patch(client):
+    login(client)
+    models = client.get("/api/hr/work-models").json()
+    created = client.post(
+        "/api/hr/users",
+        json={
+            "username": "falsche-rolle",
+            "display_name": "Falsche Rolle",
+            "role": "gott",
+            "work_model_id": models[0]["id"],
+        },
+    )
+    assert created.status_code == 400
+    people = users_by_name(client)
+    target = people["mitarbeiter"]
+    patched = client.patch(
+        f"/api/hr/users/{target['id']}",
+        json={
+            "username": target["username"],
+            "display_name": target["display_name"],
+            "role": "root",
+            "active": True,
+        },
+    )
+    assert patched.status_code == 400
+    account = client.patch(
+        f"/api/hr/users/{target['id']}/account",
+        json={"role": "superuser"},
+    )
+    assert account.status_code == 400
+
+
 def test_admin_cannot_delete_self(client):
     me = login(client)
     res = client.delete(f"/api/hr/users/{me['id']}")

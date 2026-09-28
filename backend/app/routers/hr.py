@@ -107,6 +107,14 @@ def _actor_full(request: Request, db: Session) -> User:
     return require_hr_full(current_user(request, db))
 
 
+ALLOWED_ROLES = {"employee", "supervisor", "hr", "admin"}
+
+
+def _require_known_role(role: str) -> None:
+    if role not in ALLOWED_ROLES:
+        raise HTTPException(400, "Ungültige Rolle")
+
+
 def _actor_admin(request: Request, db: Session) -> User:
     return require_admin(_actor(request, db))
 
@@ -283,6 +291,7 @@ def list_users(request: Request, db: Session = Depends(get_db)):
 @router.post("/users", response_model=UserCreateOut)
 def create_user(payload: UserWrite, request: Request, db: Session = Depends(get_db)):
     actor = _actor_full(request, db)
+    _require_known_role(payload.role)
     _require_admin_for(actor, payload.role != "employee", ADMIN_ROLE_MSG)
     _require_admin_for(actor, not payload.active, ADMIN_ACTIVE_MSG)
     _require_admin_for(actor, bool(payload.password), ADMIN_PASSWORD_MSG)
@@ -369,6 +378,7 @@ def create_user(payload: UserWrite, request: Request, db: Session = Depends(get_
 @router.patch("/users/{user_id}", response_model=UserOut)
 def patch_user(user_id: int, payload: UserWrite, request: Request, db: Session = Depends(get_db)):
     actor = _actor_full(request, db)
+    _require_known_role(payload.role)
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(404, "Nicht gefunden")
@@ -477,9 +487,6 @@ def patch_user_settings(user_id: int, payload: UserSettingsIn, request: Request,
     return _user_out(user)
 
 
-ALLOWED_ROLES = {"employee", "supervisor", "hr", "admin"}
-
-
 @router.patch("/users/{user_id}/account", response_model=UserOut)
 def patch_user_account(user_id: int, payload: UserAccountIn, request: Request, db: Session = Depends(get_db)):
     actor = _actor_full(request, db)
@@ -508,8 +515,7 @@ def patch_user_account(user_id: int, payload: UserAccountIn, request: Request, d
         user.email = _set_email(payload.email)
     next_role = user.role
     if payload.role is not None:
-        if payload.role not in ALLOWED_ROLES:
-            raise HTTPException(400, "Ungültige Rolle")
+        _require_known_role(payload.role)
         next_role = payload.role
     next_active = user.active if payload.active is None else payload.active
     next_web_login = _web_login_for(next_role, user.web_login)
