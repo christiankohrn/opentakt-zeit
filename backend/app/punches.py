@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth import as_local, local_day_bounds, now_utc
@@ -98,7 +99,18 @@ def record_punch(
         note=note,
     )
     db.add(punch)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError:
+        # Lost a race with the same event id (double submit): the other
+        # request won, so return its row instead of failing with 500.
+        db.rollback()
+        winner = db.scalar(
+            select(Punch).where(Punch.user_id == user.id, Punch.client_event_id == client_event_id)
+        )
+        if winner is None:
+            raise
+        return winner
     from app.closings import refresh_closed_day
 
     refresh_closed_day(db, user, as_local(booked).date(), None)

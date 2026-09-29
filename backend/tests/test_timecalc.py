@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 from app.models import Punch
-from app.timecalc import model_on_day, status_from_punches, summarize_day
+from app.timecalc import model_on_day, status_from_punches, summarize_day, work_intervals
 
 
 def _p(kind: str, hour: int, minute: int = 0) -> Punch:
@@ -109,6 +109,76 @@ def test_forgotten_checkout_not_overnight_when_next_day_starts_anew():
     forgotten = summarize_day(punches, date(2026, 8, 24), None, now=now)
     assert "checkout_missing" in forgotten["warnings"]
     assert "overnight" not in forgotten["warnings"]
+
+
+def test_forgotten_checkout_accrues_no_phantom_time():
+    punches = [
+        _p_on(date(2026, 8, 24), "in", 14, 0),
+        _p_on(date(2026, 8, 25), "in", 6, 0),
+        _p_on(date(2026, 8, 25), "out", 14, 0),
+    ]
+    now = datetime(2026, 8, 26, tzinfo=ZoneInfo("UTC"))
+    forgotten = summarize_day(punches, date(2026, 8, 24), _full_week(), now=now)
+    assert "checkout_missing" in forgotten["warnings"]
+    assert forgotten["work_hours"] == 0
+    assert forgotten["open"] is True
+    assert work_intervals(punches, date(2026, 8, 24), now=now) == []
+
+
+def test_forgotten_checkout_without_any_later_punch():
+    punches = [_p_on(date(2026, 8, 24), "in", 14, 0)]
+    now = datetime(2026, 8, 26, tzinfo=ZoneInfo("UTC"))
+    forgotten = summarize_day(punches, date(2026, 8, 24), _full_week(), now=now)
+    assert "checkout_missing" in forgotten["warnings"]
+    assert forgotten["work_hours"] == 0
+
+
+def test_overnight_shift_still_accrues_until_midnight():
+    punches = [
+        _p_on(date(2026, 8, 7), "in", 22, 0),
+        _p_on(date(2026, 8, 8), "out", 6, 0),
+    ]
+    now = datetime(2026, 8, 9, tzinfo=ZoneInfo("UTC"))
+    night = summarize_day(punches, date(2026, 8, 7), None, now=now)
+    assert "overnight" in night["warnings"]
+    assert abs(night["work_hours"] - 2.0) < 0.05
+    assert len(work_intervals(punches, date(2026, 8, 7), now=now)) == 1
+
+
+def test_second_clock_in_keeps_earliest_start():
+    punches = [
+        _p_on(date(2026, 8, 5), "in", 8, 0),
+        _p_on(date(2026, 8, 5), "in", 8, 5),
+        _p_on(date(2026, 8, 5), "out", 17, 0),
+    ]
+    day = summarize_day(punches, date(2026, 8, 5), None, now=datetime(2026, 8, 6, tzinfo=ZoneInfo("UTC")))
+    assert day["first_in"] == "08:00"
+    assert abs(day["work_hours"] - 9.0) < 0.05
+    spans = work_intervals(punches, date(2026, 8, 5), now=datetime(2026, 8, 6, tzinfo=ZoneInfo("UTC")))
+    assert len(spans) == 1
+    assert (spans[0][1] - spans[0][0]).total_seconds() == 9 * 3600
+
+
+def test_stray_clock_in_during_break_counts_nothing_twice():
+    punches = [
+        _p_on(date(2026, 8, 5), "in", 8, 0),
+        _p_on(date(2026, 8, 5), "break_start", 12, 0),
+        _p_on(date(2026, 8, 5), "in", 12, 30),
+        _p_on(date(2026, 8, 5), "break_end", 13, 0),
+        _p_on(date(2026, 8, 5), "out", 17, 0),
+    ]
+    day = summarize_day(punches, date(2026, 8, 5), None, now=datetime(2026, 8, 6, tzinfo=ZoneInfo("UTC")))
+    assert abs(day["work_hours"] - 8.0) < 0.05
+    assert abs(day["break_hours"] - 1.0) < 0.05
+
+
+def test_future_workday_has_no_delta():
+    now = datetime(2026, 8, 18, tzinfo=ZoneInfo("UTC"))
+    future = summarize_day([], date(2026, 8, 19), _full_week(), now=now)
+    assert future["soll_hours"] == 8
+    assert future["work_hours"] == 0
+    assert future["delta_hours"] == 0
+    assert future["warnings"] == []
 
 
 def test_missing_workday_without_booking():

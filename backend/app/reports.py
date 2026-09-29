@@ -8,9 +8,11 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.auth import as_local, now_utc
 from app.balance import days_in_range, hired_on, is_employed, month_days
+from app.holidays import calendar_map
 from app.models import Absence, AccountEntry, Punch, User
 from app.names import name_sort_key
-from app.timecalc import punches_window_for_month, work_intervals
+from app.timecalc import punches_window_for_month, soll_hours, work_intervals
+from app.workmodels import load_timelines, model_for
 
 JUBILEE_YEARS = (10, 25, 40)
 NIGHT_WINDOWS = (
@@ -48,6 +50,16 @@ MONTHS = (
     "November",
     "Dezember",
 )
+
+
+CSV_UNSAFE_LEAD = ("=", "+", "-", "@", "\t", "\r", "\n")
+
+
+def safe_csv_cell(value):
+    """Prefix spreadsheet formula triggers so exports stay plain text."""
+    if isinstance(value, str) and value.startswith(CSV_UNSAFE_LEAD):
+        return "'" + value
+    return value
 
 
 def year_bounds(year: int) -> tuple[date, date]:
@@ -149,12 +161,41 @@ def _in_period(day: date, start: date, end: date) -> bool:
     return start <= day <= end
 
 
-def _count_absence_days(user: User, absences: list[Absence], start: date, end: date) -> int:
+def _count_absence_days(
+    user: User,
+    absences: list[Absence],
+    start: date,
+    end: date,
+    skip: set[date] | None = None,
+) -> int:
     overlap = employment_overlap(user, start, end)
     if overlap is None:
         return 0
     lo, hi = overlap
-    return sum(1 for row in absences if row.user_id == user.id and lo <= row.day <= hi)
+    return sum(
+        1
+        for row in absences
+        if row.user_id == user.id and lo <= row.day <= hi and (not skip or row.day not in skip)
+    )
+
+
+def _vacation_free_days(db: Session, users: list[User], start: date, end: date) -> dict[int, set[date]]:
+    """Days that consume no vacation quota: roster weekends plus public holidays."""
+    timelines = load_timelines(db, [user.id for user in users])
+    cal = calendar_map(db, start, end)
+    free: dict[int, set[date]] = {}
+    for user in users:
+        days = set()
+        cur = start
+        while cur <= end:
+            entry = cal.get(cur)
+            if entry is not None and entry.kind in {"holiday", "company_off"}:
+                days.add(cur)
+            elif soll_hours(model_for(timelines.get(user.id, []), cur, user.work_model), cur) <= 0:
+                days.add(cur)
+            cur += timedelta(days=1)
+        free[user.id] = days
+    return free
 
 
 def absence_days_report(
@@ -171,10 +212,14 @@ def absence_days_report(
     absences = list(
         db.scalars(select(Absence).where(Absence.kind == kind, Absence.day >= year_start, Absence.day <= max(end, year_end)))
     )
+    free: dict[int, set[date]] = {}
+    if kind == "vacation":
+        free = _vacation_free_days(db, people, min(start, year_start), max(end, year_end))
     rows = []
     for user in people:
-        period_days = _count_absence_days(user, absences, start, end)
-        year_days = _count_absence_days(user, absences, year_start, year_end)
+        skip = free.get(user.id)
+        period_days = _count_absence_days(user, absences, start, end, skip)
+        year_days = _count_absence_days(user, absences, year_start, year_end, skip)
         row = {
             "user_id": user.id,
             "display_name": user.display_name,
@@ -231,6 +276,10 @@ def person_month_snapshot(
         day = date.fromisoformat(str(summary["date"]))
         kind = ((summary.get("absence") or {}) or {}).get("kind") or ""
         if not is_employed(user, day) or day < year_start or day > year_end:
+            continue
+        if kind == "vacation" and float(summary.get("soll_hours") or 0) <= 0:
+            # Weekends and public holidays carry no target hours: booked rows
+            # stay visible on the day, but consume no vacation quota.
             continue
         if kind == "vacation":
             vac_year += 1

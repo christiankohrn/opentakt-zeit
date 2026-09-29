@@ -75,6 +75,7 @@ from app.security import hash_password
 from app.security_policy import POLICY_ROLES, POLICY_VALUES, get_policies, passkey_counts, set_policies
 from app.holidays import STATES, bundesland_of, calendar_map
 from app.mail import MailError, apply_smtp, has_open_invite, normalize_email, send_access_mail, send_test_mail, smtp_ready, smtp_status, valid_email
+from app.reports import safe_csv_cell
 from app.timecalc import punches_window_for_month, summarize_day
 from app.workmodels import (
     ensure_initial_assignment,
@@ -1845,16 +1846,19 @@ def export_csv(
                 day_cal = day.get("calendar") or {}
                 writer.writerow(
                     [
-                        user.display_name,
-                        day["date"],
-                        day["first_in"] or "",
-                        day["last_out"] or "",
-                        format_hm(day["work_hours"]),
-                        format_hm(day["break_hours"]),
-                        format_hm(day["soll_hours"]),
-                        format_hm(day["delta_hours"], signed=True),
-                        (day["absence"] or {}).get("kind", "") if day["absence"] else day_cal.get("name", ""),
-                        ",".join(_warn_de(w) for w in day["warnings"]),
+                        safe_csv_cell(cell)
+                        for cell in [
+                            user.display_name,
+                            day["date"],
+                            day["first_in"] or "",
+                            day["last_out"] or "",
+                            format_hm(day["work_hours"]),
+                            format_hm(day["break_hours"]),
+                            format_hm(day["soll_hours"]),
+                            format_hm(day["delta_hours"], signed=True),
+                            (day["absence"] or {}).get("kind", "") if day["absence"] else day_cal.get("name", ""),
+                            ",".join(_warn_de(w) for w in day["warnings"]),
+                        ]
                     ]
                 )
             cur += timedelta(days=1)

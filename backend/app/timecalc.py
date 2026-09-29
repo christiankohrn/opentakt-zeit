@@ -103,7 +103,10 @@ def work_intervals(
     for p in events:
         t = _as_minute(p.server_time)
         if p.kind == "in":
-            open_in = t
+            # Batch imports store stamps verbatim; a second "in" must not
+            # move the start forward and drop the earlier time.
+            if open_in is None and open_break is None:
+                open_in = t
         elif p.kind == "break_start" and open_in:
             intervals.append((open_in, t))
             open_in = None
@@ -119,8 +122,20 @@ def work_intervals(
                 open_in = None
     day_end = _as_minute(min(now, end_utc))
     if open_in:
+        if now >= end_utc and not _closed_later(punches, end_utc):
+            # Forgotten checkout: the shift was never closed, so the tail
+            # until midnight is unknown and must not be credited.
+            return intervals
         intervals.append((open_in, day_end))
     return intervals
+
+
+def _closed_later(punches: list[Punch], end_utc: datetime) -> bool:
+    """Whether a punch after this day continues the open shift (night shift)."""
+    later = [p for p in punches if p.voided_at is None and _as_utc(p.server_time) >= end_utc]
+    later.sort(key=lambda p: _as_utc(p.server_time))
+    next_kind = later[0].kind if later else None
+    return next_kind is not None and next_kind != "in"
 
 
 def summarize_day(
@@ -157,9 +172,10 @@ def summarize_day(
     for p in events:
         t = _as_minute(p.server_time)
         if p.kind == "in":
-            open_in = t
-            if first_in is None:
-                first_in = t
+            if open_in is None and open_break is None:
+                open_in = t
+                if first_in is None:
+                    first_in = t
         elif p.kind == "break_start" and open_in:
             work += t - open_in
             open_in = None
@@ -178,12 +194,14 @@ def summarize_day(
             last_out = t
 
     day_end = _as_minute(min(now, end_utc))
-    if open_break:
-        pause += day_end - open_break
+    if open_break or open_in:
         still_open = True
-    if open_in:
-        work += day_end - open_in
-        still_open = True
+        credit_tail = now < end_utc or _closed_later(punches, end_utc)
+        if credit_tail:
+            if open_break:
+                pause += day_end - open_break
+            if open_in:
+                work += day_end - open_in
 
     work_minutes = int(work.total_seconds() // 60)
     pause_minutes = int(pause.total_seconds() // 60)
@@ -209,14 +227,7 @@ def summarize_day(
     soll = soll_hours(model, day)
     warnings: list[str] = []
     if still_open and now >= end_utc:
-        later = [
-            p
-            for p in punches
-            if p.voided_at is None and _as_utc(p.server_time) >= end_utc
-        ]
-        later.sort(key=lambda p: _as_utc(p.server_time))
-        next_kind = later[0].kind if later else None
-        if next_kind and next_kind != "in":
+        if _closed_later(punches, end_utc):
             warnings.append("overnight")
         else:
             warnings.append("checkout_missing")
@@ -289,6 +300,11 @@ def summarize_day(
         else:
             result["delta_hours"] = result["work_hours"] - result["soll_hours"]
     today = as_local(now).date()
+    if day > today:
+        # Nothing settled yet: future days carry no delta and no warnings,
+        # so journals and balances agree without capping each sum separately.
+        result["delta_hours"] = 0.0
+        result["warnings"] = []
     if (
         result["soll_hours"] > 0
         and not events

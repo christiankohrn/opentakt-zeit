@@ -24,6 +24,7 @@ from app.reports import (
     jubilees_report,
     month_balances_report,
     night_hours_report,
+    safe_csv_cell,
     sick_days_report,
     vacation_days_report,
     year_bounds,
@@ -66,7 +67,7 @@ def _csv_response(filename: str, headers: list[str], rows: list[list[object]]) -
     buf = io.StringIO()
     writer = csv.writer(buf, delimiter=";")
     writer.writerow(headers)
-    writer.writerows(rows)
+    writer.writerows([[safe_csv_cell(cell) for cell in row] for row in rows])
     payload = "\ufeff" + buf.getvalue()
     return StreamingResponse(
         iter([payload]),

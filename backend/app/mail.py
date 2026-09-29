@@ -176,7 +176,7 @@ def send_mail(to: str, subject: str, body: str, *, db: Session | None = None, re
     if not smtp_ready_config(smtp):
         if required:
             raise MailError("Mailserver ist nicht eingerichtet")
-        print(f"[mail-disabled] to={to} subject={subject}\n{body}")
+        print(f"[mail-disabled] to={to} subject={subject} body_chars={len(body)}")
         return False
     msg = EmailMessage()
     msg["From"] = smtp.from_addr

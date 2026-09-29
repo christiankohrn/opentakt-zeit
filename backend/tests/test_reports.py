@@ -143,6 +143,30 @@ def test_vacation_days_period_and_year(client):
     assert_pdf(client.get("/api/hr/reports/vacation-days.pdf?year=2026"))
 
 
+def test_vacation_weekends_consume_no_quota(client):
+    login(client)
+    person = create_person(
+        client, "urlaub-willi", "Willi Urlaub", hired_on="2025-01-01", vacation_days_year=30
+    )
+    booked = client.post(
+        f"/api/hr/users/{person['id']}/absences",
+        json={"kind": "vacation", "start": "2026-03-02", "end": "2026-03-08"},
+    )
+    assert booked.status_code == 200, booked.text
+    res = client.get(
+        f"/api/hr/reports/vacation-days?from=2026-03-01&to=2026-03-31&user_ids={person['id']}"
+    )
+    assert res.status_code == 200, res.text
+    row = res.json()["people"][0]
+    assert row["period_days"] == 5
+    assert row["year_days"] == 5
+    journal = client.get(f"/api/hr/reports/journal?month=2026-03&user_ids={person['id']}")
+    assert journal.status_code == 200, journal.text
+    accounts = journal.json()["people"][0]["accounts"]
+    assert accounts["vacation_month"] == 5
+    assert accounts["vacation_remaining"] == 25
+
+
 def test_month_balances_count_future_vacation(client):
     login(client)
     person = create_person(client, "urlaub-clara", "Clara Urlaub", hired_on="2025-01-01")
@@ -397,6 +421,44 @@ def test_journal_account_matches_the_month_row_to_the_minute(client):
     ]
     pdf.journal_person(columns, rows, accounts, note="Resturlaub = Jahresanspruch - genommen - verplant.")
     assert pdf_page_count(pdf.bytes()) == 1
+
+
+def test_journal_month_row_matches_flex_in_current_month(client):
+    login(client)
+    person = create_person(client, "journal-karla", "Karla Journal", hired_on="2026-01-01")
+    today = date.today()
+    month = f"{today.year}-{today.month:02d}"
+    res = client.get(f"/api/hr/reports/journal?month={month}&user_id={person['id']}")
+    assert res.status_code == 200, res.text
+    report = res.json()["people"][0]
+    month_row = next(row for row in report["rows"] if row["type"] == "month")
+    assert month_row["delta_hours"] == report["accounts"]["flex_month"]
+
+
+def test_csv_neutralizes_formula_cells(client):
+    from app.reports import safe_csv_cell
+
+    assert safe_csv_cell("=1+1") == "'=1+1"
+    assert safe_csv_cell("+2+2") == "'+2+2"
+    assert safe_csv_cell("-2+2") == "'-2+2"
+    assert safe_csv_cell("@SUM(A1)") == "'@SUM(A1)"
+    assert safe_csv_cell("Normal, Name") == "Normal, Name"
+    assert safe_csv_cell(4) == 4
+    login(client)
+    person = create_person(client, "formel-fritz", "=1+1")
+    res = client.get("/api/hr/reports/sick-days.csv?year=2026")
+    assert res.status_code == 200, res.text
+    assert "'=1+1;" in res.text
+    assert "\n=1+1;" not in res.text
+    booked = client.post(
+        f"/api/hr/users/{person['id']}/absences",
+        json={"kind": "vacation", "start": "2026-03-02", "end": "2026-03-02"},
+    )
+    assert booked.status_code == 200, booked.text
+    export = client.get(f"/api/hr/export.csv?month=2026-03&user_id={person['id']}")
+    assert export.status_code == 200, export.text
+    assert "'=1+1;" in export.text
+    assert "\n=1+1;" not in export.text
 
 
 def test_manual_bookings_move_time_and_vacation_accounts(client):
