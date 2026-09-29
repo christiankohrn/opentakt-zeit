@@ -8,6 +8,9 @@ from sqlalchemy.orm import Session
 from app.auth import now_utc
 from app.config import get_config
 from app.models import EspTerminal, OrgSettings
+from app.security import check_secret as check_terminal_secret
+from app.security import hash_secret as hash_terminal_secret
+from app.security import is_secret_hash as _is_secret_hash
 
 FIRMWARE_MAX_BYTES = 4 * 1024 * 1024
 
@@ -23,8 +26,13 @@ def org_row(db: Session) -> OrgSettings:
 
 
 def effective_secret(db: Session) -> str:
-    stored = (org_row(db).esp_terminal_secret or "").strip()
+    row = org_row(db)
+    stored = (row.esp_terminal_secret or "").strip()
     if stored:
+        if not _is_secret_hash(stored):
+            row.esp_terminal_secret = hash_terminal_secret(stored)
+            db.commit()
+            stored = row.esp_terminal_secret
         return stored
     return (get_config().esp_terminal_secret or "").strip()
 
@@ -50,6 +58,13 @@ def firmware_url() -> str:
 def normalize_device_id(value: str | None) -> str:
     raw = (value or "").strip().replace(":", "").replace("-", "").replace(" ", "")
     return raw.upper()[:80]
+
+
+def get_device(db: Session, device_id: str) -> EspTerminal | None:
+    key = normalize_device_id(device_id)
+    if not key:
+        return None
+    return db.scalar(select(EspTerminal).where(EspTerminal.device_id == key))
 
 
 def touch_device(

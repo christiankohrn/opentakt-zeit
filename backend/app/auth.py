@@ -12,6 +12,7 @@ from app.models import User
 from app.security import verify_password
 
 HR_ROLES = {"hr", "admin", "supervisor"}
+HR_FULL_ROLES = {"hr", "admin"}
 
 
 def normalize_username(value: str) -> str:
@@ -39,7 +40,7 @@ def local_day_bounds(day) -> tuple[datetime, datetime]:
     return start.astimezone(ZoneInfo("UTC")), end.astimezone(ZoneInfo("UTC"))
 
 
-def current_user(request: Request, db: Session) -> User:
+def current_user(request: Request, db: Session, *, allow_password_change: bool = False) -> User:
     uid = request.session.get("uid")
     if not uid:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Nicht angemeldet")
@@ -50,6 +51,8 @@ def current_user(request: Request, db: Session) -> User:
     if int(request.session.get("rev") or 0) != int(user.session_rev or 0):
         request.session.clear()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Nicht angemeldet")
+    if user.must_change_password and not allow_password_change:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bitte zuerst das Passwort ändern")
     return user
 
 
@@ -65,6 +68,14 @@ def bump_session_rev(user: User) -> None:
 
 def require_hr(user: User) -> User:
     if user.role not in HR_ROLES:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Keine Berechtigung")
+    return user
+
+
+def require_hr_full(user: User) -> User:
+    """Personal und Admin. Vorgesetzte prüfen Zeiten, verwalten aber kein Personal."""
+
+    if user.role not in HR_FULL_ROLES:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Keine Berechtigung")
     return user
 

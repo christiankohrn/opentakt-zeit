@@ -50,6 +50,7 @@ chown -R deploy:zeiterfassung "$APP_ROOT"
 chown -R zeiterfassung:zeiterfassung "$DATA"
 chown root:zeiterfassung "$CONF"
 chmod 750 "$DATA" "$CONF"
+chmod 700 "$DATA/backups"
 chmod a+x "$APP_ROOT/deploy/"*.sh
 
 if [ ! -f "$CONF/config.toml" ]; then
@@ -57,9 +58,6 @@ if [ ! -f "$CONF/config.toml" ]; then
   DATAFOX=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
   ESPSEC=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
   ADMIN_PW=$(python3 -c 'import secrets; print(secrets.token_urlsafe(12))')
-  HR_PW=$(python3 -c 'import secrets; print(secrets.token_urlsafe(12))')
-  EMP_PW=$(python3 -c 'import secrets; print(secrets.token_urlsafe(12))')
-  SHIFT_PW=$(python3 -c 'import secrets; print(secrets.token_urlsafe(12))')
   cat >"$CONF/config.toml" <<EOF
 environment = "$ENVIRONMENT"
 secret_key = "$SECRET"
@@ -76,12 +74,6 @@ esp_terminal_secret = "$ESPSEC"
 [seed]
 admin_username = "admin"
 admin_password = "$ADMIN_PW"
-hr_username = "personal"
-hr_password = "$HR_PW"
-employee_username = "mitarbeiter"
-employee_password = "$EMP_PW"
-shift_username = "erika"
-shift_password = "$SHIFT_PW"
 
 [smtp]
 enabled = false
@@ -93,9 +85,6 @@ EOF
   chown root:zeiterfassung "$CONF/config.toml"
   cat >"$CONF/seed-once.txt" <<EOF
 admin / $ADMIN_PW
-personal / $HR_PW
-mitarbeiter / $EMP_PW
-erika / $SHIFT_PW
 EOF
   chmod 600 "$CONF/seed-once.txt"
 fi

@@ -18,6 +18,20 @@ def test_copy_sqlite_roundtrip(tmp_path):
     copied.close()
 
 
+def test_backup_files_are_owner_only():
+    from app.jobs.backup import _backup_root, run
+
+    run()
+    root = _backup_root()
+    assert (root.stat().st_mode & 0o777) == 0o700
+    for sub in ("daily", "monthly", "yearly"):
+        assert ((root / sub).stat().st_mode & 0o777) == 0o700
+    dbs = list(root.rglob("*.db"))
+    assert dbs
+    for db in dbs:
+        assert (db.stat().st_mode & 0o777) == 0o600
+
+
 def test_prune_keeps_newest(tmp_path):
     folder = tmp_path / "daily"
     folder.mkdir()

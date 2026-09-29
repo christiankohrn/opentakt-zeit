@@ -1,11 +1,14 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type WorkModel } from "../api";
+import { useAuth } from "../auth";
 import LoadingNote from "../components/LoadingNote";
 import SearchField, { matchesQuery } from "../components/SearchField";
 import { formatDecimal } from "../labels";
 
 export default function HrModels() {
+  const { user: me } = useAuth();
+  const canManage = me?.role === "hr" || me?.role === "admin";
   const [models, setModels] = useState<WorkModel[]>([]);
   const [name, setName] = useState("Teilzeit 20h");
   const [kind, setKind] = useState("flextime");
@@ -67,32 +70,34 @@ export default function HrModels() {
         ))}
       </ul>
       : null}
-      <form onSubmit={onSubmit} className="mt-6 space-y-3 rounded-2xl border border-line bg-card p-4">
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Name"
-          className="w-full rounded-lg border border-line bg-bg px-3 py-2"
-          required
-        />
-        <select
-          className="w-full rounded-lg border border-line bg-bg px-3 py-2"
-          value={kind}
-          onChange={(e) => setKind(e.target.value)}
-        >
-          <option value="flextime">Gleitzeit</option>
-          <option value="shift">Schicht</option>
-        </select>
-        <input
-          value={hours}
-          onChange={(e) => setHours(e.target.value)}
-          placeholder="Stunden Mo–So, kommagetrennt"
-          className="w-full rounded-lg border border-line bg-bg px-3 py-2"
-        />
-        <button type="submit" className="w-full rounded-xl bg-present py-2 text-white">
-          Modell anlegen
-        </button>
-      </form>
+      {canManage ? (
+        <form onSubmit={onSubmit} className="mt-6 space-y-3 rounded-2xl border border-line bg-card p-4">
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Name"
+            className="w-full rounded-lg border border-line bg-bg px-3 py-2"
+            required
+          />
+          <select
+            className="w-full rounded-lg border border-line bg-bg px-3 py-2"
+            value={kind}
+            onChange={(e) => setKind(e.target.value)}
+          >
+            <option value="flextime">Gleitzeit</option>
+            <option value="shift">Schicht</option>
+          </select>
+          <input
+            value={hours}
+            onChange={(e) => setHours(e.target.value)}
+            placeholder="Stunden Mo–So, kommagetrennt"
+            className="w-full rounded-lg border border-line bg-bg px-3 py-2"
+          />
+          <button type="submit" className="w-full rounded-xl bg-present py-2 text-white">
+            Modell anlegen
+          </button>
+        </form>
+      ) : null}
     </div>
   );
 }

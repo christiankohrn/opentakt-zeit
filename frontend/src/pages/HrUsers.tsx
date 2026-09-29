@@ -82,6 +82,7 @@ function payrollMonth() {
 export default function HrUsers() {
   const { user: me } = useAuth();
   const isAdmin = me?.role === "admin";
+  const canManage = me?.role === "hr" || me?.role === "admin";
   const [params, setParams] = useSearchParams();
   const month = params.get("month") || payrollMonth();
   const deptFilter = params.get("dept") || "";
@@ -305,13 +306,15 @@ export default function HrUsers() {
         <Link to="/feiertage" className="text-muted">
           Feiertage
         </Link>
-        <button type="button" className="text-present" onClick={() => (open ? requestClose() : setOpen(true))}>
-          {open ? "Schließen" : "Neu"}
-        </button>
+        {canManage ? (
+          <button type="button" className="text-present" onClick={() => (open ? requestClose() : setOpen(true))}>
+            {open ? "Schließen" : "Neu"}
+          </button>
+        ) : null}
       </div>
       {info ? <p className="mt-2 text-sm text-present">{info}</p> : null}
       {!open && error ? <p className="mt-2 text-sm text-danger">{error}</p> : null}
-      {open ? (
+      {open && canManage ? (
         <form id="new-user-form" noValidate onSubmit={onSubmit} className="mt-4 space-y-3 rounded-2xl border border-line bg-card p-4">
           <label className="block text-xs text-muted">
             Vorname

@@ -66,6 +66,8 @@ def ensure_schema() -> None:
         alters.append("ALTER TABLE users ADD COLUMN web_login BOOLEAN NOT NULL DEFAULT 1")
     if "session_rev" not in cols:
         alters.append("ALTER TABLE users ADD COLUMN session_rev INTEGER NOT NULL DEFAULT 0")
+    if "must_change_password" not in cols:
+        alters.append("ALTER TABLE users ADD COLUMN must_change_password BOOLEAN NOT NULL DEFAULT 0")
     if "hired_on" not in cols:
         alters.append("ALTER TABLE users ADD COLUMN hired_on DATE")
     if "left_on" not in cols:
@@ -126,6 +128,8 @@ def ensure_schema() -> None:
         alters.append("ALTER TABLE org_settings ADD COLUMN esp_ok_line2 VARCHAR(80) NOT NULL DEFAULT '{kind} {flex_month}'")
     if "esp_terminal_secret" not in org_cols:
         alters.append("ALTER TABLE org_settings ADD COLUMN esp_terminal_secret VARCHAR(200) NOT NULL DEFAULT ''")
+    if "import_token" not in org_cols:
+        alters.append("ALTER TABLE org_settings ADD COLUMN import_token VARCHAR(200) NOT NULL DEFAULT ''")
     if "esp_firmware_version" not in org_cols:
         alters.append("ALTER TABLE org_settings ADD COLUMN esp_firmware_version INTEGER NOT NULL DEFAULT 0")
     punch_cols = {c["name"] for c in inspect(engine).get_columns("punches")} if inspect(engine).has_table("punches") else set()
@@ -159,6 +163,22 @@ def ensure_schema() -> None:
         db.commit()
     finally:
         db.close()
+    _restrict_db_permissions()
+
+
+def _restrict_db_permissions() -> None:
+    """Datenbankdateien nur für den Besitzer lesbar machen (Secrets!)."""
+    try:
+        base = Path(get_config().database_path)
+    except Exception:
+        return
+    for suffix in ("", "-wal", "-shm", "-journal"):
+        try:
+            candidate = base if not suffix else base.parent / (base.name + suffix)
+            if candidate.is_file():
+                candidate.chmod(0o600)
+        except OSError:
+            continue
 
 
 def get_db() -> Generator[Session, None, None]:

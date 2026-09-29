@@ -12,9 +12,13 @@ from app.config import get_config
 from app.database import SessionLocal
 from app.models import Absence, Punch, User, WorkModel
 from app.security import hash_password
+from app.seed import seed_if_empty
 
 TZ = ZoneInfo("Europe/Berlin")
 UTC = ZoneInfo("UTC")
+
+# Nur für lokale Demo-Daten. Das Skript gibt die Logins auf stdout aus.
+DEMO_PASSWORD = "change-me"
 
 
 def _at(day: date, hour: int, minute: int = 0) -> datetime:
@@ -36,14 +40,41 @@ def _punch(user_id: int, day: date, kind: str, hour: int, minute: int = 0, *, se
     return p
 
 
+def _ensure_demo_user(db, *, username: str, display_name: str, email: str, work_model_id: int | None) -> User:
+    key = normalize_username(username)
+    user = db.scalar(select(User).where(User.username == key))
+    if user is None:
+        user = User(
+            username=key,
+            display_name=display_name,
+            email=email,
+            password_hash=hash_password(DEMO_PASSWORD),
+            role="employee",
+            work_model_id=work_model_id,
+            auth_source="local",
+        )
+        db.add(user)
+        db.flush()
+        print(f"Benutzer {key} / {DEMO_PASSWORD} angelegt")
+    return user
+
+
 def run() -> None:
     get_config()
     db = SessionLocal()
     try:
-        user = db.scalar(select(User).where(User.username == normalize_username("mitarbeiter")))
+        seed_if_empty(db)
         admin = db.scalar(select(User).where(User.username == normalize_username("admin")))
-        if not user or not admin:
-            raise SystemExit("Seed-User mitarbeiter/admin fehlen")
+        if not admin:
+            raise SystemExit("Seed-Admin fehlt")
+        flextime = db.scalar(select(WorkModel).where(WorkModel.kind == "flextime"))
+        user = _ensure_demo_user(
+            db,
+            username="mitarbeiter",
+            display_name="Max Mustermann",
+            email="mitarbeiter@localhost",
+            work_model_id=flextime.id if flextime else None,
+        )
 
         db.execute(delete(Punch).where(Punch.user_id == user.id))
         db.execute(delete(Absence).where(Absence.user_id == user.id))
@@ -121,7 +152,6 @@ def run() -> None:
 
 
 def _seed_erika(db, admin: User) -> None:
-    cfg = get_config()
     shift = db.scalar(select(WorkModel).where(WorkModel.kind == "shift"))
     if not shift:
         shift = WorkModel(
@@ -137,24 +167,15 @@ def _seed_erika(db, admin: User) -> None:
         )
         db.add(shift)
         db.flush()
-    username = normalize_username(cfg.seed.shift_username)
-    erika = db.scalar(select(User).where(User.username == username))
-    if not erika:
-        erika = User(
-            username=username,
-            display_name="Erika Schicht",
-            email="erika@localhost",
-            password_hash=hash_password(cfg.seed.shift_password),
-            role="employee",
-            work_model_id=shift.id,
-            auth_source="local",
-        )
-        db.add(erika)
-        db.flush()
-        print(f"Benutzer {username} / {cfg.seed.shift_password} angelegt")
-    else:
-        erika.work_model_id = shift.id
-        erika.display_name = "Erika Schicht"
+    erika = _ensure_demo_user(
+        db,
+        username="erika",
+        display_name="Erika Schicht",
+        email="erika@localhost",
+        work_model_id=shift.id,
+    )
+    erika.work_model_id = shift.id
+    erika.display_name = "Erika Schicht"
 
     db.execute(delete(Punch).where(Punch.user_id == erika.id))
     db.execute(delete(Absence).where(Absence.user_id == erika.id))

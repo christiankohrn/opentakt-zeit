@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hmac
 import json
 import logging
 import secrets
@@ -16,15 +15,19 @@ from app.database import get_db
 from app.esp_display import DEFAULT_OK_LINE1, DEFAULT_OK_LINE2, LINE_MAX, punch_values, render_line
 from app.esp_service import (
     FIRMWARE_MAX_BYTES,
+    check_terminal_secret,
     device_label,
     effective_secret,
     firmware_path,
     firmware_url,
+    get_device,
+    hash_terminal_secret,
     normalize_device_id,
     org_row,
     secret_source,
     touch_device,
 )
+from app.ratelimit import ESP_MAX, ESP_WINDOW, check, clear, client_key, record
 from app.models import AuditEvent, EspTerminal, Punch, User
 from app.schemas import (
     EspDeviceOut,
@@ -49,14 +52,7 @@ def _secret(db: Session) -> str:
 
 
 def _secret_ok(db: Session, provided: str) -> bool:
-    expected = _secret(db)
-    if not expected or not provided:
-        return False
-    left = provided.encode("utf-8")
-    right = expected.encode("utf-8")
-    if len(left) != len(right):
-        return False
-    return hmac.compare_digest(left, right)
+    return check_terminal_secret(provided, _secret(db))
 
 
 def _provided_key(request: Request) -> str:
@@ -67,10 +63,14 @@ def _provided_key(request: Request) -> str:
 
 
 def _require_terminal(request: Request, db: Session) -> None:
+    key = client_key(request, "esp")
+    check(key, ESP_MAX, ESP_WINDOW)
     if not _secret(db):
         raise HTTPException(503, "ESP-Terminal nicht konfiguriert")
     if not _secret_ok(db, _provided_key(request)):
+        record(key, ESP_WINDOW)
         raise HTTPException(401, "Falsches Secret")
+    clear(key)
 
 
 def _client_ip(request: Request) -> str:
@@ -180,6 +180,12 @@ def punch(payload: EspPunchIn, request: Request, db: Session = Depends(get_db)):
 @router.post("/hello", response_model=EspHelloOut)
 def hello(payload: EspHelloIn, request: Request, db: Session = Depends(get_db)):
     _require_terminal(request, db)
+    # Unbekannte IDs bekommen bewusst eine leere Antwort und legen keine
+    # Geräte an: Sonst könnte jeder Secret-Inhaber fremde Geräte-IDs
+    # aufzählen und deren WLAN-Zugangsdaten abholen. Geräte entstehen bei
+    # der ersten Buchung und erhalten danach ihre Provisionierung.
+    if get_device(db, payload.device_id) is None:
+        return EspHelloOut()
     device = touch_device(
         db,
         payload.device_id,
@@ -205,12 +211,13 @@ def _admin(request: Request, db: Session) -> User:
     return require_admin(current_user(request, db))
 
 
-def _settings_out(db: Session) -> EspTerminalSettingsOut:
+def _settings_out(db: Session, *, reveal_secret: str = "") -> EspTerminalSettingsOut:
     row = org_row(db)
     devices = list(db.scalars(select(EspTerminal).order_by(EspTerminal.id)))
     secret = _secret(db)
     return EspTerminalSettingsOut(
-        secret=secret,
+        # Das Secret ist nur beim Erzeugen sichtbar, danach verdeckt.
+        secret=reveal_secret,
         secret_configured=bool(secret),
         secret_source=secret_source(db),
         ok_line1=getattr(row, "esp_ok_line1", None) or DEFAULT_OK_LINE1,
@@ -239,7 +246,7 @@ def patch_esp_settings(payload: EspTerminalSettingsIn, request: Request, db: Ses
         row.esp_ok_line2 = dumped["ok_line2"].strip() or DEFAULT_OK_LINE2
     if "secret" in dumped and dumped["secret"] is not None:
         value = dumped["secret"].strip()
-        row.esp_terminal_secret = value
+        row.esp_terminal_secret = hash_terminal_secret(value) if value else ""
     audit = {k: v for k, v in dumped.items() if k != "secret"}
     if "secret" in dumped:
         audit["secret"] = "gesetzt" if (dumped["secret"] or "").strip() else "geleert"
@@ -260,7 +267,8 @@ def patch_esp_settings(payload: EspTerminalSettingsIn, request: Request, db: Ses
 def generate_esp_secret(request: Request, db: Session = Depends(get_db)):
     actor = _admin(request, db)
     row = org_row(db)
-    row.esp_terminal_secret = secrets.token_urlsafe(32)
+    plaintext = secrets.token_urlsafe(32)
+    row.esp_terminal_secret = hash_terminal_secret(plaintext)
     db.add(
         AuditEvent(
             actor_id=actor.id,
@@ -271,7 +279,7 @@ def generate_esp_secret(request: Request, db: Session = Depends(get_db)):
         )
     )
     db.commit()
-    return _settings_out(db)
+    return _settings_out(db, reveal_secret=plaintext)
 
 
 @hr_router.patch("/devices/{device_pk}", response_model=EspDeviceOut)

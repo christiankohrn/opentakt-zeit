@@ -73,7 +73,7 @@ Ohne Zertifikat (Labor, noch kein DNS): `-SkipCertbot`.
 
 SSH danach als **`deploy`**, nicht dauerhaft als root. Sudo ist auf Dienst-Kommandos begrenzt.
 
-Seed-Passwörter umgehend notieren und die Datei nur lokal belassen. Benutzer in der UI anpassen; SMTP/LDAP in `config.toml` bei Bedarf.
+Seed-Passwort umgehend notieren und die Datei nur lokal belassen. Der Seed legt nur den Administrator an; beim ersten Login muss ein eigenes Passwort vergeben werden. Weitere Benutzer in der UI anlegen; SMTP/LDAP in `config.toml` bei Bedarf.
 
 ```bash
 sudo journalctl -u zeiterfassung -n 200 --no-pager
@@ -134,7 +134,7 @@ sudo systemctl start zeiterfassung
 | 502 Bad Gateway | `sudo systemctl status zeiterfassung`; kurz warten, uvicorn startet nach dem Deploy ein paar Sekunden später |
 | Frontend alt | Hard-Reload / PWA-Cache; `sudo /opt/zeiterfassung/deploy/update.sh` baut `frontend/dist` neu |
 | Node zu alt | `new-host.sh` holt Node 22 von NodeSource, wenn Debian < 20 liefert |
-| Kein Login nach Neuinstall | Nur bei **leerer** Datenbank werden Seed-User angelegt. Logins stehen in `seed-once.txt` |
+| Kein Login nach Neuinstall | Nur bei **leerer** Datenbank wird der Seed-Admin angelegt. Login steht in `seed-once.txt` |
 
 ## Skripte
 

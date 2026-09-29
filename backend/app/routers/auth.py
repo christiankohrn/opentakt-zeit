@@ -17,6 +17,25 @@ from app.mail import (
     send_access_mail,
 )
 from app.models import AuditEvent, User, WebAuthnCredential
+from app.ratelimit import (
+    FORGOT_MAX,
+    FORGOT_WINDOW,
+    LOGIN_MAX,
+    LOGIN_WINDOW,
+    MFA_MAX,
+    MFA_WINDOW,
+    PASSKEY_MAX,
+    PASSKEY_OPTIONS_MAX,
+    PASSKEY_OPTIONS_WINDOW,
+    PASSKEY_WINDOW,
+    TOKEN_MAX,
+    TOKEN_WINDOW,
+    attempt,
+    check,
+    clear,
+    client_key,
+    record,
+)
 from app.schemas import (
     ForgotIn,
     LoginIn,
@@ -55,11 +74,15 @@ def _mfa_methods(db: Session, user: User) -> list[str]:
 
 @router.post("/login", response_model=None)
 def login(payload: LoginIn, request: Request, db: Session = Depends(get_db)) -> UserOut | MfaRequiredOut:
+    key = client_key(request, "login")
+    check(key, LOGIN_MAX, LOGIN_WINDOW)
     user = authenticate(db, payload.username.strip(), payload.password)
     if not user:
+        record(key, LOGIN_WINDOW)
         raise HTTPException(status_code=401, detail="Anmeldung fehlgeschlagen")
     if not user.web_login:
         raise HTTPException(status_code=403, detail="Anmeldung nur am Terminal. Bitte Transponder verwenden.")
+    clear(key)
     if user.totp_enabled and user.totp_secret:
         request.session.clear()
         request.session[MFA_PENDING_KEY] = {
@@ -77,6 +100,8 @@ def login(payload: LoginIn, request: Request, db: Session = Depends(get_db)) -> 
 
 @router.post("/mfa", response_model=None)
 def mfa(payload: MfaVerifyIn, request: Request, db: Session = Depends(get_db)) -> UserOut:
+    key = client_key(request, "mfa")
+    check(key, MFA_MAX, MFA_WINDOW)
     pending = request.session.get(MFA_PENDING_KEY)
     if not isinstance(pending, dict) or not pending.get("uid"):
         raise HTTPException(status_code=401, detail="Keine Anmeldung ausstehend. Bitte neu anmelden.")
@@ -94,6 +119,7 @@ def mfa(payload: MfaVerifyIn, request: Request, db: Session = Depends(get_db)) -
         used_backup = consume_backup_code(db, user, payload.code)
         ok = used_backup
     if not ok:
+        record(key, MFA_WINDOW)
         pending["tries"] = int(pending.get("tries") or 0) + 1
         if pending["tries"] >= MFA_MAX_ATTEMPTS:
             request.session.clear()
@@ -103,6 +129,7 @@ def mfa(payload: MfaVerifyIn, request: Request, db: Session = Depends(get_db)) -
         db.commit()
         raise HTTPException(status_code=401, detail="Code ungültig")
 
+    clear(key)
     request.session.clear()
     write_session(request, user)
     db.add(
@@ -120,6 +147,7 @@ def mfa(payload: MfaVerifyIn, request: Request, db: Session = Depends(get_db)) -
 
 @router.post("/passkey/options", response_model=None)
 def passkey_options(payload: PasskeyAuthOptionsIn, request: Request, db: Session = Depends(get_db)) -> dict:
+    attempt(client_key(request, "passkey-options"), PASSKEY_OPTIONS_MAX, PASSKEY_OPTIONS_WINDOW)
     creds: list[WebAuthnCredential] = []
     if payload.username:
         key = normalize_username(payload.username)
@@ -136,6 +164,8 @@ def passkey_options(payload: PasskeyAuthOptionsIn, request: Request, db: Session
 
 @router.post("/passkey/verify", response_model=None)
 def passkey_verify(payload: PasskeyAuthVerifyIn, request: Request, db: Session = Depends(get_db)) -> UserOut:
+    key = client_key(request, "passkey")
+    check(key, PASSKEY_MAX, PASSKEY_WINDOW)
     pending = request.session.get(WEBAUTHN_AUTH_KEY)
     if not isinstance(pending, dict) or not pending.get("challenge"):
         raise HTTPException(status_code=401, detail="Keine Passkey-Anmeldung ausstehend.")
@@ -145,16 +175,20 @@ def passkey_verify(payload: PasskeyAuthVerifyIn, request: Request, db: Session =
     raw_id = credential_raw_id(payload.credential)
     cred = db.scalar(select(WebAuthnCredential).where(WebAuthnCredential.credential_id == raw_id)) if raw_id else None
     if not cred:
+        record(key, PASSKEY_WINDOW)
         raise HTTPException(status_code=401, detail="Passkey unbekannt")
     user = db.get(User, cred.user_id)
     if not user or not user.active or not user.web_login:
+        record(key, PASSKEY_WINDOW)
         raise HTTPException(status_code=403, detail="Anmeldung nicht möglich")
     try:
         new_count = verify_authentication(request, payload.credential, pending["challenge"], cred)
     except Exception:
+        record(key, PASSKEY_WINDOW)
         raise HTTPException(status_code=401, detail="Passkey-Anmeldung fehlgeschlagen")
     cred.sign_count = new_count
     cred.last_used_at = now_utc()
+    clear(key)
     request.session.clear()
     write_session(request, user)
     db.add(
@@ -178,11 +212,12 @@ def logout(request: Request):
 
 @router.get("/me", response_model=UserOut)
 def me(request: Request, db: Session = Depends(get_db)):
-    return _user_out(db, current_user(request, db))
+    return _user_out(db, current_user(request, db, allow_password_change=True))
 
 
 @router.post("/forgot")
-def forgot(payload: ForgotIn, db: Session = Depends(get_db)):
+def forgot(payload: ForgotIn, request: Request, db: Session = Depends(get_db)):
+    attempt(client_key(request, "forgot"), FORGOT_MAX, FORGOT_WINDOW)
     user = find_local_user(db, payload.username_or_email)
     if (
         user
@@ -209,7 +244,8 @@ def forgot(payload: ForgotIn, db: Session = Depends(get_db)):
 
 
 @router.get("/password-token", response_model=ResetInfoOut)
-def password_token_info(token: str, db: Session = Depends(get_db)):
+def password_token_info(token: str, request: Request, db: Session = Depends(get_db)):
+    attempt(client_key(request, "password-token"), TOKEN_MAX, TOKEN_WINDOW)
     row = lookup_mail_token(db, token)
     if not row:
         raise HTTPException(400, "Link ist ungültig oder abgelaufen")
@@ -223,15 +259,21 @@ def password_token_info(token: str, db: Session = Depends(get_db)):
 def consume_password_token(payload: ResetIn, request: Request, db: Session = Depends(get_db)):
     from app.auth import now_utc
 
+    key = client_key(request, "password-token")
+    check(key, TOKEN_MAX, TOKEN_WINDOW)
     row = lookup_mail_token(db, payload.token)
     if not row:
+        record(key, TOKEN_WINDOW)
         raise HTTPException(400, "Link ist ungültig oder abgelaufen")
     user = db.get(User, row.user_id)
     if not user or not user.active or user.auth_source != "local":
+        record(key, TOKEN_WINDOW)
         raise HTTPException(400, "Link ist ungültig oder abgelaufen")
     if not user.web_login:
         raise HTTPException(400, "Keine Web-Anmeldung für diesen Benutzer")
+    clear(key)
     user.password_hash = hash_password(payload.password)
+    user.must_change_password = False
     row.used_at = now_utc()
     bump_session_rev(user)
     db.add(

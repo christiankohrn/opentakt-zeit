@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Navigate, Outlet, RouterProvider, createBrowserRouter } from "react-router-dom";
+import { Navigate, Outlet, RouterProvider, createBrowserRouter, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./auth";
 import Layout from "./components/Layout";
 import HrCalendar from "./pages/HrCalendar";
@@ -29,17 +29,31 @@ import { ThemeProvider } from "./theme";
 
 function Guard({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
+  const location = useLocation();
   if (loading) {
     return <div className="p-8 text-muted">Laden …</div>;
   }
   if (!user) return <Navigate to="/login" replace />;
-  if (user.security_setup_required) return <Navigate to="/sicherheit-einrichten" replace />;
+  if (user.security_setup_required === "password" && location.pathname !== "/konto") {
+    return <Navigate to="/konto" replace />;
+  }
+  if (user.security_setup_required && user.security_setup_required !== "password") {
+    return <Navigate to="/sicherheit-einrichten" replace />;
+  }
   return <>{children}</>;
 }
 
 function HrGuard() {
   const { user } = useAuth();
   if (!user || !["hr", "admin", "supervisor"].includes(user.role)) {
+    return <Navigate to="/" replace />;
+  }
+  return <Outlet />;
+}
+
+function HrFullGuard() {
+  const { user } = useAuth();
+  if (!user || !["hr", "admin"].includes(user.role)) {
     return <Navigate to="/" replace />;
   }
   return <Outlet />;
@@ -80,14 +94,19 @@ const router = createBrowserRouter([
           { path: "personal", element: <HrUsers /> },
           { path: "personal/:id", element: <HrUserMonth /> },
           { path: "personal/:id/tag/:date", element: <HrDay /> },
-          { path: "auswertungen", element: <Reports /> },
-          { path: "auswertungen/krankheit", element: <ReportSickDays /> },
-          { path: "auswertungen/urlaub", element: <ReportVacation /> },
-          { path: "auswertungen/salden", element: <ReportBalances /> },
-          { path: "auswertungen/jubilaeen", element: <ReportJubilees /> },
-          { path: "auswertungen/lohnarten", element: <ReportNightHours /> },
-          { path: "auswertungen/nacht", element: <Navigate to="/auswertungen/lohnarten" replace /> },
-          { path: "auswertungen/journal", element: <ReportJournal /> },
+          {
+            element: <HrFullGuard />,
+            children: [
+              { path: "auswertungen", element: <Reports /> },
+              { path: "auswertungen/krankheit", element: <ReportSickDays /> },
+              { path: "auswertungen/urlaub", element: <ReportVacation /> },
+              { path: "auswertungen/salden", element: <ReportBalances /> },
+              { path: "auswertungen/jubilaeen", element: <ReportJubilees /> },
+              { path: "auswertungen/lohnarten", element: <ReportNightHours /> },
+              { path: "auswertungen/nacht", element: <Navigate to="/auswertungen/lohnarten" replace /> },
+              { path: "auswertungen/journal", element: <ReportJournal /> },
+            ],
+          },
           { path: "modelle", element: <HrModels /> },
           { path: "abteilungen", element: <HrDepartments /> },
           { path: "feiertage", element: <HrCalendar /> },

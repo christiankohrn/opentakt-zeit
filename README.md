@@ -58,7 +58,7 @@ npm run dev
 
 Im Browser: [http://127.0.0.1:5173](http://127.0.0.1:5173)
 
-Seed-Logins stehen in `config.toml` unter `[seed]` (Standardbenutzer `admin`, `personal`, `mitarbeiter`). Nur auf einer **leeren** Datenbank werden sie angelegt.
+Der Seed legt auf einer **leeren** Datenbank nur den Administrator an (Login aus `config.toml` unter `[seed]`). Beim ersten Login muss ein eigenes Passwort vergeben werden; weitere Benutzer legt der Admin in der UI unter Personal an.
 
 Optional Demo-Tage für Max Mustermann:
 

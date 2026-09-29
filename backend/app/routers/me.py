@@ -110,7 +110,7 @@ def create_punch(payload: PunchIn, request: Request, db: Session = Depends(get_d
 
 @router.post("/password")
 def change_password(payload: PasswordChangeIn, request: Request, db: Session = Depends(get_db)):
-    user = current_user(request, db)
+    user = current_user(request, db, allow_password_change=True)
     if user.auth_source != "local":
         raise HTTPException(400, "Passwort wird im Benutzerverzeichnis geändert")
     if not verify_password(payload.current_password, user.password_hash):
@@ -118,6 +118,7 @@ def change_password(payload: PasswordChangeIn, request: Request, db: Session = D
     if payload.current_password == payload.new_password:
         raise HTTPException(400, "Neues Passwort muss anders sein")
     user.password_hash = hash_password(payload.new_password)
+    user.must_change_password = False
     bump_session_rev(user)
     db.add(AuditEvent(actor_id=user.id, action="password.change", entity_type="user", entity_id=str(user.id)))
     db.commit()

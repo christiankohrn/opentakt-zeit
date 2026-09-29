@@ -259,6 +259,124 @@ def test_admin_deletes_person_and_their_punches(client):
     assert "weg-mit" not in names
 
 
+def test_admin_cannot_set_short_password(client):
+    login(client)
+    models = client.get("/api/hr/work-models").json()
+    created = client.post(
+        "/api/hr/users",
+        json={
+            "username": "kurz-pw",
+            "display_name": "Kurz Pw",
+            "role": "employee",
+            "password": "x",
+            "work_model_id": models[0]["id"],
+            "web_login": True,
+        },
+    )
+    assert created.status_code == 422
+    people = users_by_name(client)
+    target = people["mitarbeiter"]
+    patched = client.patch(
+        f"/api/hr/users/{target['id']}",
+        json={
+            "username": target["username"],
+            "display_name": target["display_name"],
+            "role": "employee",
+            "active": True,
+            "web_login": True,
+            "password": "y",
+        },
+    )
+    assert patched.status_code == 422
+
+
+def test_supervisor_reviews_but_manages_nothing(client):
+    login(client)
+    models = client.get("/api/hr/work-models").json()
+    created = client.post(
+        "/api/hr/users",
+        json={
+            "username": "vor-gesetzt",
+            "display_name": "Vor Gesetzt",
+            "role": "supervisor",
+            "password": "Supervisor-99",
+            "work_model_id": models[0]["id"],
+            "web_login": True,
+        },
+    )
+    assert created.status_code == 200, created.text
+    people = users_by_name(client)
+    target = people["mitarbeiter"]
+    seeded = client.patch(
+        f"/api/hr/users/{target['id']}/account",
+        json={"birthday": "1990-05-06"},
+    )
+    assert seeded.status_code == 200, seeded.text
+    chip = client.patch(
+        f"/api/hr/users/{target['id']}/settings",
+        json={"transponder_id": "SUPCHIP"},
+    )
+    assert chip.status_code == 200, chip.text
+    client.post("/api/auth/logout")
+
+    me = login(client, "vor-gesetzt", "Supervisor-99")
+    assert me["role"] == "supervisor"
+    listed = client.get("/api/hr/users")
+    assert listed.status_code == 200, listed.text
+    other = next(u for u in listed.json() if u["username"] == "mitarbeiter")
+    assert other["email"] is None
+    assert other["birthday"] is None
+    assert other["transponder_id"] is None
+    assert other["display_name"]
+    assert client.get(f"/api/hr/users/{target['id']}/days?month=2026-08").status_code == 200
+    assert client.get("/api/hr/plausibility?month=2026-08").status_code == 200
+    assert client.get("/api/hr/balances?month=2026-08").status_code == 200
+    correction = client.post(
+        f"/api/hr/users/{target['id']}/corrections",
+        json={"kind": "in", "local_time": "2026-08-07T08:00:00", "reason": "Supervisor-Test"},
+    )
+    assert correction.status_code == 200, correction.text
+
+    assert client.post("/api/hr/users", json={"username": "x", "display_name": "X"}).status_code == 403
+    assert client.patch(f"/api/hr/users/{target['id']}/account", json={"display_name": "Y"}).status_code == 403
+    assert client.get("/api/hr/export.csv?month=2026-08").status_code == 403
+    assert client.get("/api/hr/audit").status_code == 403
+    assert client.get("/api/hr/reports/sick-days?year=2026").status_code == 403
+    assert client.get("/api/hr/reports/journal?month=2026-08").status_code == 403
+
+
+def test_unknown_roles_rejected_on_create_and_patch(client):
+    login(client)
+    models = client.get("/api/hr/work-models").json()
+    created = client.post(
+        "/api/hr/users",
+        json={
+            "username": "falsche-rolle",
+            "display_name": "Falsche Rolle",
+            "role": "gott",
+            "work_model_id": models[0]["id"],
+        },
+    )
+    assert created.status_code == 400
+    people = users_by_name(client)
+    target = people["mitarbeiter"]
+    patched = client.patch(
+        f"/api/hr/users/{target['id']}",
+        json={
+            "username": target["username"],
+            "display_name": target["display_name"],
+            "role": "root",
+            "active": True,
+        },
+    )
+    assert patched.status_code == 400
+    account = client.patch(
+        f"/api/hr/users/{target['id']}/account",
+        json={"role": "superuser"},
+    )
+    assert account.status_code == 400
+
+
 def test_admin_cannot_delete_self(client):
     me = login(client)
     res = client.delete(f"/api/hr/users/{me['id']}")

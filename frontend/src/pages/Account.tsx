@@ -5,7 +5,8 @@ import PasswordField from "../components/PasswordField";
 import SecuritySettings from "../components/SecuritySettings";
 
 export default function Account() {
-  const { user } = useAuth();
+  const { user, refresh } = useAuth();
+  const forced = user?.security_setup_required === "password";
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [repeat, setRepeat] = useState("");
@@ -38,6 +39,7 @@ export default function Account() {
       setNext("");
       setRepeat("");
       setMsg("Passwort gespeichert.");
+      await refresh();
     } catch (ex) {
       setErr(ex instanceof ApiError ? ex.message : "Fehler");
     } finally {
@@ -51,6 +53,11 @@ export default function Account() {
       <p className="mt-1 text-sm text-muted">
         {user?.display_name} · {user?.username}
       </p>
+      {forced ? (
+        <p className="mt-3 rounded-xl border border-line bg-card p-3 text-sm">
+          Beim ersten Login: Bitte vergib dir ein eigenes Passwort, bevor du fortfährst.
+        </p>
+      ) : null}
       <form onSubmit={onSubmit} className="mt-4 space-y-3 rounded-2xl border border-line bg-card p-4">
         <p className="text-sm font-medium">Passwort ändern</p>
         <label className="block text-xs text-muted">
@@ -96,9 +103,13 @@ export default function Account() {
         </button>
       </form>
 
-      <h2 className="mt-6 text-lg font-medium">Sicherheit</h2>
-      <p className="mt-1 text-sm text-muted">Zwei-Faktor-Authentisierung und Passkeys für dein Konto.</p>
-      <SecuritySettings />
+      {!forced ? (
+        <>
+          <h2 className="mt-6 text-lg font-medium">Sicherheit</h2>
+          <p className="mt-1 text-sm text-muted">Zwei-Faktor-Authentisierung und Passkeys für dein Konto.</p>
+          <SecuritySettings />
+        </>
+      ) : null}
     </div>
   );
 }

@@ -6,7 +6,7 @@ Firmware und Gehäuse: [`firmware/esp32-terminal/`](../firmware/esp32-terminal/)
 
 ## Server
 
-Das Shared-Secret stellt ein Administrator unter **Einstellungen → ESP-Terminal** ein (oder als Fallback `esp_terminal_secret` in `/etc/zeiterfassung/config.toml`). Leer = API aus.
+Das Shared-Secret stellt ein Administrator unter **Einstellungen → ESP-Terminal** ein (oder als Fallback `esp_terminal_secret` in `/etc/zeiterfassung/config.toml`). Leer = API aus. In der App liegt nur ein Hash; das Secret ist nur direkt beim Erzeugen sichtbar und muss dann kopiert werden.
 
 `POST /api/terminals/esp/punch` und `POST /api/terminals/esp/hello` mit Header `X-Terminal-Key` oder `Authorization: Bearer …`.
 
@@ -26,7 +26,7 @@ Displayzeilen stellt ein Administrator unter **Einstellungen** ein. Platzhalter:
 
 V1: das Gerät puffert **nicht**. Ohne WLAN keine Buchung.
 
-Geräte holen alle 30 s eine Hello-Antwort: optional neues WLAN, optional Firmware-URL. Firmware-`.bin` in den Einstellungen hochladen, Versionsnummer höher als im Gerät (aktuell **1**). OLED zeigt links die IP, rechts dauerhaft **522** oder **532** vor **FW …**; während OTA **Flashen…** und einen Balken. Erstes Aufspielen weiterhin per USB; danach OTA.
+Geräte holen alle 30 s eine Hello-Antwort: optional neues WLAN, optional Firmware-URL. Unbekannte Geräte-IDs erhalten bewusst eine leere Antwort und werden nicht angelegt; ein Gerät erscheint mit seiner ersten Buchung in den Einstellungen und erhält danach WLAN und Firmware. Firmware-`.bin` in den Einstellungen hochladen, Versionsnummer höher als im Gerät (aktuell **1**). OLED zeigt links die IP, rechts dauerhaft **522** oder **532** vor **FW …**; während OTA **Flashen…** und einen Balken. Erstes Aufspielen weiterhin per USB; danach OTA.
 
 Falsches Secret: OLED **Falsches Secret**. Server nicht erreichbar (Timeout, 502, …): **Server nicht erreicht**. BOOT 4 Sekunden halten öffnet wieder das Captive-Portal.
 

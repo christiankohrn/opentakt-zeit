@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 
 from app.database import SessionLocal
 from app.esp_display import render_line
-from app.models import Punch
+from app.models import OrgSettings, Punch
 
 
 def login(client, username="admin", password="change-me"):
@@ -80,12 +80,20 @@ def test_admin_can_set_esp_secret(client):
     login(client)
     shown = client.get("/api/hr/esp-terminal")
     assert shown.status_code == 200, shown.text
-    assert shown.json()["secret"] == "test-esp-secret"
+    assert shown.json()["secret"] == ""
+    assert shown.json()["secret_configured"] is True
     assert shown.json()["secret_source"] == "config"
     saved = client.patch("/api/hr/esp-terminal", json={"secret": "ui-esp-secret-value"})
     assert saved.status_code == 200, saved.text
-    assert saved.json()["secret"] == "ui-esp-secret-value"
+    assert saved.json()["secret"] == ""
     assert saved.json()["secret_source"] == "db"
+    db = SessionLocal()
+    try:
+        stored = db.get(OrgSettings, 1).esp_terminal_secret
+    finally:
+        db.close()
+    assert len(stored) == 64
+    assert stored != "ui-esp-secret-value"
     old = client.post(
         "/api/terminals/esp/punch",
         json={"badge": "X", "event_id": "abcdefgh"},
@@ -103,16 +111,52 @@ def test_admin_can_set_esp_secret(client):
     fresh = generated.json()["secret"]
     assert len(fresh) >= 20
     assert fresh != "ui-esp-secret-value"
+    masked = client.get("/api/hr/esp-terminal")
+    assert masked.json()["secret"] == ""
     reset = client.patch("/api/hr/esp-terminal", json={"secret": ""})
     assert reset.status_code == 200
-    assert reset.json()["secret"] == "test-esp-secret"
+    assert reset.json()["secret"] == ""
+    assert reset.json()["secret_configured"] is True
     assert reset.json()["secret_source"] == "config"
+
+
+def test_legacy_esp_secret_is_migrated_to_hash(client):
+    login(client)
+    db = SessionLocal()
+    try:
+        row = db.get(OrgSettings, 1)
+        row.esp_terminal_secret = "legacy-klartext"
+        db.commit()
+    finally:
+        db.close()
+    res = client.post(
+        "/api/terminals/esp/punch",
+        json={"badge": "NOSUCHCHIP", "event_id": "event-legacy-hash1"},
+        headers={"X-Terminal-Key": "legacy-klartext"},
+    )
+    assert res.status_code == 200, res.text
+    db = SessionLocal()
+    try:
+        stored = db.get(OrgSettings, 1).esp_terminal_secret
+    finally:
+        db.close()
+    assert len(stored) == 64
+    assert stored != "legacy-klartext"
+    reset = client.patch("/api/hr/esp-terminal", json={"secret": ""})
+    assert reset.status_code == 200
 
 
 def test_esp_device_named_and_punch_location(client):
     login(client)
     people = users_by_name(client)
     client.patch(f"/api/hr/users/{people['erika']['id']}/settings", json={"transponder_id": "ESPCHIP"})
+    punch = client.post(
+        "/api/terminals/esp/punch",
+        json={"badge": "ESPCHIP", "event_id": "esp-place-in-01", "device_id": "AABBCCDDEEFF", "fw": 2},
+        headers={"X-Terminal-Key": "test-esp-secret"},
+    )
+    assert punch.status_code == 200, punch.text
+    assert punch.json()["ok"] is True
     hello = client.post(
         "/api/terminals/esp/hello",
         json={"device_id": "aa:bb:cc:dd:ee:ff", "fw": 2, "ssid": "Office", "ip": "10.0.0.8"},
@@ -127,13 +171,13 @@ def test_esp_device_named_and_punch_location(client):
     named = client.patch(f"/api/hr/esp-terminal/devices/{pk}", json={"name": "Eingang"})
     assert named.status_code == 200
     assert named.json()["name"] == "Eingang"
-    punch = client.post(
+    second = client.post(
         "/api/terminals/esp/punch",
-        json={"badge": "ESPCHIP", "event_id": "esp-place-in-01", "device_id": "AABBCCDDEEFF", "fw": 2},
+        json={"badge": "ESPCHIP", "event_id": "esp-place-out-01", "device_id": "AABBCCDDEEFF", "fw": 2},
         headers={"X-Terminal-Key": "test-esp-secret"},
     )
-    assert punch.status_code == 200, punch.text
-    assert punch.json()["ok"] is True
+    assert second.status_code == 200, second.text
+    assert second.json()["ok"] is True
     month = client.get(f"/api/hr/users/{people['erika']['id']}/days?month={date.today().strftime('%Y-%m')}")
     assert month.status_code == 200, month.text
     found = None
@@ -148,6 +192,14 @@ def test_esp_device_named_and_punch_location(client):
 
 def test_esp_hello_offers_firmware_and_wifi(client):
     login(client)
+    people = users_by_name(client)
+    client.patch(f"/api/hr/users/{people['erika']['id']}/settings", json={"transponder_id": "ESPCHIP"})
+    seed = client.post(
+        "/api/terminals/esp/punch",
+        json={"badge": "ESPCHIP", "event_id": "esp-wifi-seed-01", "device_id": "112233445566", "fw": 1},
+        headers={"X-Terminal-Key": "test-esp-secret"},
+    )
+    assert seed.status_code == 200, seed.text
     hello = client.post(
         "/api/terminals/esp/hello",
         json={"device_id": "112233445566", "fw": 1},
@@ -191,6 +243,24 @@ def test_esp_hello_offers_firmware_and_wifi(client):
     assert denied.status_code in {401, 503}
 
 
+def test_esp_hello_unknown_device_gets_no_provisioning(client):
+    login(client)
+    hello = client.post(
+        "/api/terminals/esp/hello",
+        json={"device_id": "FFEEDDCCBBAA", "fw": 1},
+        headers={"X-Terminal-Key": "test-esp-secret"},
+    )
+    assert hello.status_code == 200, hello.text
+    body = hello.json()
+    assert body["name"] == ""
+    assert body["fw"] == 0
+    assert body["firmware_url"] == ""
+    assert body["wifi_ssid"] == ""
+    assert body["wifi_pass"] == ""
+    settings = client.get("/api/hr/esp-terminal")
+    assert "FFEEDDCCBBAA" not in {d["device_id"] for d in settings.json()["devices"]}
+
+
 def test_esp_punch_auto_kommen_gehen_and_templates(client):
     login(client)
     people = users_by_name(client)
@@ -226,3 +296,25 @@ def test_esp_punch_auto_kommen_gehen_and_templates(client):
     assert dup.status_code == 200, dup.text
     assert dup.json()["ok"] is True
     assert punch_count() == before + 2
+
+
+def test_esp_failures_are_rate_limited(client):
+    from app.ratelimit import reset as reset_limits
+
+    reset_limits()
+    try:
+        for _ in range(60):
+            res = client.post(
+                "/api/terminals/esp/hello",
+                json={"device_id": "RATE-LIMIT-PROBE", "fw": 1},
+                headers={"X-Terminal-Key": "falsch"},
+            )
+            assert res.status_code == 401, res.text
+        blocked = client.post(
+            "/api/terminals/esp/hello",
+            json={"device_id": "RATE-LIMIT-PROBE", "fw": 1},
+            headers={"X-Terminal-Key": "falsch"},
+        )
+        assert blocked.status_code == 429, blocked.text
+    finally:
+        reset_limits()

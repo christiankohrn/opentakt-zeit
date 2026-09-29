@@ -14,12 +14,6 @@ from app.branding import PRODUCT_NAME
 class SeedConfig(BaseModel):
     admin_username: str = "admin"
     admin_password: str = "change-me"
-    hr_username: str = "personal"
-    hr_password: str = "change-me"
-    employee_username: str = "mitarbeiter"
-    employee_password: str = "change-me"
-    shift_username: str = "erika"
-    shift_password: str = "change-me"
 
 
 class SmtpConfig(BaseModel):

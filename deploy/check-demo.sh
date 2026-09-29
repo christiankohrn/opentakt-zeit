@@ -4,8 +4,8 @@ if [ -z "${BASE:-}" ] && [ -f /etc/zeiterfassung/config.toml ]; then
   BASE=$(python3 -c "import tomllib; print(tomllib.load(open('/etc/zeiterfassung/config.toml','rb')).get('public_url','http://127.0.0.1:8000'))")
 fi
 BASE="${BASE:-http://127.0.0.1:8000}"
-SEED=/etc/zeiterfassung/seed-once.txt
-EMP_PW=$(awk '/^mitarbeiter / {print $3}' "$SEED")
+# Demo-Konten legt app.demo_data an (Passwort siehe dort); per ENV überstimmbar.
+EMP_PW="${DEMO_PW:-change-me}"
 curl -sS -c /tmp/cj -b /tmp/cj -H 'content-type: application/json' \
   -d "{\"username\":\"MITARBEITER\",\"password\":\"$EMP_PW\"}" \
   "$BASE/api/auth/login"

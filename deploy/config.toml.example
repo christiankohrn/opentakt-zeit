@@ -18,6 +18,7 @@ datafox_secret = ""
 esp_terminal_secret = ""
 
 # Token für die Buchungs-Übernahme (Header Authorization: Bearer). Leer = Schnittstelle aus.
+# Fallback; ein in den Einstellungen gespeichertes Token geht vor und ist rotierbar.
 import_token = ""
 
 # Optional: Pfad zu libDFCom.so für Polling.
@@ -26,12 +27,6 @@ import_token = ""
 [seed]
 admin_username = "admin"
 admin_password = "change-me"
-hr_username = "personal"
-hr_password = "change-me"
-employee_username = "mitarbeiter"
-employee_password = "change-me"
-shift_username = "erika"
-shift_password = "change-me"
 
 [smtp]
 enabled = false

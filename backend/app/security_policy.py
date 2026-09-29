@@ -70,6 +70,8 @@ def required_setup(db: Session, user: User) -> Optional[str]:
     """
     if not user.web_login or not user.active:
         return None
+    if user.must_change_password:
+        return "password"
     policy = policy_for(db, user.role)
     if policy == "off":
         return None
