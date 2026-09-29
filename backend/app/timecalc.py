@@ -126,7 +126,8 @@ def work_intervals(
             # Forgotten checkout: the shift was never closed, so the tail
             # until midnight is unknown and must not be credited.
             return intervals
-        intervals.append((open_in, day_end))
+        if day_end > open_in:
+            intervals.append((open_in, day_end))
     return intervals
 
 
@@ -194,13 +195,19 @@ def summarize_day(
             last_out = t
 
     day_end = _as_minute(min(now, end_utc))
-    if open_break or open_in:
+    # Ein noch nicht begonnener Tag erbt die offene Schicht nicht. Sonst steht dort
+    # 00:00 offen und die Dauer läuft von der Zukunft bis jetzt rückwärts.
+    if now < start_utc and not events:
+        open_in = None
+        open_break = None
+        first_in = None
+    elif open_break or open_in:
         still_open = True
         credit_tail = now < end_utc or _closed_later(punches, end_utc)
         if credit_tail:
-            if open_break:
+            if open_break and day_end > open_break:
                 pause += day_end - open_break
-            if open_in:
+            if open_in and day_end > open_in:
                 work += day_end - open_in
 
     work_minutes = int(work.total_seconds() // 60)

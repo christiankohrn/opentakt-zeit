@@ -99,6 +99,19 @@ def test_overnight_shift_split_across_midnight():
     assert morning["last_out"] == "06:00"
 
 
+def test_open_shift_does_not_paint_the_next_day_before_it_starts():
+    punches = [_p_on(date(2026, 9, 29), "in", 7, 24)]
+    now = datetime(2026, 9, 29, 7, 43, tzinfo=ZoneInfo("UTC"))
+    today = summarize_day(punches, date(2026, 9, 29), None, now=now)
+    tomorrow = summarize_day(punches, date(2026, 9, 30), None, now=now)
+    assert today["first_in"] == "07:24"
+    assert today["open"] is True
+    assert today["work_hours"] > 0
+    assert tomorrow["first_in"] is None
+    assert tomorrow["open"] is False
+    assert tomorrow["work_hours"] == 0
+
+
 def test_forgotten_checkout_not_overnight_when_next_day_starts_anew():
     punches = [
         _p_on(date(2026, 8, 24), "in", 14, 0),
