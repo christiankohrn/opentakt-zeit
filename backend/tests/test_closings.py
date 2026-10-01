@@ -108,7 +108,7 @@ def _run_close(client, person, day: date) -> None:
     finished = wait_job(client)
     assert finished["error"] is None
     assert finished["rows"] >= 1
-    assert flex_of(client, day.year, day.month, person["id"]) == 10
+    assert flex_of(client, day.year, day.month, person["id"]) == 9.5
 
     listed = client.get("/api/hr/closings")
     assert listed.status_code == 200
@@ -124,7 +124,7 @@ def _run_close(client, person, day: date) -> None:
 
     confirmed = put_day(client, person["id"], day, "08:00", "18:00", confirm=True)
     assert confirmed.status_code == 200, confirmed.text
-    assert flex_of(client, day.year, day.month, person["id"]) == 12
+    assert flex_of(client, day.year, day.month, person["id"]) == 11.25
 
     client.post("/api/auth/logout")
     login(client, "personal", "change-me")
@@ -183,7 +183,7 @@ def test_ledger_from_limits_close_and_import(client, monkeypatch):
         months = listed.json()["months"]
         assert any(row["year"] == day.year and row["month"] == day.month for row in months)
         assert all((row["year"], row["month"]) >= (day.year, day.month) for row in months)
-        assert flex_of(client, day.year, day.month, person["id"]) == 0
+        assert flex_of(client, day.year, day.month, person["id"]) == -0.5
 
         monkeypatch.setattr(
             "app.routers.booking_import.get_config",
@@ -210,7 +210,7 @@ def test_ledger_from_limits_close_and_import(client, monkeypatch):
         again = users_by_name(client)["mitarbeiter"]
         assert again["opening_balance_hours"] == 4.5
         assert again["opening_balance_on"] == day.isoformat()
-        assert flex_of(client, day.year, day.month, person["id"]) == 4.5
+        assert flex_of(client, day.year, day.month, person["id"]) == 4.0
     finally:
         _reset_person(person["id"], day)
         client.patch("/api/hr/settings", json={"bundesland": land, "ledger_from": None, "confirm_closed": True})

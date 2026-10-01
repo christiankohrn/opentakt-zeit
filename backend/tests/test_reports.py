@@ -397,10 +397,10 @@ def test_journal_account_matches_the_month_row_to_the_minute(client):
     report = res.json()["people"][0]
     month = next(row for row in report["rows"] if row["type"] == "month")
     accounts = report["accounts"]
-    assert format_hm(month["delta_hours"], signed=True) == "+0:28"
-    assert format_hm(accounts["flex_month"], signed=True) == "+0:28"
+    assert format_hm(month["delta_hours"], signed=True) == "-0:02"
+    assert format_hm(accounts["flex_month"], signed=True) == "-0:02"
     assert format_hm(accounts["flex_prev"], signed=True) == "-4:12"
-    assert format_hm(accounts["flex_total"], signed=True) == "-3:44"
+    assert format_hm(accounts["flex_total"], signed=True) == "-4:14"
     from app.pdf import ReportPDF
 
     pdf = ReportPDF(title="Journal Probe", subtitle="August 2026", org="Org")

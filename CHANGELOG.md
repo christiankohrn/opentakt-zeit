@@ -4,6 +4,7 @@ Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Ve
 
 ## [Unreleased]
 
+- Automatische Pause ist bei neuen Personen eingeschaltet (30 Minuten ab 6:30 Stunden, 45 Minuten ab 9:45 Stunden).
 - Suchfeld in Personal, Arbeitszeitmodellen, Abteilungen, Prüfung, Feiertagen und im Personenfilter der Auswertungen.
 - README beschreibt das Update einer laufenden Installation: frischer Klon, Kopie nach `/opt/zeiterfassung`, dann `update.sh`. Config, Datenbank, nginx und Zertifikat bleiben.
 - Während Listen und Auswertungen geladen werden, steht „Laden …“ statt einer leeren Ansicht.

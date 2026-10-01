@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timezone
 from typing import Optional
 
 from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, String, Text, Time, UniqueConstraint
@@ -9,12 +9,16 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
 
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 class Department(Base):
     __tablename__ = "departments"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(120), unique=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     users: Mapped[list["User"]] = relationship(back_populates="department")
 
@@ -34,7 +38,7 @@ class WorkModel(Base):
     hours_sun: Mapped[float] = mapped_column(Float, default=0.0)
     core_start: Mapped[Optional[time]] = mapped_column(Time, nullable=True)
     core_end: Mapped[Optional[time]] = mapped_column(Time, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     users: Mapped[list["User"]] = relationship(back_populates="work_model")
     assignments: Mapped[list["WorkModelAssignment"]] = relationship(back_populates="work_model")
@@ -69,7 +73,7 @@ class User(Base):
     totp_secret: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     totp_enabled: Mapped[bool] = mapped_column(default=False)
     totp_confirmed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     work_model: Mapped[Optional[WorkModel]] = relationship(back_populates="users")
     department: Mapped[Optional[Department]] = relationship(back_populates="users")
@@ -92,7 +96,7 @@ class WorkModelAssignment(Base):
     work_model_id: Mapped[int] = mapped_column(ForeignKey("work_models.id"), index=True)
     valid_from: Mapped[date] = mapped_column(Date, index=True)
     created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     user: Mapped[User] = relationship(back_populates="model_assignments", foreign_keys=[user_id])
     work_model: Mapped[WorkModel] = relationship(back_populates="assignments")
@@ -116,7 +120,7 @@ class Punch(Base):
     voided_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     void_reason: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
     replaces_id: Mapped[Optional[int]] = mapped_column(ForeignKey("punches.id"), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     user: Mapped[User] = relationship(back_populates="punches", foreign_keys=[user_id])
 
@@ -130,7 +134,7 @@ class MonthClosing(Base):
     year: Mapped[int] = mapped_column(Integer)
     month: Mapped[int] = mapped_column(Integer)
     flex_hours: Mapped[float] = mapped_column(Float, default=0.0)
-    closed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    closed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     closed_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
 
 
@@ -144,7 +148,7 @@ class Absence(Base):
     kind: Mapped[str] = mapped_column(String(32))  # vacation, sick, holiday, other
     note: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
     created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
 class AccountEntry(Base):
@@ -157,7 +161,7 @@ class AccountEntry(Base):
     amount: Mapped[float] = mapped_column(Float)  # hours for time, days for vacation
     reason: Mapped[str] = mapped_column(String(200))
     created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
 class DayAcceptance(Base):
@@ -170,7 +174,7 @@ class DayAcceptance(Base):
     reason: Mapped[str] = mapped_column(String(300))
     warnings: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     accepted_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
 class CalendarEntry(Base):
@@ -182,7 +186,7 @@ class CalendarEntry(Base):
     kind: Mapped[str] = mapped_column(String(32))  # holiday, company_off
     name: Mapped[str] = mapped_column(String(160))
     created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
 class OrgSettings(Base):
@@ -229,7 +233,7 @@ class EspTerminal(Base):
     last_seen_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     wifi_ssid: Mapped[str] = mapped_column(String(80), default="")
     wifi_pass: Mapped[str] = mapped_column(String(200), default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
 class TerminalDevice(Base):
@@ -246,7 +250,7 @@ class TerminalDevice(Base):
     last_error: Mapped[str] = mapped_column(String(400), default="")
     last_summary: Mapped[str] = mapped_column(String(500), default="")
     last_list_hash: Mapped[str] = mapped_column(String(64), default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
 class MailToken(Base):
@@ -258,7 +262,7 @@ class MailToken(Base):
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     user: Mapped[User] = relationship()
 
@@ -270,7 +274,7 @@ class TotpBackupCode(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     code_hash: Mapped[str] = mapped_column(String(200))
     used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     user: Mapped[User] = relationship()
 
@@ -285,7 +289,7 @@ class WebAuthnCredential(Base):
     sign_count: Mapped[int] = mapped_column(Integer, default=0)
     transports: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     name: Mapped[str] = mapped_column(String(120), default="Passkey")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped[User] = relationship()
@@ -295,7 +299,7 @@ class AuditEvent(Base):
     __tablename__ = "audit_events"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
     actor_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     action: Mapped[str] = mapped_column(String(64), index=True)
     entity_type: Mapped[str] = mapped_column(String(32))
