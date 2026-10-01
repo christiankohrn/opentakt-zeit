@@ -25,7 +25,7 @@ class UserOut(BaseModel):
     department_id: Optional[int] = None
     department_name: Optional[str] = None
     auth_source: str
-    auto_break: bool = False
+    auto_break: bool = True
     transponder_id: Optional[str] = None
     web_login: bool = True
     hired_on: Optional[date] = None
@@ -126,7 +126,7 @@ class UserWrite(BaseModel):
     active: bool = True
     work_model_id: Optional[int] = None
     department_id: Optional[int] = None
-    auto_break: bool = False
+    auto_break: bool = True
     transponder_id: Optional[str] = None
     web_login: bool = True
     hired_on: Optional[date] = None

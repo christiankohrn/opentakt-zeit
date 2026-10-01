@@ -59,7 +59,7 @@ def ensure_schema() -> None:
     if "last_name" not in cols:
         alters.append("ALTER TABLE users ADD COLUMN last_name VARCHAR(120) NOT NULL DEFAULT ''")
     if "auto_break" not in cols:
-        alters.append("ALTER TABLE users ADD COLUMN auto_break BOOLEAN NOT NULL DEFAULT 0")
+        alters.append("ALTER TABLE users ADD COLUMN auto_break BOOLEAN NOT NULL DEFAULT 1")
     if "transponder_id" not in cols:
         alters.append("ALTER TABLE users ADD COLUMN transponder_id VARCHAR(80)")
     if "web_login" not in cols:

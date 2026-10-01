@@ -415,7 +415,8 @@ def patch_user(user_id: int, payload: UserWrite, request: Request, db: Session =
         user.work_model_id = None
     if "department_id" in payload.model_fields_set:
         _set_department(db, user, payload.department_id)
-    user.auto_break = payload.auto_break
+    if "auto_break" in payload.model_fields_set:
+        user.auto_break = payload.auto_break
     user.web_login = next_web_login
     if "transponder_id" in payload.model_fields_set:
         _set_transponder(db, user, payload.transponder_id)

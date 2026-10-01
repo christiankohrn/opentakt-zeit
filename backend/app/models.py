@@ -55,7 +55,7 @@ class User(Base):
     active: Mapped[bool] = mapped_column(default=True)
     work_model_id: Mapped[Optional[int]] = mapped_column(ForeignKey("work_models.id"), nullable=True)
     department_id: Mapped[Optional[int]] = mapped_column(ForeignKey("departments.id"), nullable=True)
-    auto_break: Mapped[bool] = mapped_column(default=False)
+    auto_break: Mapped[bool] = mapped_column(default=True)
     transponder_id: Mapped[Optional[str]] = mapped_column(String(80), unique=True, nullable=True)
     web_login: Mapped[bool] = mapped_column(default=True)
     hired_on: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
