@@ -16,12 +16,14 @@ export default function SearchField({
   placeholder = "Suchen",
   className = "",
   fill = false,
+  autoFocus = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
   className?: string;
   fill?: boolean;
+  autoFocus?: boolean;
 }) {
   return (
     <label className={`relative block ${fill ? "w-full" : "shrink-0"} ${className}`}>
@@ -32,6 +34,7 @@ export default function SearchField({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         aria-label={placeholder}
+        autoFocus={autoFocus}
         className={`search-compact ${fill ? "search-fill" : ""} rounded-lg border border-line bg-card py-1 pr-2 pl-8 text-sm`}
       />
     </label>

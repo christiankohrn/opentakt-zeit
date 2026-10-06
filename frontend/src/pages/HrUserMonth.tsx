@@ -755,8 +755,8 @@ export default function HrUserMonth() {
       </Link>
       <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-medium">{user?.display_name ?? "…"}</h1>
-          <p className="text-xs text-muted">
+          <PersonSwitcher users={switcherUsers} currentId={userId} onPick={pickPerson} />
+          <p className="mt-1 text-xs text-muted">
             {user ? ROLE[user.role] ?? user.role : ""}
             {user?.work_model_name ? ` · ${user.work_model_name}` : ""}
           </p>
@@ -772,15 +772,12 @@ export default function HrUserMonth() {
             <p className="mt-2 text-sm">Dieser Monat ist abgeschlossen. Änderungen rechnen die Abschlüsse neu.</p>
           ) : null}
         </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
-          <PersonSwitcher users={switcherUsers} currentId={userId} onPick={pickPerson} />
-          <input
-            type="month"
-            value={month}
-            onChange={(e) => setMonth(e.target.value)}
-            className="month-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
-          />
-        </div>
+        <input
+          type="month"
+          value={month}
+          onChange={(e) => setMonth(e.target.value)}
+          className="month-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
+        />
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
         <button type="button" className="text-sm text-present" onClick={() => setOpeningOpen((open) => !open)}>

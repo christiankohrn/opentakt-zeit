@@ -37,13 +37,11 @@ export default function PersonSwitcher({
   }, [open ]);
 
   useEffect(() => {
-    setQuery("");
     setOpen(false);
   }, [currentId]);
 
   function pick(id: number) {
     setOpen(false);
-    setQuery("");
     if (id !== currentId) onPick(id);
   }
 
@@ -54,7 +52,7 @@ export default function PersonSwitcher({
         aria-label="Vorherige Person"
         disabled={index <= 0}
         onClick={() => index > 0 && pick(users[index - 1].id)}
-        className="rounded-lg border border-line bg-card p-1.5 disabled:opacity-40"
+        className="rounded-lg border border-line bg-card p-2 disabled:opacity-40"
       >
         <IconChevron className="h-4 w-4 rotate-180" />
       </button>
@@ -64,14 +62,15 @@ export default function PersonSwitcher({
           onClick={() => setOpen((value) => !value)}
           aria-haspopup="listbox"
           aria-expanded={open}
-          className="h-[2.25rem] w-44 truncate rounded-lg border border-line bg-card px-2 py-1 text-left text-sm"
+          className="h-11 max-w-72 truncate rounded-lg border border-line bg-card px-3 py-1 text-left text-xl font-medium"
         >
-          {current?.display_name ?? "Person wählen"}
+          {current?.display_name ?? (users.length === 0 ? "…" : "Person wählen")}
         </button>
         {open ? (
-          <div className="absolute right-0 z-20 mt-1 max-h-80 w-72 overflow-y-auto rounded-xl border border-line bg-card p-2 shadow-lg">
+          <div className="absolute left-0 z-20 mt-1 max-h-80 w-72 overflow-y-auto rounded-xl border border-line bg-card p-2 shadow-lg">
             <SearchField
               fill
+              autoFocus
               className="mb-2"
               value={query}
               onChange={setQuery}
@@ -106,7 +105,7 @@ export default function PersonSwitcher({
         aria-label="Nächste Person"
         disabled={index < 0 || index >= users.length - 1}
         onClick={() => index >= 0 && index < users.length - 1 && pick(users[index + 1].id)}
-        className="rounded-lg border border-line bg-card p-1.5 disabled:opacity-40"
+        className="rounded-lg border border-line bg-card p-2 disabled:opacity-40"
       >
         <IconChevron className="h-4 w-4" />
       </button>
