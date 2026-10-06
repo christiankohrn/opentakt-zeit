@@ -278,7 +278,10 @@ def summarize_day(
             for p in all_in_day
         ],
     }
-    paid = {"vacation", "sick", "holiday", "company_off"}
+    # Schule und Sonderurlaub füllen die Sollzeit wie Urlaub und Krankheit.
+    # Zeitausgleich nicht: der Tag bleibt bei null Ist, das Konto fällt um die Sollzeit.
+    credited = {"vacation", "sick", "school", "special_leave"}
+    paid = credited | {"holiday", "company_off"}
     if calendar is not None:
         result["calendar"] = {"kind": calendar.kind, "name": calendar.name, "source": calendar.source}
     if absence is not None:
@@ -291,7 +294,7 @@ def summarize_day(
         result["open"] = False
         if calendar is not None and calendar.kind in {"holiday", "company_off"}:
             result["soll_hours"] = 0.0
-        fills = absence is not None and absence.kind in {"vacation", "sick"}
+        fills = absence is not None and absence.kind in credited
         if fills:
             stamped = 0.0 if not events else float(result["work_hours"])
             if not events:
@@ -318,6 +321,7 @@ def summarize_day(
         and prev_state == "away"
         and not off
         and day < today
+        and not (absence is not None and absence.kind == "comp_time")
     ):
         result["warnings"] = [*result["warnings"], "missing_day"]
     return result

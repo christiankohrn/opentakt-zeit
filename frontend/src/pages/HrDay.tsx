@@ -180,9 +180,9 @@ export default function HrDay() {
       setAcceptOpen(false);
       setReason("");
       await load();
-      setMsg("Tag als akzeptiert markiert. Er erscheint nicht mehr in der Prüfung.");
+      setMsg("Der Tag erscheint nicht mehr in der Prüfung.");
     } catch (err) {
-      setMsg(err instanceof Error ? err.message : "Akzeptieren fehlgeschlagen");
+      setMsg(err instanceof Error ? err.message : "Ignorieren fehlgeschlagen");
     } finally {
       setBusy(false);
     }
@@ -192,7 +192,7 @@ export default function HrDay() {
   if (pendingAbsence === "vacation") pendingNotes.push("Wird als Urlaub gespeichert.");
   if (pendingAbsence === "sick") pendingNotes.push("Wird als Krankheitstag gespeichert.");
   if (pendingAbsence === "clear") pendingNotes.push("Abwesenheit wird entfernt.");
-  if (pendingAccept) pendingNotes.push("Wird als akzeptiert gespeichert.");
+  if (pendingAccept) pendingNotes.push("Wird in der Prüfung ignoriert.");
 
   const title = day ? formatDayTitle(day) : "";
   const backLabel = from === "pruefung" ? "Prüfung" : (user?.display_name ?? "Personal");
@@ -262,7 +262,7 @@ export default function HrDay() {
         <p className="mt-2 text-sm text-danger">{issues.map(warnLabel).join(" · ")}</p>
       ) : null}
       {summary?.accepted && !pendingAccept ? (
-        <p className="mt-2 text-sm text-present">Akzeptiert: {summary.accepted.reason}</p>
+        <p className="mt-2 text-sm text-present">In der Prüfung ignoriert: {summary.accepted.reason}</p>
       ) : null}
       {pendingNotes.length ? (
         <p className="mt-3 rounded-2xl border border-present/30 bg-present/10 px-4 py-3 text-sm text-present">
@@ -338,12 +338,12 @@ export default function HrDay() {
         ) : null}
         {issues.length && !summary?.accepted && !pendingAccept ? (
           <button type="button" className="text-present" onClick={() => setPendingAccept(true)}>
-            Trotzdem akzeptieren
+            In der Prüfung ignorieren
           </button>
         ) : null}
         {pendingAccept ? (
           <button type="button" className="text-muted" onClick={() => setPendingAccept(false)}>
-            Akzeptieren zurücknehmen
+            Ignorieren zurücknehmen
           </button>
         ) : null}
         {summary?.accepted ? (
@@ -352,7 +352,7 @@ export default function HrDay() {
             className="text-muted"
             onClick={() => void api.revokeAccept(userId, day).then(() => load())}
           >
-            Akzeptierung zurücknehmen
+            Wieder in die Prüfung nehmen
           </button>
         ) : null}
       </div>
@@ -413,9 +413,9 @@ export default function HrDay() {
       {acceptOpen ? (
         <div className="fixed inset-0 z-20 flex items-end justify-center bg-black/40 p-4 sm:items-center">
           <form onSubmit={saveAccept} className="w-full max-w-lg rounded-2xl bg-card p-5 shadow-xl">
-            <p className="text-lg font-medium">Unplausibel akzeptieren?</p>
+            <p className="text-lg font-medium">In der Prüfung ignorieren?</p>
             <p className="mt-1 text-sm text-muted">
-              Die Hinweise bleiben sichtbar, der Tag erscheint aber nicht mehr in der Prüfung.
+              Die Hinweise bleiben am Tag sichtbar. Der Tag erscheint nicht mehr in der Prüfung.
             </p>
             <textarea
               required
@@ -431,7 +431,7 @@ export default function HrDay() {
                 Zurück
               </button>
               <button type="submit" disabled={busy} className="flex-1 rounded-xl bg-navy py-2 text-white">
-                {busy ? "…" : "Ja, akzeptieren"}
+                {busy ? "…" : "Ignorieren"}
               </button>
             </div>
           </form>

@@ -327,6 +327,58 @@ def test_import_stores_sick_days_once(client, monkeypatch):
             db.close()
 
 
+def test_import_stores_school_vacation_and_comp_time(client, monkeypatch):
+    monkeypatch.setattr("app.routers.booking_import.get_config", lambda: _cfg("secret"))
+    user_id = _user_id()
+    _map(user_id)
+    headers = {"Authorization": "Bearer secret"}
+    days = [
+        date(2026, 10, 12),
+        date(2026, 10, 13),
+        date(2026, 10, 19),
+        date(2026, 6, 29),
+    ]
+    db = SessionLocal()
+    try:
+        db.execute(delete(Absence).where(Absence.user_id == user_id, Absence.day.in_(days)))
+        db.commit()
+    finally:
+        db.close()
+    body = {
+        "days": [
+            {"pnr": "09001", "day": "2026-10-12", "kind": "school"},
+            {"pnr": "09001", "day": "2026-10-13", "kind": "vacation"},
+            {"pnr": "09001", "day": "2026-10-19", "kind": "comp_time"},
+            {"pnr": "09001", "day": "2026-06-29", "kind": "special_leave"},
+            {"pnr": "09001", "day": "2026-10-19", "kind": "sick"},
+        ]
+    }
+    try:
+        first = client.post("/api/import/absences", json=body, headers=headers)
+        assert first.status_code == 200, first.text
+        assert first.json()["stored"] == 4
+        assert first.json()["skipped"] == 1
+        db = SessionLocal()
+        try:
+            rows = {
+                row.day: row.kind
+                for row in db.scalars(select(Absence).where(Absence.user_id == user_id, Absence.day.in_(days)))
+            }
+            assert rows[date(2026, 10, 12)] == "school"
+            assert rows[date(2026, 10, 13)] == "vacation"
+            assert rows[date(2026, 10, 19)] == "comp_time"
+            assert rows[date(2026, 6, 29)] == "special_leave"
+        finally:
+            db.close()
+    finally:
+        db = SessionLocal()
+        try:
+            db.execute(delete(Absence).where(Absence.user_id == user_id, Absence.day.in_(days)))
+            db.commit()
+        finally:
+            db.close()
+
+
 def test_import_failures_are_rate_limited(client, monkeypatch):
     from app.ratelimit import reset as reset_limits
 

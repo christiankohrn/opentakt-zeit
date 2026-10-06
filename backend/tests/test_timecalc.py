@@ -70,6 +70,39 @@ def test_vacation_and_sick_fill_the_target():
     assert sick["delta_hours"] == 0
 
 
+def test_school_fills_and_comp_time_keeps_the_deficit():
+    model = _full_week()
+    now = datetime(2026, 8, 6, tzinfo=ZoneInfo("UTC"))
+    school = summarize_day(
+        [],
+        date(2026, 8, 5),
+        model,
+        now=now,
+        absence=SimpleNamespace(kind="school", note=None),
+    )
+    assert school["work_hours"] == 8
+    assert school["delta_hours"] == 0
+    assert school["warnings"] == []
+    leave = summarize_day(
+        [],
+        date(2026, 8, 5),
+        model,
+        now=now,
+        absence=SimpleNamespace(kind="special_leave", note=None),
+    )
+    assert leave["work_hours"] == 8 and leave["delta_hours"] == 0
+    comp = summarize_day(
+        [],
+        date(2026, 8, 5),
+        model,
+        now=now,
+        absence=SimpleNamespace(kind="comp_time", note=None),
+    )
+    assert comp["work_hours"] == 0
+    assert comp["delta_hours"] == -8
+    assert "missing_day" not in comp["warnings"]
+
+
 def test_stamps_on_vacation_count_as_plus():
     punches = [_p_on(date(2026, 8, 5), "in", 7), _p_on(date(2026, 8, 5), "out", 9)]
     day = summarize_day(

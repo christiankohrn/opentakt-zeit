@@ -13,12 +13,15 @@ export const WARNING_LABELS: Record<string, string> = {
   over_10h: "Mehr als 10 Stunden",
   missing_day: "Keine Buchung (Werktag)",
   overnight: "Schicht über Mitternacht",
-  accepted: "Unplausibel, akzeptiert",
+  accepted: "In der Prüfung ignoriert",
 };
 
 export const ABSENCE_LABELS: Record<string, string> = {
   vacation: "Urlaub",
   sick: "Krankheit",
+  school: "Schule",
+  special_leave: "Sonderurlaub",
+  comp_time: "Zeitausgleich",
   holiday: "Feiertag",
   company_off: "Betriebsfrei",
   other: "Abwesend",

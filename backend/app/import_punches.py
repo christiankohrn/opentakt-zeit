@@ -181,8 +181,11 @@ def apply_import(db: Session, punches: list[dict]) -> dict[str, int]:
     return stats
 
 
+ABSENCE_KINDS = {"sick", "vacation", "school", "special_leave", "comp_time"}
+
+
 def apply_absences(db: Session, days: list[dict]) -> dict[str, int]:
-    """Legt Krankheitstage an. Ein vorhandener Tag bleibt, auch wenn er kein Krankheitstag ist."""
+    """Legt Fehlgründe an. Ein vorhandener Tag bleibt, auch bei anderem Grund."""
     stats = {"stored": 0, "duplicate": 0, "unknown_pnr": 0, "skipped": 0, "before_ledger": 0}
     mapping = load_pnr_map()
     actor_id = db.scalar(select(User.id).where(User.role == "admin").order_by(User.id))
@@ -192,6 +195,7 @@ def apply_absences(db: Session, days: list[dict]) -> dict[str, int]:
 
     floor = ledger_from(db)
     touched: dict[int, date] = {}
+    planned: dict[tuple[int, date], str] = {}
     for item in days:
         key = pnr_key(str(item.get("pnr") or ""))
         user_id = mapping.get(key)
@@ -199,21 +203,27 @@ def apply_absences(db: Session, days: list[dict]) -> dict[str, int]:
             stats["unknown_pnr"] += 1
             continue
         day = item.get("day")
-        if not isinstance(day, date) or str(item.get("kind") or "sick") != "sick":
+        kind = str(item.get("kind") or "sick")
+        if not isinstance(day, date) or kind not in ABSENCE_KINDS:
             stats["skipped"] += 1
             continue
         if floor is not None and day < floor:
             stats["before_ledger"] += 1
             continue
+        earlier = planned.get((user_id, day))
+        if earlier is not None:
+            stats["duplicate" if earlier == kind else "skipped"] += 1
+            continue
         existing = db.scalar(select(Absence).where(Absence.user_id == user_id, Absence.day == day))
         if existing is not None:
-            stats["duplicate" if existing.kind == "sick" else "skipped"] += 1
+            stats["duplicate" if existing.kind == kind else "skipped"] += 1
             continue
+        planned[(user_id, day)] = kind
         db.add(
             Absence(
                 user_id=user_id,
                 day=day,
-                kind="sick",
+                kind=kind,
                 note=None,
                 created_by_id=actor_id,
             )

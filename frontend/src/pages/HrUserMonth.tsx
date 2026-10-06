@@ -871,7 +871,7 @@ export default function HrUserMonth() {
                         {issues.length ? (
                           <p className="mt-1 text-xs text-danger">{issues.map(warnLabel).join(" · ")}</p>
                         ) : null}
-                        {d.accepted ? <p className="mt-1 text-xs text-present">Akzeptiert</p> : null}
+                        {d.accepted ? <p className="mt-1 text-xs text-present">In der Prüfung ignoriert</p> : null}
                         {d.auto_break_minutes ? (
                           <p className="mt-1 text-xs text-muted">Pause auto. {d.auto_break_minutes} Min.</p>
                         ) : null}
@@ -944,7 +944,7 @@ export default function HrUserMonth() {
                         {(d.calendar || d.absence) && !d.delta_hours ? "—" : signedHours(d.delta_hours)}
                       </td>
                       <td className={`px-4 py-2.5 text-xs ${issues.length ? "text-danger" : "text-muted"}`}>
-                        {d.warnings.map(warnLabel).join(" · ") || (d.accepted ? "Akzeptiert" : "—")}
+                        {d.warnings.map(warnLabel).join(" · ") || (d.accepted ? "In der Prüfung ignoriert" : "—")}
                       </td>
                     </tr>
                   );

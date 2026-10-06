@@ -145,7 +145,7 @@ class Absence(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     day: Mapped[date] = mapped_column(Date, index=True)
-    kind: Mapped[str] = mapped_column(String(32))  # vacation, sick, holiday, other
+    kind: Mapped[str] = mapped_column(String(32))  # vacation, sick, school, special_leave, comp_time, holiday, other
     note: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
     created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
