@@ -20,6 +20,35 @@ export function sessionMonth() {
   return currentMonth();
 }
 
+/** Sichtbare Personen für Filter: ohne Haken nur aktive. */
+export function visibleUsers<T extends { active: boolean }>(users: T[], showInactive: boolean): T[] {
+  return showInactive ? users : users.filter((u) => u.active);
+}
+
+/**
+ * Effektive IDs für Report-Abfragen: Bei Auswahl oder Haken unverändert,
+ * sonst die IDs der aktiven Personen. Während die Liste lädt null.
+ */
+export function effectiveUserIds(
+  users: { active: boolean; id: number }[] | null,
+  showInactive: boolean,
+  selectedIds: number[] | null,
+): number[] | null {
+  if (selectedIds !== null || showInactive) return selectedIds;
+  if (users === null) return null;
+  return users.filter((u) => u.active).map((u) => u.id);
+}
+
+/** Verschiebt einen Monat (YYYY-MM) um delta Monate, z. B. für Pfeil-Steuerung. */
+export function shiftMonth(month: string, delta: number): string | null {
+  const match = /^(\d{4})-(\d{2})$/.exec(month);
+  if (!match) return null;
+  const index = Number(match[2]);
+  if (index < 1 || index > 12) return null;
+  const d = new Date(Number(match[1]), index - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
 export function payrollMonth() {
   const d = new Date();
   if (d.getDate() <= 15) {

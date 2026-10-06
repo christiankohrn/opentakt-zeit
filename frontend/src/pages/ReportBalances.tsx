@@ -2,10 +2,11 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, type MonthBalanceRow, type User } from "../api";
 import PersonFilter from "../components/PersonFilter";
+import InactiveToggle from "../components/InactiveToggle";
 import LoadingNote from "../components/LoadingNote";
 import ReportToolbar, { ExportButtons } from "../components/ReportToolbar";
 import { signedHours } from "../labels";
-import { defaultStichtag, formatDeDate, monthLabel, parseUserIds, rememberMonth, sessionMonth } from "../reportPeriod";
+import { defaultStichtag, effectiveUserIds, formatDeDate, monthLabel, parseUserIds, rememberMonth, sessionMonth, visibleUsers } from "../reportPeriod";
 
 export default function ReportBalances() {
   const [params, setParams] = useSearchParams();
@@ -13,7 +14,10 @@ export default function ReportBalances() {
   const asOf = params.get("as_of") || defaultStichtag(month);
   const userIdsKey = params.get("user_ids");
   const selectedIds = parseUserIds(userIdsKey);
-  const [users, setUsers] = useState<User[]>([]);
+  const showInactive = params.get("inaktive") === "1";
+  const [users, setUsers] = useState<User[] | null>(null);
+  const shownUsers = visibleUsers(users ?? [], showInactive);
+  const effectiveIds = effectiveUserIds(users, showInactive, selectedIds);
   const [people, setPeople] = useState<MonthBalanceRow[]>([]);
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
@@ -28,15 +32,17 @@ export default function ReportBalances() {
     if (!params.get("month") || !params.get("as_of")) {
       const next: Record<string, string> = { month, as_of: asOf };
       if (userIdsKey !== null) next.user_ids = userIdsKey;
+      if (showInactive) next.inaktive = "1";
       setParams(next, { replace: true });
     }
-  }, [asOf, month, params, setParams, userIdsKey]);
+  }, [asOf, month, params, setParams, showInactive, userIdsKey]);
 
   useEffect(() => {
+    if (selectedIds === null && !showInactive && users === null) return;
     let cancel = false;
     setLoading(true);
     api
-      .monthBalances(month, asOf, parseUserIds(userIdsKey))
+      .monthBalances(month, asOf, effectiveIds)
       .then((r) => {
         if (cancel) return;
         setPeople(r.people);
@@ -52,11 +58,13 @@ export default function ReportBalances() {
     return () => {
       cancel = true;
     };
-  }, [asOf, month, userIdsKey]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [asOf, month, userIdsKey, showInactive, users]);
 
-  function setFilter(nextMonth: string, nextAsOf: string, ids: number[] | null) {
+  function setFilter(nextMonth: string, nextAsOf: string, ids: number[] | null, inactive = showInactive) {
     const query: Record<string, string> = { month: nextMonth, as_of: nextAsOf };
     if (ids !== null) query.user_ids = ids.join(",");
+    if (inactive) query.inaktive = "1";
     setParams(query);
   }
 
@@ -69,8 +77,8 @@ export default function ReportBalances() {
         title="Monatssalden"
         actions={
           <ExportButtons
-            onCsv={() => void api.downloadMonthBalancesCsv(month, asOf, selectedIds)}
-            onPdf={() => void api.downloadMonthBalancesPdf(month, asOf, selectedIds)}
+            onCsv={() => void api.downloadMonthBalancesCsv(month, asOf, effectiveIds)}
+            onPdf={() => void api.downloadMonthBalancesPdf(month, asOf, effectiveIds)}
           />
         }
       >
@@ -89,7 +97,8 @@ export default function ReportBalances() {
             className="date-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
           />
         </label>
-        <PersonFilter users={users} selectedIds={selectedIds} onChange={(ids) => setFilter(month, asOf, ids)} />
+        <PersonFilter users={shownUsers} selectedIds={selectedIds} onChange={(ids) => setFilter(month, asOf, ids)} />
+        <InactiveToggle checked={showInactive} onChange={(next) => setFilter(month, asOf, selectedIds, next)} />
       </ReportToolbar>
       <p className="mt-2 text-sm text-muted">
         Stand {formatDeDate(asOf)} · {monthLabel(month)}. Zeitkonto bis zum früheren von Stichtag und heute. {note}

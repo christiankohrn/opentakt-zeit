@@ -1,6 +1,7 @@
 import { Link, useSearchParams } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { api, type Department } from "../api";
+import InactiveToggle from "../components/InactiveToggle";
 import LoadingNote from "../components/LoadingNote";
 import SearchField, { matchesQuery } from "../components/SearchField";
 import { formatDayLabel, warnLabel } from "../labels";
@@ -11,6 +12,7 @@ export default function HrPlausibility() {
   const month = params.get("month") || sessionMonth();
   const userFilter = params.get("user");
   const deptFilter = params.get("dept") || "";
+  const showInactive = params.get("inaktive") === "1";
   const [departments, setDepartments] = useState<Department[]>([]);
   const [people, setPeople] = useState<
     Awaited<ReturnType<typeof api.plausibility>>["people"]
@@ -18,10 +20,11 @@ export default function HrPlausibility() {
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
 
-  function setFilter(nextMonth: string, nextDept: string) {
+  function setFilter(nextMonth: string, nextDept: string, inactive = showInactive) {
     const nextParams: Record<string, string> = { month: nextMonth };
     if (userFilter) nextParams.user = userFilter;
     if (nextDept) nextParams.dept = nextDept;
+    if (inactive) nextParams.inaktive = "1";
     setParams(nextParams);
   }
 
@@ -35,9 +38,10 @@ export default function HrPlausibility() {
       const next: Record<string, string> = { month };
       if (userFilter) next.user = userFilter;
       if (deptFilter) next.dept = deptFilter;
+      if (showInactive) next.inaktive = "1";
       setParams(next, { replace: true });
     }
-  }, [deptFilter, month, params, setParams, userFilter]);
+  }, [deptFilter, month, params, setParams, showInactive, userFilter]);
 
   useEffect(() => {
     let cancel = false;
@@ -57,6 +61,7 @@ export default function HrPlausibility() {
 
   const visible = people.filter((p) => {
     if (userFilter && String(p.user.id) !== userFilter) return false;
+    if (!showInactive && !p.user.active && String(p.user.id) !== userFilter) return false;
     if (deptFilter === "none" && p.user.department_id) return false;
     if (deptFilter && deptFilter !== "none" && String(p.user.department_id) !== deptFilter) return false;
     return matchesQuery(query, [p.user.display_name, p.user.username, p.user.department_name, p.model_name]);
@@ -65,10 +70,10 @@ export default function HrPlausibility() {
 
   return (
     <div className="pt-2">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="sticky top-[env(safe-area-inset-top)] z-10 flex flex-wrap items-center justify-between gap-3 border-b border-line bg-bg py-2 print:static">
         <h1 className="text-xl font-medium">Prüfung</h1>
         <div className="flex flex-wrap items-center gap-2">
-          <SearchField value={query} onChange={setQuery} placeholder="Person suchen" />
+          <SearchField value={query} onChange={setQuery} onClear={() => setQuery("")} placeholder="Person suchen" />
           {departments.length > 0 || deptFilter ? (
             <select
               className="filter-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
@@ -90,6 +95,7 @@ export default function HrPlausibility() {
             onChange={(e) => setFilter(e.target.value, deptFilter)}
             className="month-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
           />
+          <InactiveToggle checked={showInactive} onChange={(next) => setFilter(month, deptFilter, next)} />
         </div>
       </div>
       <p className="mt-2 text-sm text-muted">
@@ -101,7 +107,10 @@ export default function HrPlausibility() {
       {userFilter ? (
         <p className="mt-2 text-sm">
           {filteredName ? `Nur ${filteredName}.` : "Nur diese Person."}{" "}
-          <Link to={`/pruefung?month=${month}${deptFilter ? `&dept=${deptFilter}` : ""}`} className="text-present">
+          <Link
+            to={`/pruefung?month=${month}${deptFilter ? `&dept=${deptFilter}` : ""}${showInactive ? "&inaktive=1" : ""}`}
+            className="text-present"
+          >
             Alle anzeigen
           </Link>
         </p>

@@ -4,6 +4,8 @@ import { api, type Department, type FlexBalance, type User, type WorkModel } fro
 import { useAuth } from "../auth";
 import FieldError from "../components/FieldError";
 import LoadingNote from "../components/LoadingNote";
+import InactiveToggle from "../components/InactiveToggle";
+import MonthStepper from "../components/MonthStepper";
 import SearchField, { matchesQuery } from "../components/SearchField";
 import PasswordField from "../components/PasswordField";
 import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
@@ -78,6 +80,7 @@ export default function HrUsers() {
   const [params, setParams] = useSearchParams();
   const month = params.get("month") || sessionMonth();
   const deptFilter = params.get("dept") || "";
+  const showInactive = params.get("inaktive") === "1";
   const [users, setUsers] = useState<User[]>([]);
   const [models, setModels] = useState<WorkModel[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -92,12 +95,37 @@ export default function HrUsers() {
   const [mailReady, setMailReady] = useState(false);
   const [info, setInfo] = useState("");
   const [balanceNote, setBalanceNote] = useState("");
-  const [query, setQuery] = useState("");
+  const query = params.get("q") || "";
+
+  function setQuery(next: string) {
+    const nextParams: Record<string, string> = { month };
+    if (deptFilter) nextParams.dept = deptFilter;
+    if (next) nextParams.q = next;
+    if (showInactive) nextParams.inaktive = "1";
+    setParams(nextParams, { replace: true });
+  }
+
+  function setShowInactive(next: boolean) {
+    const nextParams: Record<string, string> = { month };
+    if (deptFilter) nextParams.dept = deptFilter;
+    if (query) nextParams.q = query;
+    if (next) nextParams.inaktive = "1";
+    setParams(nextParams);
+  }
+
+  function setMonthParam(next: string) {
+    const nextParams: Record<string, string> = { month: next };
+    if (deptFilter) nextParams.dept = deptFilter;
+    if (query) nextParams.q = query;
+    if (showInactive) nextParams.inaktive = "1";
+    setParams(nextParams);
+  }
   const dirty = open && JSON.stringify(form) !== JSON.stringify(emptyUserForm(form.work_model_id));
   const blocker = useUnsavedGuard(dirty);
   const sendingMail = Boolean(isAdmin && form.send_access_mail && form.web_login && mailReady);
   const passwordRequired = Boolean(isAdmin && form.web_login && !sendingMail);
   const visible = users.filter((u) => {
+    if (!showInactive && !u.active) return false;
     if (deptFilter === "none" && u.department_id) return false;
     if (deptFilter && deptFilter !== "none" && String(u.department_id) !== deptFilter) return false;
     return matchesQuery(query, [
@@ -250,12 +278,20 @@ export default function HrUsers() {
     }
   }
 
+  function personLink(id: number) {
+    const link = new URLSearchParams({ month, from: "personal" });
+    if (deptFilter) link.set("dept", deptFilter);
+    if (query) link.set("q", query);
+    if (showInactive) link.set("inaktive", "1");
+    return `/personal/${id}?${link.toString()}`;
+  }
+
   return (
     <div className="pt-2">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="sticky top-[env(safe-area-inset-top)] z-10 flex flex-wrap items-center justify-between gap-3 border-b border-line bg-bg py-2 print:static">
         <h1 className="text-xl font-medium">Personal</h1>
         <div className="flex flex-wrap items-center gap-2">
-          <SearchField value={query} onChange={setQuery} placeholder="Name, Transponder" />
+          <SearchField value={query} onChange={setQuery} onClear={() => setQuery("")} placeholder="Name, Transponder" />
           {departments.length > 0 || deptFilter ? (
             <select
               className="filter-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
@@ -263,6 +299,8 @@ export default function HrUsers() {
               onChange={(e) => {
                 const next: Record<string, string> = { month };
                 if (e.target.value) next.dept = e.target.value;
+                if (query) next.q = query;
+                if (showInactive) next.inaktive = "1";
                 setParams(next);
               }}
             >
@@ -275,16 +313,8 @@ export default function HrUsers() {
               <option value="none">Ohne Abteilung</option>
             </select>
           ) : null}
-          <input
-            type="month"
-            value={month}
-            onChange={(e) => {
-              const next: Record<string, string> = { month: e.target.value };
-              if (deptFilter) next.dept = deptFilter;
-              setParams(next);
-            }}
-            className="month-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
-          />
+          <MonthStepper value={month} onChange={setMonthParam} />
+          <InactiveToggle checked={showInactive} onChange={setShowInactive} />
         </div>
       </div>
       {balanceNote ? <p className="mt-2 text-sm text-muted">{balanceNote}</p> : null}
@@ -556,7 +586,7 @@ export default function HrUsers() {
           const flex = balances[u.id];
           return (
             <li key={u.id}>
-              <Link to={`/personal/${u.id}?month=${month}`} className="block rounded-2xl border border-line bg-card px-4 py-3">
+              <Link to={personLink(u.id)} className="block rounded-2xl border border-line bg-card px-4 py-3">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="font-medium">{u.display_name}</p>
@@ -614,7 +644,7 @@ export default function HrUsers() {
               return (
                 <tr key={u.id} className="border-t border-line bg-card">
                   <td className="px-4 py-2.5">
-                    <Link to={`/personal/${u.id}?month=${month}`} className="font-medium text-present">
+                    <Link to={personLink(u.id)} className="font-medium text-present">
                       {u.display_name}
                     </Link>
                   </td>

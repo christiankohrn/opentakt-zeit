@@ -40,7 +40,7 @@ export default function ReportToolbar({
   return (
     <>
       <h1 className="mt-2 text-xl font-medium">{title}</h1>
-      <div className="mt-2 flex items-start gap-3">
+      <div className="sticky top-[env(safe-area-inset-top)] z-10 mt-2 flex items-start gap-3 border-b border-line bg-bg py-2 print:static">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-2">{children}</div>
         {actions ? <div className="ml-auto shrink-0">{actions}</div> : null}
       </div>
