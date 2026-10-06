@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from app.auth import current_user, require_admin
 from app.config import get_config
 from app.database import get_db
-from app.import_punches import apply_import, apply_openings
+from app.import_punches import apply_absences, apply_import, apply_openings
 from app.models import AuditEvent, OrgSettings, User
 from app.ratelimit import IMPORT_MAX, IMPORT_WINDOW, check, clear, client_key, record
 from app.security import check_secret, hash_secret, is_secret_hash
@@ -55,6 +55,23 @@ class OpeningsIn(BaseModel):
     def check_people(cls, value: list[OpeningIn]) -> list[OpeningIn]:
         if len(value) > 1000:
             raise ValueError("höchstens 1000 Personen je Aufruf")
+        return value
+
+
+class AbsenceDayIn(BaseModel):
+    pnr: str
+    day: date
+    kind: str = "sick"
+
+
+class AbsenceBatchIn(BaseModel):
+    days: list[AbsenceDayIn] = Field(default_factory=list)
+
+    @field_validator("days")
+    @classmethod
+    def check_days(cls, value: list[AbsenceDayIn]) -> list[AbsenceDayIn]:
+        if len(value) > 1000:
+            raise ValueError("höchstens 1000 Tage je Aufruf")
         return value
 
 
@@ -150,6 +167,25 @@ def import_punches(
     except ValueError:
         raise HTTPException(409, "pnr-map.json ist ungültig") from None
     _audit_batch(db, "import.punches", stats)
+    return stats
+
+
+@router.post("/absences")
+def import_absences(
+    payload: AbsenceBatchIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    require_token(request, db, endpoint="absences")
+    try:
+        stats = apply_absences(db, [item.model_dump() for item in payload.days])
+    except FileNotFoundError:
+        raise HTTPException(409, "pnr-map.json fehlt neben der Datenbank") from None
+    except ValueError as exc:
+        if str(exc) == "kein Administrator":
+            raise HTTPException(409, "Kein Administrator für den Import") from None
+        raise HTTPException(409, "pnr-map.json ist ungültig") from None
+    _audit_batch(db, "import.absences", stats)
     return stats
 
 

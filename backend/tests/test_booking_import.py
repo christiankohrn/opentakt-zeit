@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 from sqlalchemy import delete, select
@@ -8,7 +9,7 @@ from app.auth import as_local
 from app.config import get_config
 from app.database import SessionLocal
 from app.import_punches import pnr_key
-from app.models import Punch, User
+from app.models import Absence, Punch, User
 
 
 def _user_id() -> int:
@@ -263,6 +264,47 @@ def test_import_batches_and_denials_are_audited(client, monkeypatch):
         assert row is not None and row.entity_id == "punches"
     finally:
         db.close()
+
+
+def test_import_stores_sick_days_once(client, monkeypatch):
+    monkeypatch.setattr("app.routers.booking_import.get_config", lambda: _cfg("secret"))
+    user_id = _user_id()
+    _map(user_id)
+    headers = {"Authorization": "Bearer secret"}
+    db = SessionLocal()
+    try:
+        db.execute(delete(Absence).where(Absence.user_id == user_id, Absence.day.in_([date(2026, 10, 5), date(2026, 10, 6)])))
+        admin = db.scalar(select(User).where(User.role == "admin"))
+        assert admin is not None
+        db.add(Absence(user_id=user_id, day=date(2026, 10, 6), kind="vacation", note="Urlaub", created_by_id=admin.id))
+        db.commit()
+    finally:
+        db.close()
+    body = {"days": [{"pnr": "09001", "day": "2026-10-05", "kind": "sick"}, {"pnr": "09001", "day": "2026-10-06", "kind": "sick"}]}
+    try:
+        first = client.post("/api/import/absences", json=body, headers=headers)
+        assert first.status_code == 200, first.text
+        assert first.json()["stored"] == 1
+        assert first.json()["skipped"] == 1
+        second = client.post("/api/import/absences", json=body, headers=headers)
+        assert second.json()["stored"] == 0
+        assert second.json()["duplicate"] == 1
+        assert second.json()["skipped"] == 1
+        db = SessionLocal()
+        try:
+            sick = db.scalar(select(Absence).where(Absence.user_id == user_id, Absence.day == date(2026, 10, 5)))
+            kept = db.scalar(select(Absence).where(Absence.user_id == user_id, Absence.day == date(2026, 10, 6)))
+            assert sick is not None and sick.kind == "sick" and sick.note is None
+            assert kept is not None and kept.kind == "vacation"
+        finally:
+            db.close()
+    finally:
+        db = SessionLocal()
+        try:
+            db.execute(delete(Absence).where(Absence.user_id == user_id, Absence.day.in_([date(2026, 10, 5), date(2026, 10, 6)])))
+            db.commit()
+        finally:
+            db.close()
 
 
 def test_import_failures_are_rate_limited(client, monkeypatch):

@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import as_local, local_tz, now_utc
 from app.config import get_config
-from app.models import MonthClosing, Punch, User
+from app.models import Absence, MonthClosing, Punch, User
 
 IMPORT_SOURCE = "import"
 IMPORT_PLACE = "Import"
@@ -170,6 +170,61 @@ def apply_import(db: Session, punches: list[dict]) -> dict[str, int]:
             continue
         refresh_closed_day(db, user, day, None)
         refreshed.add(user_id)
+    db.commit()
+    return stats
+
+
+def apply_absences(db: Session, days: list[dict]) -> dict[str, int]:
+    """Legt Krankheitstage an. Ein vorhandener Tag bleibt, auch wenn er kein Krankheitstag ist."""
+    stats = {"stored": 0, "duplicate": 0, "unknown_pnr": 0, "skipped": 0, "before_ledger": 0}
+    mapping = load_pnr_map()
+    actor_id = db.scalar(select(User.id).where(User.role == "admin").order_by(User.id))
+    if actor_id is None:
+        raise ValueError("kein Administrator")
+    from app.closings import ledger_from, refresh_closed_day
+
+    floor = ledger_from(db)
+    touched: dict[int, date] = {}
+    for item in days:
+        key = pnr_key(str(item.get("pnr") or ""))
+        user_id = mapping.get(key)
+        if not key or user_id is None:
+            stats["unknown_pnr"] += 1
+            continue
+        day = item.get("day")
+        if not isinstance(day, date) or str(item.get("kind") or "sick") != "sick":
+            stats["skipped"] += 1
+            continue
+        if floor is not None and day < floor:
+            stats["before_ledger"] += 1
+            continue
+        existing = db.scalar(select(Absence).where(Absence.user_id == user_id, Absence.day == day))
+        if existing is not None:
+            stats["duplicate" if existing.kind == "sick" else "skipped"] += 1
+            continue
+        db.add(
+            Absence(
+                user_id=user_id,
+                day=day,
+                kind="sick",
+                note=None,
+                created_by_id=actor_id,
+            )
+        )
+        stats["stored"] += 1
+        previous = touched.get(user_id)
+        if previous is None or day < previous:
+            touched[user_id] = day
+    db.flush()
+    if touched:
+        users = {
+            user.id: user
+            for user in db.scalars(select(User).where(User.id.in_(list(touched)))).all()
+        }
+        for user_id, day in touched.items():
+            user = users.get(user_id)
+            if user is not None:
+                refresh_closed_day(db, user, day, None)
     db.commit()
     return stats
 
