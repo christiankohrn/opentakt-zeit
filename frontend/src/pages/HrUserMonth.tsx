@@ -43,6 +43,7 @@ export default function HrUserMonth() {
   const from = params.get("from");
   const deptParam = params.get("dept") || "";
   const filterQuery = params.get("q") || "";
+  const showInactive = params.get("inaktive") === "1";
   const [user, setUser] = useState<User | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [days, setDays] = useState<DaySummary[]>([]);
@@ -132,6 +133,7 @@ export default function HrUserMonth() {
     if (from) base.from = from;
     if (deptParam) base.dept = deptParam;
     if (filterQuery) base.q = filterQuery;
+    if (showInactive) base.inaktive = "1";
     return base;
   }
 
@@ -155,7 +157,7 @@ export default function HrUserMonth() {
     if (!params.get("month")) {
       setParams(withCarry({ month }), { replace: true });
     }
-  }, [deptParam, filterQuery, from, month, params, setParams]);
+  }, [deptParam, filterQuery, from, month, params, setParams, showInactive]);
 
   useEffect(() => {
     void reload();
@@ -206,9 +208,10 @@ export default function HrUserMonth() {
       { work: 0, soll: 0 },
     );
 
-  // Gleiche Filterlogik wie HrUsers: Mit dept/q aus der Übersicht blättert
+  // Gleiche Filterlogik wie HrUsers: Mit dept/q/inaktive aus der Übersicht blättert
   // der PersonSwitcher durch genau diese Treffer, sonst durch alle Personen.
   const switcherBase = users.filter((u) => {
+    if (!showInactive && !u.active) return false;
     if (deptParam === "none" && u.department_id) return false;
     if (deptParam && deptParam !== "none" && String(u.department_id) !== deptParam) return false;
     return matchesQuery(filterQuery, [
@@ -225,12 +228,13 @@ export default function HrUserMonth() {
   if (user && !switcherBase.some((u) => u.id === user.id)) switcherBase.push(user);
   const switcherUsers = switcherBase.slice().sort((a, b) => a.display_name.localeCompare(b.display_name, "de"));
 
-  const dayCarry = `${deptParam ? `&dept=${encodeURIComponent(deptParam)}` : ""}${filterQuery ? `&q=${encodeURIComponent(filterQuery)}` : ""}`;
+  const dayCarry = `${deptParam ? `&dept=${encodeURIComponent(deptParam)}` : ""}${filterQuery ? `&q=${encodeURIComponent(filterQuery)}` : ""}${showInactive ? "&inaktive=1" : ""}`;
 
   function backToPersonal() {
     const back = new URLSearchParams({ month });
     if (deptParam) back.set("dept", deptParam);
     if (filterQuery) back.set("q", filterQuery);
+    if (showInactive) back.set("inaktive", "1");
     return `/personal?${back.toString()}`;
   }
 

@@ -78,6 +78,7 @@ export default function HrUsers() {
   const [params, setParams] = useSearchParams();
   const month = params.get("month") || sessionMonth();
   const deptFilter = params.get("dept") || "";
+  const showInactive = params.get("inaktive") === "1";
   const [users, setUsers] = useState<User[]>([]);
   const [models, setModels] = useState<WorkModel[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -98,13 +99,23 @@ export default function HrUsers() {
     const nextParams: Record<string, string> = { month };
     if (deptFilter) nextParams.dept = deptFilter;
     if (next) nextParams.q = next;
+    if (showInactive) nextParams.inaktive = "1";
     setParams(nextParams, { replace: true });
+  }
+
+  function setShowInactive(next: boolean) {
+    const nextParams: Record<string, string> = { month };
+    if (deptFilter) nextParams.dept = deptFilter;
+    if (query) nextParams.q = query;
+    if (next) nextParams.inaktive = "1";
+    setParams(nextParams);
   }
   const dirty = open && JSON.stringify(form) !== JSON.stringify(emptyUserForm(form.work_model_id));
   const blocker = useUnsavedGuard(dirty);
   const sendingMail = Boolean(isAdmin && form.send_access_mail && form.web_login && mailReady);
   const passwordRequired = Boolean(isAdmin && form.web_login && !sendingMail);
   const visible = users.filter((u) => {
+    if (!showInactive && !u.active) return false;
     if (deptFilter === "none" && u.department_id) return false;
     if (deptFilter && deptFilter !== "none" && String(u.department_id) !== deptFilter) return false;
     return matchesQuery(query, [
@@ -261,12 +272,13 @@ export default function HrUsers() {
     const link = new URLSearchParams({ month, from: "personal" });
     if (deptFilter) link.set("dept", deptFilter);
     if (query) link.set("q", query);
+    if (showInactive) link.set("inaktive", "1");
     return `/personal/${id}?${link.toString()}`;
   }
 
   return (
     <div className="pt-2">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="sticky top-[env(safe-area-inset-top)] z-10 flex flex-wrap items-center justify-between gap-3 border-b border-line bg-bg py-2 print:static">
         <h1 className="text-xl font-medium">Personal</h1>
         <div className="flex flex-wrap items-center gap-2">
           <SearchField value={query} onChange={setQuery} onClear={() => setQuery("")} placeholder="Name, Transponder" />
@@ -278,6 +290,7 @@ export default function HrUsers() {
                 const next: Record<string, string> = { month };
                 if (e.target.value) next.dept = e.target.value;
                 if (query) next.q = query;
+                if (showInactive) next.inaktive = "1";
                 setParams(next);
               }}
             >
@@ -297,10 +310,19 @@ export default function HrUsers() {
               const next: Record<string, string> = { month: e.target.value };
               if (deptFilter) next.dept = deptFilter;
               if (query) next.q = query;
+              if (showInactive) next.inaktive = "1";
               setParams(next);
             }}
             className="month-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
           />
+          <label className="flex shrink-0 items-center gap-1.5 text-sm">
+            <input
+              type="checkbox"
+              checked={showInactive}
+              onChange={(e) => setShowInactive(e.target.checked)}
+            />
+            Inaktive
+          </label>
         </div>
       </div>
       {balanceNote ? <p className="mt-2 text-sm text-muted">{balanceNote}</p> : null}

@@ -38,6 +38,7 @@ export default function HrDay() {
   const filterQuery = search.get("q");
   if (deptParam) personParams.set("dept", deptParam);
   if (filterQuery) personParams.set("q", filterQuery);
+  if (search.get("inaktive") === "1") personParams.set("inaktive", "1");
   const personTo = `/personal/${userId}?${personParams.toString()}`;
   const backTo = from === "pruefung" ? `/pruefung?month=${month}&user=${userId}` : personTo;
   const employeeTo =
