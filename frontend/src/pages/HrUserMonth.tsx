@@ -41,8 +41,8 @@ export default function HrUserMonth() {
   const userId = Number(id);
   const month = params.get("month") || sessionMonth();
   const from = params.get("from");
-  const deptParam = from === "personal" ? params.get("dept") || "" : "";
-  const filterQuery = from === "personal" ? params.get("q") || "" : "";
+  const deptParam = params.get("dept") || "";
+  const filterQuery = params.get("q") || "";
   const [user, setUser] = useState<User | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [days, setDays] = useState<DaySummary[]>([]);
@@ -137,6 +137,13 @@ export default function HrUserMonth() {
 
   function setMonth(next: string) {
     setParams(withCarry({ month: next }));
+  }
+
+  function setQueryParam(next: string) {
+    const nextParams = withCarry({ month });
+    if (next) nextParams.q = next;
+    else delete nextParams.q;
+    setParams(nextParams, { replace: true });
   }
 
   function pickPerson(nextId: number) {
@@ -755,7 +762,15 @@ export default function HrUserMonth() {
       </Link>
       <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <PersonSwitcher users={switcherUsers} currentId={userId} onPick={pickPerson} />
+          <h1 className="sr-only">{user?.display_name ?? "Person"}</h1>
+          <PersonSwitcher
+            users={switcherUsers}
+            currentId={userId}
+            onPick={pickPerson}
+            query={filterQuery}
+            onQueryChange={setQueryParam}
+            onClear={() => setQueryParam("")}
+          />
           <p className="mt-1 text-xs text-muted">
             {user ? ROLE[user.role] ?? user.role : ""}
             {user?.work_model_name ? ` · ${user.work_model_name}` : ""}
@@ -866,7 +881,7 @@ export default function HrUserMonth() {
           </button>
         ) : null}
         {from === "pruefung" ? (
-          <Link to="/personal" className="text-muted">
+          <Link to={backToPersonal()} className="text-muted">
             Zur Personalliste
           </Link>
         ) : (

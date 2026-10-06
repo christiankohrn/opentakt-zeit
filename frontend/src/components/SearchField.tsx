@@ -17,6 +17,7 @@ export default function SearchField({
   className = "",
   fill = false,
   autoFocus = false,
+  onClear,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -24,19 +25,32 @@ export default function SearchField({
   className?: string;
   fill?: boolean;
   autoFocus?: boolean;
+  onClear?: () => void;
 }) {
   return (
-    <label className={`relative block ${fill ? "w-full" : "shrink-0"} ${className}`}>
-      <IconSearch className="pointer-events-none absolute top-1/2 left-2 h-4 w-4 -translate-y-1/2 text-muted" />
-      <input
-        type="search"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        aria-label={placeholder}
-        autoFocus={autoFocus}
-        className={`search-compact ${fill ? "search-fill" : ""} rounded-lg border border-line bg-card py-1 pr-2 pl-8 text-sm`}
-      />
-    </label>
+    <div className={`relative ${fill ? "w-full" : "shrink-0"} ${className}`}>
+      <label className="block">
+        <IconSearch className="pointer-events-none absolute top-1/2 left-2 h-4 w-4 -translate-y-1/2 text-muted" />
+        <input
+          type="search"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          aria-label={placeholder}
+          autoFocus={autoFocus}
+          className={`search-compact ${fill ? "search-fill" : ""} rounded-lg border border-line bg-card py-1 ${onClear && value ? "pr-7" : "pr-2"} pl-8 text-sm ${onClear ? "[&::-webkit-search-cancel-button]:hidden" : ""}`}
+        />
+      </label>
+      {onClear && value ? (
+        <button
+          type="button"
+          aria-label="Suche löschen"
+          onClick={onClear}
+          className="absolute top-1/2 right-1 -translate-y-1/2 rounded px-1.5 text-lg leading-none text-muted hover:text-ink"
+        >
+          ×
+        </button>
+      ) : null}
+    </div>
   );
 }

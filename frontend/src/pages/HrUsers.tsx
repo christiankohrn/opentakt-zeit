@@ -269,7 +269,7 @@ export default function HrUsers() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-medium">Personal</h1>
         <div className="flex flex-wrap items-center gap-2">
-          <SearchField value={query} onChange={setQuery} placeholder="Name, Transponder" />
+          <SearchField value={query} onChange={setQuery} onClear={() => setQuery("")} placeholder="Name, Transponder" />
           {departments.length > 0 || deptFilter ? (
             <select
               className="filter-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
