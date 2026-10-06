@@ -760,9 +760,8 @@ export default function HrUserMonth() {
       <Link to={from === "pruefung" ? `/pruefung?month=${month}&user=${userId}` : backToPersonal()} className="text-sm text-muted">
         ← {from === "pruefung" ? "Prüfung" : "Personal"}
       </Link>
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="sr-only">{user?.display_name ?? "Person"}</h1>
+      <div className="sticky top-[env(safe-area-inset-top)] z-10 mt-2 border-b border-line bg-bg py-2 print:static">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <PersonSwitcher
             users={switcherUsers}
             currentId={userId}
@@ -771,28 +770,31 @@ export default function HrUserMonth() {
             onQueryChange={setQueryParam}
             onClear={() => setQueryParam("")}
           />
-          <p className="mt-1 text-xs text-muted">
-            {user ? ROLE[user.role] ?? user.role : ""}
-            {user?.work_model_name ? ` · ${user.work_model_name}` : ""}
-          </p>
-          {days.length ? (
-            <p className="mt-1 text-sm text-muted">
-              Ist {formatHours(totals.work)} · Soll {formatHours(totals.soll)} · Monat{" "}
-              <span className={hoursTone(monthFlex)}>{signedHours(monthFlex)}</span>
-              {" · "}
-              Gesamt <span className={hoursTone(totalFlex)}>{signedHours(totalFlex)}</span>
-            </p>
-          ) : null}
-          {monthClosed ? (
-            <p className="mt-2 text-sm">Dieser Monat ist abgeschlossen. Änderungen rechnen die Abschlüsse neu.</p>
-          ) : null}
+          <input
+            type="month"
+            value={month}
+            onChange={(e) => setMonth(e.target.value)}
+            className="month-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
+          />
         </div>
-        <input
-          type="month"
-          value={month}
-          onChange={(e) => setMonth(e.target.value)}
-          className="month-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
-        />
+      </div>
+      <div>
+        <h1 className="sr-only">{user?.display_name ?? "Person"}</h1>
+        <p className="mt-1 text-xs text-muted">
+          {user ? ROLE[user.role] ?? user.role : ""}
+          {user?.work_model_name ? ` · ${user.work_model_name}` : ""}
+        </p>
+        {days.length ? (
+          <p className="mt-1 text-sm text-muted">
+            Ist {formatHours(totals.work)} · Soll {formatHours(totals.soll)} · Monat{" "}
+            <span className={hoursTone(monthFlex)}>{signedHours(monthFlex)}</span>
+            {" · "}
+            Gesamt <span className={hoursTone(totalFlex)}>{signedHours(totalFlex)}</span>
+          </p>
+        ) : null}
+        {monthClosed ? (
+          <p className="mt-2 text-sm">Dieser Monat ist abgeschlossen. Änderungen rechnen die Abschlüsse neu.</p>
+        ) : null}
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
         <button type="button" className="text-sm text-present" onClick={() => setOpeningOpen((open) => !open)}>
