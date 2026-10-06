@@ -4,6 +4,7 @@ import { api, type Department, type FlexBalance, type User, type WorkModel } fro
 import { useAuth } from "../auth";
 import FieldError from "../components/FieldError";
 import LoadingNote from "../components/LoadingNote";
+import MonthStepper from "../components/MonthStepper";
 import SearchField, { matchesQuery } from "../components/SearchField";
 import PasswordField from "../components/PasswordField";
 import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
@@ -108,6 +109,14 @@ export default function HrUsers() {
     if (deptFilter) nextParams.dept = deptFilter;
     if (query) nextParams.q = query;
     if (next) nextParams.inaktive = "1";
+    setParams(nextParams);
+  }
+
+  function setMonthParam(next: string) {
+    const nextParams: Record<string, string> = { month: next };
+    if (deptFilter) nextParams.dept = deptFilter;
+    if (query) nextParams.q = query;
+    if (showInactive) nextParams.inaktive = "1";
     setParams(nextParams);
   }
   const dirty = open && JSON.stringify(form) !== JSON.stringify(emptyUserForm(form.work_model_id));
@@ -303,18 +312,7 @@ export default function HrUsers() {
               <option value="none">Ohne Abteilung</option>
             </select>
           ) : null}
-          <input
-            type="month"
-            value={month}
-            onChange={(e) => {
-              const next: Record<string, string> = { month: e.target.value };
-              if (deptFilter) next.dept = deptFilter;
-              if (query) next.q = query;
-              if (showInactive) next.inaktive = "1";
-              setParams(next);
-            }}
-            className="month-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
-          />
+          <MonthStepper value={month} onChange={setMonthParam} />
           <label className="flex shrink-0 items-center gap-1.5 text-sm">
             <input
               type="checkbox"

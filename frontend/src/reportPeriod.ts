@@ -20,6 +20,16 @@ export function sessionMonth() {
   return currentMonth();
 }
 
+/** Verschiebt einen Monat (YYYY-MM) um delta Monate, z. B. für Pfeil-Steuerung. */
+export function shiftMonth(month: string, delta: number): string | null {
+  const match = /^(\d{4})-(\d{2})$/.exec(month);
+  if (!match) return null;
+  const index = Number(match[2]);
+  if (index < 1 || index > 12) return null;
+  const d = new Date(Number(match[1]), index - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
 export function payrollMonth() {
   const d = new Date();
   if (d.getDate() <= 15) {

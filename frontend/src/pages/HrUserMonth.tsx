@@ -11,6 +11,7 @@ import FieldError from "../components/FieldError";
 import { IconChevron, IconTrash } from "../components/Icons";
 import PasswordField from "../components/PasswordField";
 import PersonSwitcher from "../components/PersonSwitcher";
+import MonthStepper from "../components/MonthStepper";
 import { matchesQuery } from "../components/SearchField";
 import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
 import { bookingText, dayRowClass, daySurfaceClass, formatDayLabel, formatHours, hoursTone, parseHours, signedHours, warnLabel } from "../labels";
@@ -774,12 +775,7 @@ export default function HrUserMonth() {
             onQueryChange={setQueryParam}
             onClear={() => setQueryParam("")}
           />
-          <input
-            type="month"
-            value={month}
-            onChange={(e) => setMonth(e.target.value)}
-            className="month-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
-          />
+          <MonthStepper value={month} onChange={setMonth} />
         </div>
       </div>
       <div>
