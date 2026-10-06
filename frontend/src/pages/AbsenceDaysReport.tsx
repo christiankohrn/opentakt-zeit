@@ -2,9 +2,10 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, type AbsenceDaysRow, type User } from "../api";
 import PersonFilter from "../components/PersonFilter";
+import InactiveToggle from "../components/InactiveToggle";
 import LoadingNote from "../components/LoadingNote";
 import ReportToolbar, { ExportButtons } from "../components/ReportToolbar";
-import { formatDeDate, parseUserIds, payrollYear, yearRange } from "../reportPeriod";
+import { effectiveUserIds, formatDeDate, parseUserIds, payrollYear, visibleUsers, yearRange } from "../reportPeriod";
 
 export default function AbsenceDaysReport({
   kind,
@@ -20,7 +21,10 @@ export default function AbsenceDaysReport({
   const to = params.get("to") || range.to;
   const userIdsKey = params.get("user_ids");
   const selectedIds = parseUserIds(userIdsKey);
-  const [users, setUsers] = useState<User[]>([]);
+  const showInactive = params.get("inaktive") === "1";
+  const [users, setUsers] = useState<User[] | null>(null);
+  const shownUsers = visibleUsers(users ?? [], showInactive);
+  const effectiveIds = effectiveUserIds(users, showInactive, selectedIds);
   const [people, setPeople] = useState<AbsenceDaysRow[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -38,14 +42,16 @@ export default function AbsenceDaysReport({
       const next: Record<string, string> = { from, to };
       const ids = params.get("user_ids");
       if (ids !== null) next.user_ids = ids;
+      if (showInactive) next.inaktive = "1";
       setParams(next, { replace: true });
     }
-  }, [from, params, setParams, to]);
+  }, [from, params, setParams, showInactive, to]);
 
   useEffect(() => {
+    if (selectedIds === null && !showInactive && users === null) return;
     let cancel = false;
     setLoading(true);
-    load(from, to, parseUserIds(userIdsKey))
+    load(from, to, effectiveIds)
       .then((r) => {
         if (cancel) return;
         setPeople(r.people);
@@ -60,11 +66,13 @@ export default function AbsenceDaysReport({
     return () => {
       cancel = true;
     };
-  }, [from, load, to, userIdsKey]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [from, load, to, userIdsKey, showInactive, users]);
 
-  function setFilter(nextFrom: string, nextTo: string, ids: number[] | null) {
+  function setFilter(nextFrom: string, nextTo: string, ids: number[] | null, inactive = showInactive) {
     const query: Record<string, string> = { from: nextFrom, to: nextTo };
     if (ids !== null) query.user_ids = ids.join(",");
+    if (inactive) query.inaktive = "1";
     setParams(query);
   }
 
@@ -80,8 +88,8 @@ export default function AbsenceDaysReport({
         title={title}
         actions={
           <ExportButtons
-            onCsv={() => void downloadCsv(from, to, selectedIds)}
-            onPdf={() => void downloadPdf(from, to, selectedIds)}
+            onCsv={() => void downloadCsv(from, to, effectiveIds)}
+            onPdf={() => void downloadPdf(from, to, effectiveIds)}
           />
         }
       >
@@ -98,7 +106,8 @@ export default function AbsenceDaysReport({
           onChange={(e) => setFilter(from, e.target.value, selectedIds)}
           className="date-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
         />
-        <PersonFilter users={users} selectedIds={selectedIds} onChange={(ids) => setFilter(from, to, ids)} />
+        <PersonFilter users={shownUsers} selectedIds={selectedIds} onChange={(ids) => setFilter(from, to, ids)} />
+        <InactiveToggle checked={showInactive} onChange={(next) => setFilter(from, to, selectedIds, next)} />
       </ReportToolbar>
       {loading ? (
         <LoadingNote className="mt-2" />

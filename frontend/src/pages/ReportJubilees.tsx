@@ -2,9 +2,10 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, type JubileeEvent, type User } from "../api";
 import PersonFilter from "../components/PersonFilter";
+import InactiveToggle from "../components/InactiveToggle";
 import LoadingNote from "../components/LoadingNote";
 import ReportToolbar, { ExportButtons } from "../components/ReportToolbar";
-import { formatDeDate, parseUserIds, payrollHalf, payrollYear } from "../reportPeriod";
+import { effectiveUserIds, formatDeDate, parseUserIds, payrollHalf, payrollYear, visibleUsers } from "../reportPeriod";
 
 export default function ReportJubilees() {
   const [params, setParams] = useSearchParams();
@@ -12,7 +13,10 @@ export default function ReportJubilees() {
   const half = Number(params.get("half") || payrollHalf()) === 2 ? 2 : 1;
   const userIdsKey = params.get("user_ids");
   const selectedIds = parseUserIds(userIdsKey);
-  const [users, setUsers] = useState<User[]>([]);
+  const showInactive = params.get("inaktive") === "1";
+  const [users, setUsers] = useState<User[] | null>(null);
+  const shownUsers = visibleUsers(users ?? [], showInactive);
+  const effectiveIds = effectiveUserIds(users, showInactive, selectedIds);
   const [events, setEvents] = useState<JubileeEvent[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -25,15 +29,17 @@ export default function ReportJubilees() {
     if (!params.get("year") || !params.get("half")) {
       const next: Record<string, string> = { year: String(year), half: String(half) };
       if (userIdsKey !== null) next.user_ids = userIdsKey;
+      if (showInactive) next.inaktive = "1";
       setParams(next, { replace: true });
     }
-  }, [half, params, setParams, userIdsKey, year]);
+  }, [half, params, setParams, showInactive, userIdsKey, year]);
 
   useEffect(() => {
+    if (selectedIds === null && !showInactive && users === null) return;
     let cancel = false;
     setLoading(true);
     api
-      .jubilees(year, half, parseUserIds(userIdsKey))
+      .jubilees(year, half, effectiveIds)
       .then((r) => {
         if (cancel) return;
         setEvents(r.events);
@@ -48,11 +54,13 @@ export default function ReportJubilees() {
     return () => {
       cancel = true;
     };
-  }, [half, userIdsKey, year]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [half, userIdsKey, year, showInactive, users]);
 
-  function setFilter(nextYear: number, nextHalf: number, ids: number[] | null) {
+  function setFilter(nextYear: number, nextHalf: number, ids: number[] | null, inactive = showInactive) {
     const query: Record<string, string> = { year: String(nextYear), half: String(nextHalf) };
     if (ids !== null) query.user_ids = ids.join(",");
+    if (inactive) query.inaktive = "1";
     setParams(query);
   }
 
@@ -65,8 +73,8 @@ export default function ReportJubilees() {
         title="Jubiläen"
         actions={
           <ExportButtons
-            onCsv={() => void api.downloadJubileesCsv(year, half, selectedIds)}
-            onPdf={() => void api.downloadJubileesPdf(year, half, selectedIds)}
+            onCsv={() => void api.downloadJubileesCsv(year, half, effectiveIds)}
+            onPdf={() => void api.downloadJubileesPdf(year, half, effectiveIds)}
           />
         }
       >
@@ -86,7 +94,8 @@ export default function ReportJubilees() {
           <option value={1}>1. Halbjahr</option>
           <option value={2}>2. Halbjahr</option>
         </select>
-        <PersonFilter users={users} selectedIds={selectedIds} onChange={(ids) => setFilter(year, half, ids)} />
+        <PersonFilter users={shownUsers} selectedIds={selectedIds} onChange={(ids) => setFilter(year, half, ids)} />
+        <InactiveToggle checked={showInactive} onChange={(next) => setFilter(year, half, selectedIds, next)} />
       </ReportToolbar>
       <p className="mt-2 text-sm text-muted">
         Geburtstage, Eintrittstage und 10/25/40-Jahr-Jubiläen. Ohne Geburtstag erscheinen nur Eintritt und Jubiläen.

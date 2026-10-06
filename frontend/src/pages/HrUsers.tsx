@@ -4,6 +4,7 @@ import { api, type Department, type FlexBalance, type User, type WorkModel } fro
 import { useAuth } from "../auth";
 import FieldError from "../components/FieldError";
 import LoadingNote from "../components/LoadingNote";
+import InactiveToggle from "../components/InactiveToggle";
 import MonthStepper from "../components/MonthStepper";
 import SearchField, { matchesQuery } from "../components/SearchField";
 import PasswordField from "../components/PasswordField";
@@ -313,14 +314,7 @@ export default function HrUsers() {
             </select>
           ) : null}
           <MonthStepper value={month} onChange={setMonthParam} />
-          <label className="flex shrink-0 items-center gap-1.5 text-sm">
-            <input
-              type="checkbox"
-              checked={showInactive}
-              onChange={(e) => setShowInactive(e.target.checked)}
-            />
-            Inaktive
-          </label>
+          <InactiveToggle checked={showInactive} onChange={setShowInactive} />
         </div>
       </div>
       {balanceNote ? <p className="mt-2 text-sm text-muted">{balanceNote}</p> : null}

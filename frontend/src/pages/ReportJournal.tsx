@@ -2,10 +2,11 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, type JournalAccounts, type JournalReport, type User } from "../api";
 import PersonFilter from "../components/PersonFilter";
+import InactiveToggle from "../components/InactiveToggle";
 import LoadingNote from "../components/LoadingNote";
 import ReportToolbar, { ExportButtons } from "../components/ReportToolbar";
 import { formatHours, signedHours } from "../labels";
-import { monthLabel, parseUserIds, rememberMonth, sessionMonth } from "../reportPeriod";
+import { effectiveUserIds, monthLabel, parseUserIds, rememberMonth, sessionMonth, visibleUsers } from "../reportPeriod";
 
 function formatDays(value: number | null | undefined, signed = false) {
   if (value === null || value === undefined) return "—";
@@ -55,7 +56,10 @@ export default function ReportJournal() {
   const month = params.get("month") || sessionMonth();
   const userIdsKey = params.get("user_ids");
   const selectedIds = parseUserIds(userIdsKey);
-  const [users, setUsers] = useState<User[]>([]);
+  const showInactive = params.get("inaktive") === "1";
+  const [users, setUsers] = useState<User[] | null>(null);
+  const shownUsers = visibleUsers(users ?? [], showInactive);
+  const effectiveIds = effectiveUserIds(users, showInactive, selectedIds);
   const [journals, setJournals] = useState<JournalReport[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -69,15 +73,17 @@ export default function ReportJournal() {
     if (!params.get("month")) {
       const next: Record<string, string> = { month };
       if (userIdsKey !== null) next.user_ids = userIdsKey;
+      if (showInactive) next.inaktive = "1";
       setParams(next, { replace: true });
     }
-  }, [month, params, setParams, userIdsKey]);
+  }, [month, params, setParams, showInactive, userIdsKey]);
 
   useEffect(() => {
+    if (selectedIds === null && !showInactive && users === null) return;
     let cancel = false;
     setLoading(true);
     api
-      .journals(month, parseUserIds(userIdsKey))
+      .journals(month, effectiveIds)
       .then((r) => {
         if (cancel) return;
         setJournals(r.people);
@@ -92,11 +98,13 @@ export default function ReportJournal() {
     return () => {
       cancel = true;
     };
-  }, [month, userIdsKey]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [month, userIdsKey, showInactive, users]);
 
-  function setFilter(nextMonth: string, ids: number[] | null) {
+  function setFilter(nextMonth: string, ids: number[] | null, inactive = showInactive) {
     const query: Record<string, string> = { month: nextMonth };
     if (ids !== null) query.user_ids = ids.join(",");
+    if (inactive) query.inaktive = "1";
     setParams(query);
   }
 
@@ -111,7 +119,7 @@ export default function ReportJournal() {
           actions={
             <ExportButtons
               pdfDisabled={journals.length === 0}
-              onPdf={() => void api.downloadJournalPdf(month, selectedIds)}
+              onPdf={() => void api.downloadJournalPdf(month, effectiveIds)}
             />
           }
         >
@@ -121,7 +129,8 @@ export default function ReportJournal() {
             onChange={(e) => setFilter(e.target.value, selectedIds)}
             className="month-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
           />
-          <PersonFilter users={users} selectedIds={selectedIds} onChange={(ids) => setFilter(month, ids)} />
+          <PersonFilter users={shownUsers} selectedIds={selectedIds} onChange={(ids) => setFilter(month, ids)} />
+          <InactiveToggle checked={showInactive} onChange={(next) => setFilter(month, selectedIds, next)} />
         </ReportToolbar>
       </div>
       <p className="mt-2 text-sm text-muted print:hidden">
