@@ -4,19 +4,11 @@ import { api, type Department } from "../api";
 import LoadingNote from "../components/LoadingNote";
 import SearchField, { matchesQuery } from "../components/SearchField";
 import { formatDayLabel, warnLabel } from "../labels";
-
-function payrollMonth() {
-  const d = new Date();
-  if (d.getDate() <= 15) {
-    d.setDate(1);
-    d.setMonth(d.getMonth() - 1);
-  }
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
+import { rememberMonth, sessionMonth } from "../reportPeriod";
 
 export default function HrPlausibility() {
   const [params, setParams] = useSearchParams();
-  const month = params.get("month") || payrollMonth();
+  const month = params.get("month") || sessionMonth();
   const userFilter = params.get("user");
   const deptFilter = params.get("dept") || "";
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -38,6 +30,7 @@ export default function HrPlausibility() {
   }, []);
 
   useEffect(() => {
+    rememberMonth(month);
     if (!params.get("month")) {
       const next: Record<string, string> = { month };
       if (userFilter) next.user = userFilter;

@@ -5,11 +5,11 @@ import PersonFilter from "../components/PersonFilter";
 import LoadingNote from "../components/LoadingNote";
 import ReportToolbar, { ExportButtons } from "../components/ReportToolbar";
 import { signedHours } from "../labels";
-import { defaultStichtag, formatDeDate, monthLabel, parseUserIds, payrollMonth } from "../reportPeriod";
+import { defaultStichtag, formatDeDate, monthLabel, parseUserIds, rememberMonth, sessionMonth } from "../reportPeriod";
 
 export default function ReportBalances() {
   const [params, setParams] = useSearchParams();
-  const month = params.get("month") || payrollMonth();
+  const month = params.get("month") || sessionMonth();
   const asOf = params.get("as_of") || defaultStichtag(month);
   const userIdsKey = params.get("user_ids");
   const selectedIds = parseUserIds(userIdsKey);
@@ -24,6 +24,7 @@ export default function ReportBalances() {
   }, []);
 
   useEffect(() => {
+    rememberMonth(month);
     if (!params.get("month") || !params.get("as_of")) {
       const next: Record<string, string> = { month, as_of: asOf };
       if (userIdsKey !== null) next.user_ids = userIdsKey;

@@ -6,6 +6,7 @@ import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
 import LoadingNote from "../components/LoadingNote";
 import { IconTrash } from "../components/Icons";
 import { absenceLabel, formatDayTitle, punchLabel, punchOrigin, warnLabel } from "../labels";
+import { rememberMonth, sessionMonth } from "../reportPeriod";
 import { useUnsavedGuard } from "../unsaved";
 
 const KINDS: PunchKind[] = ["in", "out", "break_start", "break_end"];
@@ -29,13 +30,18 @@ export default function HrDay() {
   const userId = Number(id);
   const day = date ?? "";
   const from = search.get("from");
-  const month = search.get("month") || day.slice(0, 7);
+  const month = search.get("month") || sessionMonth();
+  const dayMonth = day.slice(0, 7) || month;
   const backTo = from === "pruefung" ? `/pruefung?month=${month}&user=${userId}` : `/personal/${userId}?month=${month}`;
   const employeeTo =
     from === "pruefung"
       ? `/personal/${userId}?from=pruefung&month=${month}`
       : `/personal/${userId}?month=${month}`;
   const pruefungTo = `/pruefung?month=${month}&user=${userId}`;
+
+  useEffect(() => {
+    rememberMonth(month);
+  }, [month]);
 
   const [user, setUser] = useState<User | null>(null);
   const [loadError, setLoadError] = useState("");
@@ -59,7 +65,7 @@ export default function HrDay() {
 
   async function load() {
     try {
-      const r = await api.userDays(userId, month || day.slice(0, 7));
+      const r = await api.userDays(userId, dayMonth);
       setUser(r.user);
       setMonthClosed(Boolean(r.closed));
       const found = r.days.find((d) => d.date === day) ?? null;

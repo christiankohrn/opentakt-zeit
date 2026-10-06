@@ -1,3 +1,25 @@
+const SESSION_MONTH = "ze-month";
+
+export function currentMonth() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+export function isMonth(value: string | null | undefined): value is string {
+  return !!value && /^\d{4}-\d{2}$/.test(value);
+}
+
+export function rememberMonth(month: string) {
+  if (isMonth(month)) sessionStorage.setItem(SESSION_MONTH, month);
+}
+
+/** Gewählter Monat dieser Sitzung. Ohne Wahl der laufende Kalendermonat. */
+export function sessionMonth() {
+  const stored = sessionStorage.getItem(SESSION_MONTH);
+  if (isMonth(stored)) return stored;
+  return currentMonth();
+}
+
 export function payrollMonth() {
   const d = new Date();
   if (d.getDate() <= 15) {

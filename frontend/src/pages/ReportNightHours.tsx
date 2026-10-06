@@ -5,11 +5,11 @@ import PersonFilter from "../components/PersonFilter";
 import LoadingNote from "../components/LoadingNote";
 import ReportToolbar, { ExportButtons } from "../components/ReportToolbar";
 import { formatHours } from "../labels";
-import { monthLabel, parseUserIds, payrollMonth } from "../reportPeriod";
+import { monthLabel, parseUserIds, rememberMonth, sessionMonth } from "../reportPeriod";
 
 export default function ReportNightHours() {
   const [params, setParams] = useSearchParams();
-  const month = params.get("month") || payrollMonth();
+  const month = params.get("month") || sessionMonth();
   const showCombined = params.get("plus") !== "0";
   const userIdsKey = params.get("user_ids");
   const selectedIds = parseUserIds(userIdsKey);
@@ -23,6 +23,7 @@ export default function ReportNightHours() {
   }, []);
 
   useEffect(() => {
+    rememberMonth(month);
     if (!params.get("month")) {
       const next: Record<string, string> = { month };
       if (!showCombined) next.plus = "0";

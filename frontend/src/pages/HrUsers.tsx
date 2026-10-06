@@ -10,6 +10,7 @@ import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
 import { hoursTone, isoDate, signedHours } from "../labels";
 import { generatePassword } from "../password";
 import { useUnsavedGuard } from "../unsaved";
+import { rememberMonth, sessionMonth } from "../reportPeriod";
 import { firstUserFieldError, inputClass, validateUserAccount, type UserFieldErrors } from "../userForm";
 
 type UserForm = {
@@ -70,21 +71,12 @@ function SecurityBadges({ u, compact = false }: { u: User; compact?: boolean }) 
   );
 }
 
-function payrollMonth() {
-  const d = new Date();
-  if (d.getDate() <= 15) {
-    d.setDate(1);
-    d.setMonth(d.getMonth() - 1);
-  }
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
-
 export default function HrUsers() {
   const { user: me } = useAuth();
   const isAdmin = me?.role === "admin";
   const canManage = me?.role === "hr" || me?.role === "admin";
   const [params, setParams] = useSearchParams();
-  const month = params.get("month") || payrollMonth();
+  const month = params.get("month") || sessionMonth();
   const deptFilter = params.get("dept") || "";
   const [users, setUsers] = useState<User[]>([]);
   const [models, setModels] = useState<WorkModel[]>([]);
@@ -156,8 +148,11 @@ export default function HrUsers() {
   }
 
   useEffect(() => {
+    rememberMonth(month);
     if (!params.get("month")) {
-      setParams({ month }, { replace: true });
+      const next = Object.fromEntries(params.entries());
+      next.month = month;
+      setParams(next, { replace: true });
     }
   }, [month, params, setParams]);
 

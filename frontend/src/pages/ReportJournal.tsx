@@ -5,7 +5,7 @@ import PersonFilter from "../components/PersonFilter";
 import LoadingNote from "../components/LoadingNote";
 import ReportToolbar, { ExportButtons } from "../components/ReportToolbar";
 import { formatHours, signedHours } from "../labels";
-import { monthLabel, parseUserIds, payrollMonth } from "../reportPeriod";
+import { monthLabel, parseUserIds, rememberMonth, sessionMonth } from "../reportPeriod";
 
 function formatDays(value: number | null | undefined, signed = false) {
   if (value === null || value === undefined) return "—";
@@ -52,7 +52,7 @@ function AccountFooter({ accounts }: { accounts: JournalAccounts }) {
 
 export default function ReportJournal() {
   const [params, setParams] = useSearchParams();
-  const month = params.get("month") || payrollMonth();
+  const month = params.get("month") || sessionMonth();
   const userIdsKey = params.get("user_ids");
   const selectedIds = parseUserIds(userIdsKey);
   const [users, setUsers] = useState<User[]>([]);
@@ -65,6 +65,7 @@ export default function ReportJournal() {
   }, []);
 
   useEffect(() => {
+    rememberMonth(month);
     if (!params.get("month")) {
       const next: Record<string, string> = { month };
       if (userIdsKey !== null) next.user_ids = userIdsKey;

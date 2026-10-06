@@ -14,16 +14,8 @@ import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
 import { bookingText, dayRowClass, daySurfaceClass, formatDayLabel, formatHours, hoursTone, parseHours, signedHours, warnLabel } from "../labels";
 import { generatePassword } from "../password";
 import { useUnsavedGuard } from "../unsaved";
+import { rememberMonth, sessionMonth } from "../reportPeriod";
 import { firstUserFieldError, inputClass, validateUserAccount, type UserFieldErrors } from "../userForm";
-
-function payrollMonth() {
-  const d = new Date();
-  if (d.getDate() <= 15) {
-    d.setDate(1);
-    d.setMonth(d.getMonth() - 1);
-  }
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
 
 function isoToday() {
   const d = new Date();
@@ -45,7 +37,7 @@ export default function HrUserMonth() {
   const { id } = useParams();
   const [params, setParams] = useSearchParams();
   const userId = Number(id);
-  const month = params.get("month") || payrollMonth();
+  const month = params.get("month") || sessionMonth();
   const from = params.get("from");
   const [user, setUser] = useState<User | null>(null);
   const [days, setDays] = useState<DaySummary[]>([]);
@@ -137,6 +129,7 @@ export default function HrUserMonth() {
   }
 
   useEffect(() => {
+    rememberMonth(month);
     if (!params.get("month")) {
       const nextParams: Record<string, string> = { month };
       if (from) nextParams.from = from;
