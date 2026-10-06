@@ -47,6 +47,26 @@ def test_pnr_key_strips_padding():
     assert pnr_key("P0071") == "p0071"
 
 
+def test_import_matches_a_leading_zero_in_the_map(client, monkeypatch):
+    monkeypatch.setattr("app.routers.booking_import.get_config", lambda: _cfg("secret"))
+    user_id = _user_id()
+    path = Path(get_config().database_path).resolve().parent / "pnr-map.json"
+    path.write_text(f'{{"01046": {user_id}}}\n', encoding="utf-8")
+    _cleanup()
+    headers = {"Authorization": "Bearer secret"}
+    try:
+        response = client.post(
+            "/api/import/punches",
+            json={"punches": [{"pnr": "01046", "event_id": "t-imp-zero", "kind": "in", "at": "2026-10-06T05:49:00"}]},
+            headers=headers,
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["stored"] == 1
+        assert response.json()["unknown_pnr"] == 0
+    finally:
+        _cleanup()
+
+
 def test_import_disabled_without_token(client):
     response = client.post("/api/import/punches", json={"punches": []})
     assert response.status_code == 503

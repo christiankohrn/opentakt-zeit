@@ -43,7 +43,14 @@ def load_pnr_map() -> dict[str, int]:
     data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise ValueError("pnr-map.json")
-    return {str(key): int(value) for key, value in data.items()}
+    # Die Datei behält die Nummer aus der Quelle, auch mit führender Null.
+    # Die Buchung sucht die gekürzte Form, sonst trifft 01046 den Eintrag nie.
+    found: dict[str, int] = {}
+    for key, value in data.items():
+        norm = pnr_key(str(key))
+        if norm and norm not in found:
+            found[norm] = int(value)
+    return found
 
 
 def _incoming_utc(dt: datetime) -> datetime:
