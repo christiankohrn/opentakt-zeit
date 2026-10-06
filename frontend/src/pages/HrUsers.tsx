@@ -92,7 +92,14 @@ export default function HrUsers() {
   const [mailReady, setMailReady] = useState(false);
   const [info, setInfo] = useState("");
   const [balanceNote, setBalanceNote] = useState("");
-  const [query, setQuery] = useState("");
+  const query = params.get("q") || "";
+
+  function setQuery(next: string) {
+    const nextParams: Record<string, string> = { month };
+    if (deptFilter) nextParams.dept = deptFilter;
+    if (next) nextParams.q = next;
+    setParams(nextParams, { replace: true });
+  }
   const dirty = open && JSON.stringify(form) !== JSON.stringify(emptyUserForm(form.work_model_id));
   const blocker = useUnsavedGuard(dirty);
   const sendingMail = Boolean(isAdmin && form.send_access_mail && form.web_login && mailReady);
@@ -250,6 +257,13 @@ export default function HrUsers() {
     }
   }
 
+  function personLink(id: number) {
+    const link = new URLSearchParams({ month, from: "personal" });
+    if (deptFilter) link.set("dept", deptFilter);
+    if (query) link.set("q", query);
+    return `/personal/${id}?${link.toString()}`;
+  }
+
   return (
     <div className="pt-2">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -263,6 +277,7 @@ export default function HrUsers() {
               onChange={(e) => {
                 const next: Record<string, string> = { month };
                 if (e.target.value) next.dept = e.target.value;
+                if (query) next.q = query;
                 setParams(next);
               }}
             >
@@ -281,6 +296,7 @@ export default function HrUsers() {
             onChange={(e) => {
               const next: Record<string, string> = { month: e.target.value };
               if (deptFilter) next.dept = deptFilter;
+              if (query) next.q = query;
               setParams(next);
             }}
             className="month-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
@@ -556,7 +572,7 @@ export default function HrUsers() {
           const flex = balances[u.id];
           return (
             <li key={u.id}>
-              <Link to={`/personal/${u.id}?month=${month}`} className="block rounded-2xl border border-line bg-card px-4 py-3">
+              <Link to={personLink(u.id)} className="block rounded-2xl border border-line bg-card px-4 py-3">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="font-medium">{u.display_name}</p>
@@ -614,7 +630,7 @@ export default function HrUsers() {
               return (
                 <tr key={u.id} className="border-t border-line bg-card">
                   <td className="px-4 py-2.5">
-                    <Link to={`/personal/${u.id}?month=${month}`} className="font-medium text-present">
+                    <Link to={personLink(u.id)} className="font-medium text-present">
                       {u.display_name}
                     </Link>
                   </td>

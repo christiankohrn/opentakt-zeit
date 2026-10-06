@@ -10,6 +10,8 @@ import LoadingNote from "../components/LoadingNote";
 import FieldError from "../components/FieldError";
 import { IconChevron, IconTrash } from "../components/Icons";
 import PasswordField from "../components/PasswordField";
+import PersonSwitcher from "../components/PersonSwitcher";
+import { matchesQuery } from "../components/SearchField";
 import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
 import { bookingText, dayRowClass, daySurfaceClass, formatDayLabel, formatHours, hoursTone, parseHours, signedHours, warnLabel } from "../labels";
 import { generatePassword } from "../password";
@@ -39,7 +41,10 @@ export default function HrUserMonth() {
   const userId = Number(id);
   const month = params.get("month") || sessionMonth();
   const from = params.get("from");
+  const deptParam = from === "personal" ? params.get("dept") || "" : "";
+  const filterQuery = from === "personal" ? params.get("q") || "" : "";
   const [user, setUser] = useState<User | null>(null);
+  const [users, setUsers] = useState<User[]>([]);
   const [days, setDays] = useState<DaySummary[]>([]);
   const [monthFlex, setMonthFlex] = useState(0);
   const [totalFlex, setTotalFlex] = useState(0);
@@ -92,8 +97,9 @@ export default function HrUserMonth() {
 
   async function reload() {
     if (!userId) return;
-    const [r, m, a, d] = await Promise.all([api.userDays(userId, month), api.models(), api.userModels(userId), api.departments()]);
+    const [r, m, a, d, all] = await Promise.all([api.userDays(userId, month), api.models(), api.userModels(userId), api.departments(), api.users()]);
     setUser(r.user);
+    setUsers(all);
     setMonthClosed(Boolean(r.closed));
     setOpeningHours(signedHours(r.user.opening_balance_hours ?? 0));
     setOpeningOn(r.user.opening_balance_on ?? "");
@@ -122,20 +128,27 @@ export default function HrUserMonth() {
     }));
   }
 
+  function withCarry(base: Record<string, string>) {
+    if (from) base.from = from;
+    if (deptParam) base.dept = deptParam;
+    if (filterQuery) base.q = filterQuery;
+    return base;
+  }
+
   function setMonth(next: string) {
-    const nextParams: Record<string, string> = { month: next };
-    if (from) nextParams.from = from;
-    setParams(nextParams);
+    setParams(withCarry({ month: next }));
+  }
+
+  function pickPerson(nextId: number) {
+    nav(`/personal/${nextId}?${new URLSearchParams(withCarry({ month })).toString()}`);
   }
 
   useEffect(() => {
     rememberMonth(month);
     if (!params.get("month")) {
-      const nextParams: Record<string, string> = { month };
-      if (from) nextParams.from = from;
-      setParams(nextParams, { replace: true });
+      setParams(withCarry({ month }), { replace: true });
     }
-  }, [from, month, params, setParams]);
+  }, [deptParam, filterQuery, from, month, params, setParams]);
 
   useEffect(() => {
     void reload();
@@ -185,6 +198,34 @@ export default function HrUserMonth() {
       }),
       { work: 0, soll: 0 },
     );
+
+  // Gleiche Filterlogik wie HrUsers: Mit dept/q aus der Übersicht blättert
+  // der PersonSwitcher durch genau diese Treffer, sonst durch alle Personen.
+  const switcherBase = users.filter((u) => {
+    if (deptParam === "none" && u.department_id) return false;
+    if (deptParam && deptParam !== "none" && String(u.department_id) !== deptParam) return false;
+    return matchesQuery(filterQuery, [
+      u.display_name,
+      u.first_name,
+      u.last_name,
+      u.username,
+      u.email,
+      u.department_name,
+      u.work_model_name,
+      u.transponder_id,
+    ]);
+  });
+  if (user && !switcherBase.some((u) => u.id === user.id)) switcherBase.push(user);
+  const switcherUsers = switcherBase.slice().sort((a, b) => a.display_name.localeCompare(b.display_name, "de"));
+
+  const dayCarry = `${deptParam ? `&dept=${encodeURIComponent(deptParam)}` : ""}${filterQuery ? `&q=${encodeURIComponent(filterQuery)}` : ""}`;
+
+  function backToPersonal() {
+    const back = new URLSearchParams({ month });
+    if (deptParam) back.set("dept", deptParam);
+    if (filterQuery) back.set("q", filterQuery);
+    return `/personal?${back.toString()}`;
+  }
 
   const settings = (
     <>
@@ -709,10 +750,10 @@ export default function HrUserMonth() {
 
   return (
     <div className="pt-2">
-      <Link to={from === "pruefung" ? `/pruefung?month=${month}&user=${userId}` : "/personal"} className="text-sm text-muted">
+      <Link to={from === "pruefung" ? `/pruefung?month=${month}&user=${userId}` : backToPersonal()} className="text-sm text-muted">
         ← {from === "pruefung" ? "Prüfung" : "Personal"}
       </Link>
-      <div className="mt-2 flex items-center justify-between gap-3">
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-medium">{user?.display_name ?? "…"}</h1>
           <p className="text-xs text-muted">
@@ -731,12 +772,15 @@ export default function HrUserMonth() {
             <p className="mt-2 text-sm">Dieser Monat ist abgeschlossen. Änderungen rechnen die Abschlüsse neu.</p>
           ) : null}
         </div>
-        <input
-          type="month"
-          value={month}
-          onChange={(e) => setMonth(e.target.value)}
-          className="month-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
-        />
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <PersonSwitcher users={switcherUsers} currentId={userId} onPick={pickPerson} />
+          <input
+            type="month"
+            value={month}
+            onChange={(e) => setMonth(e.target.value)}
+            className="month-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
+          />
+        </div>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
         <button type="button" className="text-sm text-present" onClick={() => setOpeningOpen((open) => !open)}>
@@ -856,7 +900,7 @@ export default function HrUserMonth() {
               return (
                 <li key={d.date}>
                   <Link
-                    to={`/personal/${userId}/tag/${d.date}?from=${from === "pruefung" ? "pruefung" : "personal"}&month=${month}`}
+                    to={`/personal/${userId}/tag/${d.date}?from=${from === "pruefung" ? "pruefung" : "personal"}&month=${month}${dayCarry}`}
                     className={`block rounded-2xl border px-4 py-3 ${
                       issues.length ? `${daySurfaceClass(d)} ring-1 ring-danger/40` : daySurfaceClass(d)
                     }`}
@@ -923,7 +967,7 @@ export default function HrUserMonth() {
                       <td className="whitespace-nowrap px-4 py-2.5">
                         <Link
                           className="font-medium text-present"
-                          to={`/personal/${userId}/tag/${d.date}?from=${from === "pruefung" ? "pruefung" : "personal"}&month=${month}`}
+                          to={`/personal/${userId}/tag/${d.date}?from=${from === "pruefung" ? "pruefung" : "personal"}&month=${month}${dayCarry}`}
                         >
                           {formatDayLabel(d.date, "short")}
                         </Link>

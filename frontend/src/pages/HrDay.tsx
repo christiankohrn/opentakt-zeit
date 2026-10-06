@@ -32,11 +32,16 @@ export default function HrDay() {
   const from = search.get("from");
   const month = search.get("month") || sessionMonth();
   const dayMonth = day.slice(0, 7) || month;
-  const backTo = from === "pruefung" ? `/pruefung?month=${month}&user=${userId}` : `/personal/${userId}?month=${month}`;
+  const personParams = new URLSearchParams({ month });
+  if (from && from !== "pruefung") personParams.set("from", from);
+  const deptParam = search.get("dept");
+  const filterQuery = search.get("q");
+  if (deptParam) personParams.set("dept", deptParam);
+  if (filterQuery) personParams.set("q", filterQuery);
+  const personTo = `/personal/${userId}?${personParams.toString()}`;
+  const backTo = from === "pruefung" ? `/pruefung?month=${month}&user=${userId}` : personTo;
   const employeeTo =
-    from === "pruefung"
-      ? `/personal/${userId}?from=pruefung&month=${month}`
-      : `/personal/${userId}?month=${month}`;
+    from === "pruefung" ? `/personal/${userId}?from=pruefung&month=${month}` : personTo;
   const pruefungTo = `/pruefung?month=${month}&user=${userId}`;
 
   useEffect(() => {
