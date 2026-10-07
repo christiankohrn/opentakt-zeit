@@ -64,10 +64,16 @@ export default function Layout() {
               Personal
             </NavLink>
             {hrFull ? (
-              <NavLink to="/auswertungen" className={({ isActive }) => cls(isActive)}>
-                <IconChart className={icon} />
-                Auswertungen
-              </NavLink>
+              <>
+                <NavLink to="/urlaub" className={({ isActive }) => cls(isActive)}>
+                  <IconSun className={icon} />
+                  Urlaub
+                </NavLink>
+                <NavLink to="/auswertungen" className={({ isActive }) => cls(isActive)}>
+                  <IconChart className={icon} />
+                  Auswertungen
+                </NavLink>
+              </>
             ) : null}
           </>
         ) : null}

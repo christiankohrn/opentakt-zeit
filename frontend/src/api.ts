@@ -148,6 +148,39 @@ export type AbsenceDaysRow = {
   sick_days?: number;
 };
 
+export type PlannerDay = {
+  day: string;
+  kind: string;
+};
+
+export type PlannerPerson = {
+  user_id: number;
+  display_name: string;
+  department_id: number | null;
+  department_name: string | null;
+  active: boolean;
+  vacation_allowance: number | null;
+  vacation_taken: number;
+  vacation_planned: number;
+  vacation_remaining: number | null;
+  days: PlannerDay[];
+};
+
+export type PlannerCalendarDay = {
+  day: string;
+  kind: string;
+  name: string;
+};
+
+export type VacationPlanner = {
+  from: string;
+  to: string;
+  year: number;
+  as_of: string;
+  calendar: PlannerCalendarDay[];
+  people: PlannerPerson[];
+};
+
 export type MonthBalanceRow = {
   user_id: number;
   display_name: string;
@@ -688,6 +721,10 @@ export const api = {
   vacationDays: (from: string, to: string, userIds?: number[] | null) =>
     request<{ from: string; to: string; year: number; people: AbsenceDaysRow[] }>(
       `/api/hr/reports/vacation-days?${reportQuery({ from, to, user_ids: userIdsQuery(userIds) })}`,
+    ),
+  vacationPlanner: (from: string, to: string, userIds?: number[] | null) =>
+    request<VacationPlanner>(
+      `/api/hr/reports/vacation-planner?${reportQuery({ from, to, user_ids: userIdsQuery(userIds) })}`,
     ),
   monthBalances: (month: string, asOf: string, userIds?: number[] | null) =>
     request<{ month: string; as_of: string; note: string; people: MonthBalanceRow[] }>(

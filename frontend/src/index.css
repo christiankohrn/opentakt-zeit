@@ -18,6 +18,8 @@
   --color-sun: #b85c6e;
   --color-holiday: #4d6fb8;
   --color-off: #3d8b7a;
+  --color-vacation: #2f9e44;
+  --color-sick: #d9481f;
 }
 
 @layer theme {
@@ -38,6 +40,8 @@
     --color-sun: #d47a8c;
     --color-holiday: #7ea0e0;
     --color-off: #6cbcad;
+    --color-vacation: #6fce85;
+    --color-sick: #ef7d4e;
   }
 }
 

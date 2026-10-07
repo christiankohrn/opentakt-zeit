@@ -91,7 +91,7 @@ def employment_overlap(user: User, start: date, end: date) -> tuple[date, date] 
 
 def people_in_range(db: Session, start: date, end: date, user_ids: set[int] | None = None) -> list[User]:
     users = sorted(
-        db.scalars(select(User).options(selectinload(User.work_model))),
+        db.scalars(select(User).options(selectinload(User.work_model), selectinload(User.department))),
         key=lambda user: name_sort_key(user.display_name),
     )
     people = [user for user in users if employment_overlap(user, start, end)]
@@ -242,6 +242,78 @@ def vacation_days_report(
     db: Session, start: date, end: date, user_ids: set[int] | None = None
 ) -> list[dict]:
     return absence_days_report(db, "vacation", start, end, user_ids)
+
+
+def vacation_planner_report(
+    db: Session,
+    start: date,
+    end: date,
+    user_ids: set[int] | None = None,
+    as_of: date | None = None,
+    today: date | None = None,
+) -> dict:
+    """Per-day absences of all kinds plus vacation quota per person.
+
+    The quota always refers to the calendar year of ``start``; callers pass
+    a month or a year inside a single year.
+    """
+    from app.accounts import vacation_days
+
+    today = today or as_local(now_utc()).date()
+    as_of = as_of or today
+    people = people_in_range(db, start, end, user_ids)
+    year_start, year_end = year_bounds(start.year)
+    rows = list(
+        db.scalars(select(Absence).where(Absence.day >= start, Absence.day <= end).order_by(Absence.day))
+    )
+    vac_year = list(
+        db.scalars(
+            select(Absence).where(
+                Absence.kind == "vacation", Absence.day >= year_start, Absence.day <= year_end
+            )
+        )
+    )
+    free = _vacation_free_days(db, people, year_start, year_end)
+    cal = calendar_map(db, start, end)
+    days_by_user: dict[int, list[dict]] = {}
+    for row in rows:
+        days_by_user.setdefault(row.user_id, []).append({"day": row.day.isoformat(), "kind": row.kind})
+    out = []
+    for user in people:
+        skip = free.get(user.id, set())
+        taken = _count_absence_days(user, vac_year, year_start, min(as_of, year_end), skip)
+        planned_from = max(as_of + timedelta(days=1), year_start)
+        planned = _count_absence_days(user, vac_year, planned_from, year_end, skip)
+        allowance = user.vacation_days_year
+        remaining = None
+        if allowance is not None:
+            booked = vacation_days(db, user.id, year_start, year_end)
+            remaining = float(allowance) - taken - planned + booked
+        out.append(
+            {
+                "user_id": user.id,
+                "display_name": user.display_name,
+                "department_id": user.department_id,
+                "department_name": user.department.name if user.department else None,
+                "active": bool(user.active),
+                "vacation_allowance": allowance,
+                "vacation_taken": taken,
+                "vacation_planned": planned,
+                "vacation_remaining": remaining,
+                "days": days_by_user.get(user.id, []),
+            }
+        )
+    return {
+        "from": start.isoformat(),
+        "to": end.isoformat(),
+        "year": start.year,
+        "as_of": as_of.isoformat(),
+        "calendar": [
+            {"day": day.isoformat(), "kind": info.kind, "name": info.name}
+            for day, info in sorted(cal.items())
+        ],
+        "people": out,
+    }
 
 
 def person_month_snapshot(
