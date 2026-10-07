@@ -13,8 +13,9 @@ from app.auth import as_local, current_user, now_utc, require_hr_full
 from app.config import get_config
 from app.database import get_db
 from app.models import User
-from app.pdf import ReportPDF, de_date, de_days, de_hm, table_pdf
+from app.pdf import NAVY, ReportPDF, de_date, de_days, de_hm, table_pdf
 from app.reports import (
+    ABSENCE_LABELS,
     JOURNAL_ACCOUNT_NOTE,
     VACATION_NOTE,
     format_de_date,
@@ -27,6 +28,7 @@ from app.reports import (
     safe_csv_cell,
     sick_days_report,
     vacation_days_report,
+    vacation_planner_report,
     year_bounds,
 )
 
@@ -222,6 +224,107 @@ def vacation_days(
     start, end = _period(year, from_day, to_day)
     people = vacation_days_report(db, start, end, _parse_user_ids(user_ids))
     return _absence_export("vacation", start, end, people, _want_pdf(request, format), _want_csv(request, format))
+
+
+@router.get("/vacation-planner")
+@router.get("/vacation-planner.csv")
+@router.get("/vacation-planner.pdf")
+def vacation_planner(
+    request: Request,
+    db: Session = Depends(get_db),
+    year: int | None = Query(None, ge=1990, le=2100),
+    from_day: date | None = Query(None, alias="from"),
+    to_day: date | None = Query(None, alias="to"),
+    as_of: date | None = Query(None),
+    user_ids: str | None = Query(None),
+    format: str | None = Query(None, alias="format"),
+):
+    _actor(request, db)
+    start, end = _period(year, from_day, to_day)
+    if (end - start).days > 370:
+        raise HTTPException(400, "Zeitraum zu groß (höchstens ein Jahr)")
+    stichtag = as_of or as_local(now_utc()).date()
+    report = vacation_planner_report(db, start, end, _parse_user_ids(user_ids), as_of=stichtag)
+    if _want_pdf(request, format) or _want_csv(request, format):
+        return _planner_export(report, _want_pdf(request, format))
+    return report
+
+
+def _planner_export(report: dict, want_pdf: bool):
+    start = date.fromisoformat(report["from"])
+    end = date.fromisoformat(report["to"])
+    slug = f"urlaubsplaner-{report['from']}-{report['to']}"
+    quota_rows = [
+        [
+            person["display_name"],
+            de_days(person["vacation_allowance"]),
+            str(person["vacation_taken"]),
+            str(person["vacation_planned"]),
+            de_days(person["vacation_remaining"]),
+        ]
+        for person in report["people"]
+    ]
+    day_rows = []
+    for person in report["people"]:
+        for entry in person["days"]:
+            day_rows.append(
+                [
+                    person["display_name"],
+                    de_date(entry["day"]),
+                    ABSENCE_LABELS.get(entry["kind"], entry["kind"]),
+                ]
+            )
+    if want_pdf:
+        pdf = ReportPDF(
+            title="Urlaubsplaner",
+            subtitle=f"{format_de_date(start)} – {format_de_date(end)}",
+            org=_org(),
+        )
+        pdf.table(
+            [
+                ("Name", 0.4, "L"),
+                ("Anspruch", 0.15, "R"),
+                ("Genommen", 0.15, "R"),
+                ("Geplant", 0.15, "R"),
+                ("Rest", 0.15, "R"),
+            ],
+            quota_rows,
+            note="",
+        )
+        pdf.ln(4)
+        pdf.set_font(pdf.font_name, "B", 10)
+        pdf.set_text_color(*NAVY)
+        pdf.cell(pdf.epw, 6, "Abwesenheitstage", new_x="LMARGIN", new_y="NEXT")
+        pdf.table(
+            [("Name", 0.4, "L"), ("Datum", 0.3, "L"), ("Art", 0.3, "L")],
+            day_rows,
+            note=JOURNAL_ACCOUNT_NOTE,
+        )
+        return _pdf_response(f"{slug}.pdf", pdf.bytes())
+    csv_rows = []
+    for person in report["people"]:
+        quota = [
+            de_days(person["vacation_allowance"]),
+            str(person["vacation_taken"]),
+            str(person["vacation_planned"]),
+            de_days(person["vacation_remaining"]),
+        ]
+        entries = person["days"] or [{"day": "", "kind": ""}]
+        for entry in entries:
+            csv_rows.append(
+                [
+                    person["display_name"],
+                    person["department_name"] or "",
+                    de_date(entry["day"]) if entry["day"] else "",
+                    ABSENCE_LABELS.get(entry["kind"], "") if entry["kind"] else "",
+                    *quota,
+                ]
+            )
+    return _csv_response(
+        f"{slug}.csv",
+        ["Name", "Abteilung", "Datum", "Art", "Anspruch", "Genommen", "Geplant", "Rest"],
+        csv_rows,
+    )
 
 
 @router.get("/month-balances")

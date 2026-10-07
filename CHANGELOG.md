@@ -4,6 +4,8 @@ Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Ve
 
 ## [Unreleased]
 
+- Neuer Urlaubsplaner für Personal und Admin: Gesamtansicht aller Abwesenheiten als Personen×Tage-Matrix mit Monats- und Jahresansicht, Filter wie in den Auswertungen, Urlaubskennzahlen pro Person und CSV-/PDF-Export.
+- Im Urlaubsplaner lässt sich Urlaub per Klick eintragen und entfernen (Bearbeitungsmodus mit Knopf). Die Kontoprüfung läuft live; geht ein Konto ins Minus, warnt der Planner deutlich und bietet beim Speichern den Ausgleich im Urlaubskonto an.
 - Automatische Pause ist bei neuen Personen eingeschaltet (30 Minuten ab 6:30 Stunden, 45 Minuten ab 9:45 Stunden).
 - Suchfeld in Personal, Arbeitszeitmodellen, Abteilungen, Prüfung, Feiertagen und im Personenfilter der Auswertungen.
 - README beschreibt das Update einer laufenden Installation: frischer Klon, Kopie nach `/opt/zeiterfassung`, dann `update.sh`. Config, Datenbank, nginx und Zertifikat bleiben.
