@@ -155,6 +155,27 @@ export function dayRowClass(d: {
   return "bg-card";
 }
 
+/**
+ * Zellfarbe für den Urlaubsplaner. Persönliche Abwesenheiten sind kräftig,
+ * Kalender (Feiertag/betriebsfrei) und Wochenende nur zart hinterlegt.
+ * weekday wie Date.getDay() (0 = Sonntag).
+ */
+export function plannerCellClass(
+  absenceKind: string | null,
+  calendarKind: string | null,
+  weekday: number,
+): string {
+  if (absenceKind === "vacation") return "bg-vacation/70";
+  if (absenceKind === "sick") return "bg-sick/70";
+  if (absenceKind === "holiday") return "bg-holiday/70";
+  if (absenceKind) return "bg-away/50";
+  if (calendarKind === "holiday") return "bg-holiday/15";
+  if (calendarKind === "company_off") return "bg-off/15";
+  if (weekday === 0) return "bg-sun/15";
+  if (weekday === 6) return "bg-sat/15";
+  return "bg-card";
+}
+
 export function dayKindLabel(d: {
   calendar?: { kind: string; name: string } | null;
   absence?: { kind: string; note: string | null } | null;

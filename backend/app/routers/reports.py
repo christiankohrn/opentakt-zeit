@@ -27,6 +27,7 @@ from app.reports import (
     safe_csv_cell,
     sick_days_report,
     vacation_days_report,
+    vacation_planner_report,
     year_bounds,
 )
 
@@ -222,6 +223,24 @@ def vacation_days(
     start, end = _period(year, from_day, to_day)
     people = vacation_days_report(db, start, end, _parse_user_ids(user_ids))
     return _absence_export("vacation", start, end, people, _want_pdf(request, format), _want_csv(request, format))
+
+
+@router.get("/vacation-planner")
+def vacation_planner(
+    request: Request,
+    db: Session = Depends(get_db),
+    year: int | None = Query(None, ge=1990, le=2100),
+    from_day: date | None = Query(None, alias="from"),
+    to_day: date | None = Query(None, alias="to"),
+    as_of: date | None = Query(None),
+    user_ids: str | None = Query(None),
+):
+    _actor(request, db)
+    start, end = _period(year, from_day, to_day)
+    if (end - start).days > 370:
+        raise HTTPException(400, "Zeitraum zu groß (höchstens ein Jahr)")
+    stichtag = as_of or as_local(now_utc()).date()
+    return vacation_planner_report(db, start, end, _parse_user_ids(user_ids), as_of=stichtag)
 
 
 @router.get("/month-balances")

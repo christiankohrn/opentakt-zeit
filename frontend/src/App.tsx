@@ -10,6 +10,7 @@ import HrModels from "./pages/HrModels";
 import HrPlausibility from "./pages/HrPlausibility";
 import HrUserMonth from "./pages/HrUserMonth";
 import HrUsers from "./pages/HrUsers";
+import HrVacationPlanner from "./pages/HrVacationPlanner";
 import ReportBalances from "./pages/ReportBalances";
 import ReportJournal from "./pages/ReportJournal";
 import ReportJubilees from "./pages/ReportJubilees";
@@ -97,6 +98,7 @@ const router = createBrowserRouter([
           {
             element: <HrFullGuard />,
             children: [
+              { path: "urlaub", element: <HrVacationPlanner /> },
               { path: "auswertungen", element: <Reports /> },
               { path: "auswertungen/krankheit", element: <ReportSickDays /> },
               { path: "auswertungen/urlaub", element: <ReportVacation /> },
