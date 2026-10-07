@@ -9,7 +9,7 @@ from app.auth import as_local, now_utc
 from app.holidays import calendar_map
 from app.models import Absence, Punch, User
 from app.timecalc import punches_window_for_month, summarize_day
-from app.workmodels import load_timeline, model_for
+from app.workmodels import load_frozen_map, load_timeline, model_for, overlay_model
 
 
 def hired_on(user: User) -> date:
@@ -34,12 +34,25 @@ def employment_end(user: User, today: date) -> date:
     return today
 
 
-def summarize_user_day(user: User, punches, day: date, timeline, absence=None, calendar=None) -> dict:
+def summarize_user_day(
+    user: User,
+    punches,
+    day: date,
+    timeline,
+    absence=None,
+    calendar=None,
+    frozen: dict | None = None,
+) -> dict:
     employed = is_employed(user, day)
+    model = model_for(timeline, day, user.work_model) if employed else None
+    if model is not None and frozen:
+        fields = frozen.get(str(model.id))
+        if isinstance(fields, dict):
+            model = overlay_model(model, fields)
     summary = summarize_day(
         punches,
         day,
-        model_for(timeline, day, user.work_model) if employed else None,
+        model,
         absence=absence,
         auto_break=bool(user.auto_break),
         calendar=calendar,
@@ -78,6 +91,7 @@ def days_in_range(db: Session, user: User, start: date, last: date) -> list[dict
     }
     timeline = load_timeline(db, user.id)
     cal = calendar_map(db, start, last)
+    frozen = load_frozen_map(db, [user.id])
     days = []
     cur = start
     while cur < end:
@@ -89,6 +103,7 @@ def days_in_range(db: Session, user: User, start: date, last: date) -> list[dict
                 timeline,
                 absence=absences.get(cur),
                 calendar=cal.get(cur),
+                frozen=frozen.get((user.id, cur.year, cur.month)),
             )
         )
         cur += timedelta(days=1)

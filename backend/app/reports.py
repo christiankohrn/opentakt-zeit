@@ -12,7 +12,7 @@ from app.holidays import calendar_map
 from app.models import Absence, AccountEntry, Punch, User
 from app.names import name_sort_key
 from app.timecalc import punches_window_for_month, soll_hours, work_intervals
-from app.workmodels import load_timelines, model_for
+from app.workmodels import load_frozen_map, load_timelines, model_for, overlay_model
 
 JUBILEE_YEARS = (10, 25, 40)
 NIGHT_WINDOWS = (
@@ -182,6 +182,7 @@ def _count_absence_days(
 def _vacation_free_days(db: Session, users: list[User], start: date, end: date) -> dict[int, set[date]]:
     """Days that consume no vacation quota: roster weekends plus public holidays."""
     timelines = load_timelines(db, [user.id for user in users])
+    frozen_map = load_frozen_map(db, [user.id for user in users])
     cal = calendar_map(db, start, end)
     free: dict[int, set[date]] = {}
     for user in users:
@@ -189,9 +190,14 @@ def _vacation_free_days(db: Session, users: list[User], start: date, end: date) 
         cur = start
         while cur <= end:
             entry = cal.get(cur)
+            model = model_for(timelines.get(user.id, []), cur, user.work_model)
+            blob = frozen_map.get((user.id, cur.year, cur.month)) or {}
+            fields = blob.get(str(model.id)) if model is not None else None
+            if isinstance(fields, dict):
+                model = overlay_model(model, fields)
             if entry is not None and entry.kind in {"holiday", "company_off"}:
                 days.add(cur)
-            elif soll_hours(model_for(timelines.get(user.id, []), cur, user.work_model), cur) <= 0:
+            elif soll_hours(model, cur) <= 0:
                 days.add(cur)
             cur += timedelta(days=1)
         free[user.id] = days

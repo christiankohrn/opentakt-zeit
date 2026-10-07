@@ -36,6 +36,15 @@ class WorkModel(Base):
     hours_fri: Mapped[float] = mapped_column(Float, default=8.0)
     hours_sat: Mapped[float] = mapped_column(Float, default=0.0)
     hours_sun: Mapped[float] = mapped_column(Float, default=0.0)
+    round_start_before: Mapped[int] = mapped_column(Integer, default=0)
+    round_start_after: Mapped[int] = mapped_column(Integer, default=0)
+    round_end_before: Mapped[int] = mapped_column(Integer, default=0)
+    round_end_after: Mapped[int] = mapped_column(Integer, default=0)
+    round_first_threshold: Mapped[int] = mapped_column(Integer, default=0)
+    round_first_step: Mapped[int] = mapped_column(Integer, default=0)
+    round_last_threshold: Mapped[int] = mapped_column(Integer, default=0)
+    round_last_step: Mapped[int] = mapped_column(Integer, default=0)
+    booking_corridor: Mapped[str] = mapped_column(Text, default="")
     core_start: Mapped[Optional[time]] = mapped_column(Time, nullable=True)
     core_end: Mapped[Optional[time]] = mapped_column(Time, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
@@ -136,6 +145,7 @@ class MonthClosing(Base):
     flex_hours: Mapped[float] = mapped_column(Float, default=0.0)
     closed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     closed_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    rules_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
 
 class Absence(Base):

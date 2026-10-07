@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -60,6 +61,102 @@ def required_break_minutes(gross_minutes: int) -> int:
     if gross_minutes > 6 * 60:
         return gross_minutes - 6 * 60
     return 0
+
+
+_WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+
+
+def _clock_minutes(value: object) -> int | None:
+    if not isinstance(value, str) or ":" not in value:
+        return None
+    hour, minute = value.split(":", 1)
+    try:
+        total = int(hour) * 60 + int(minute)
+    except ValueError:
+        return None
+    if 0 <= total < 24 * 60:
+        return total
+    return None
+
+
+def _corridor_bounds(model, day: date) -> tuple[int | None, int | None]:
+    raw = getattr(model, "booking_corridor", None) or ""
+    if isinstance(raw, dict):
+        data = raw
+    elif isinstance(raw, str) and raw.strip():
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            return None, None
+    else:
+        return None, None
+    slot = data.get(_WEEKDAYS[day.weekday()]) or {}
+    if not isinstance(slot, dict):
+        return None, None
+    return _clock_minutes(slot.get("start")), _clock_minutes(slot.get("end"))
+
+
+def _grid_minute(minute: int, step: int, threshold: int) -> int:
+    if step <= 0:
+        return minute
+    offset = minute % step
+    if offset == 0 or offset < threshold:
+        return minute - offset
+    return minute + (step - offset)
+
+
+def _near(minute: int, bound: int, before: int, after: int) -> bool:
+    if before <= 0 and after <= 0:
+        return False
+    delta = minute - bound
+    return -before <= delta <= after
+
+
+def _shift_to_minute(t: datetime, minute_of_day: int) -> datetime:
+    local = as_local(t)
+    current = local.hour * 60 + local.minute
+    return _as_minute(t + timedelta(minutes=minute_of_day - current))
+
+
+def credit_start(t: datetime, model, day: date) -> datetime:
+    """Erstes Kommen: vor dem Korridor zählt nicht, Fenster zieht auf den Beginn, sonst Raster."""
+    local = as_local(t)
+    minute = local.hour * 60 + local.minute
+    start, _end = _corridor_bounds(model, day)
+    before = int(getattr(model, "round_start_before", 0) or 0)
+    after = int(getattr(model, "round_start_after", 0) or 0)
+    pinned = False
+    if start is not None and minute < start:
+        minute = start
+        pinned = True
+    elif start is not None and _near(minute, start, before, after):
+        minute = start
+        pinned = True
+    if not pinned:
+        minute = _grid_minute(
+            minute,
+            int(getattr(model, "round_first_step", 0) or 0),
+            int(getattr(model, "round_first_threshold", 0) or 0),
+        )
+    return _shift_to_minute(t, minute)
+
+
+def credit_end(t: datetime, model, day: date) -> datetime:
+    """Letztes Gehen: Fenster zieht auf das Ende, sonst Raster. Nach dem Korridor bleibt die Zeit."""
+    local = as_local(t)
+    minute = local.hour * 60 + local.minute
+    _start, end = _corridor_bounds(model, day)
+    before = int(getattr(model, "round_end_before", 0) or 0)
+    after = int(getattr(model, "round_end_after", 0) or 0)
+    if end is not None and _near(minute, end, before, after):
+        minute = end
+    else:
+        minute = _grid_minute(
+            minute,
+            int(getattr(model, "round_last_step", 0) or 0),
+            int(getattr(model, "round_last_threshold", 0) or 0),
+        )
+    return _shift_to_minute(t, minute)
 
 
 def punches_window_for_month(start: date, last: date) -> tuple[datetime, datetime]:
@@ -198,8 +295,15 @@ def summarize_day(
     elif prev_state == "break":
         open_break = start_utc
 
+    first_in_punch = next((p for p in events if p.kind == "in"), None)
+    last_out_punch = next((p for p in reversed(events) if p.kind == "out"), None)
+
     for p in events:
         t = _as_minute(p.server_time)
+        if model is not None and p is first_in_punch:
+            t = credit_start(t, model, day)
+        elif model is not None and p is last_out_punch:
+            t = credit_end(t, model, day)
         if p.kind == "in":
             if open_in is None and open_break is None:
                 open_in = t

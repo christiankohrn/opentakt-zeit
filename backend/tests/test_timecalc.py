@@ -1,3 +1,4 @@
+import json
 from datetime import date, datetime
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
@@ -432,6 +433,93 @@ def test_pause_between_checkout_and_checkin_is_not_deducted_twice():
     assert format_hm(result["work_hours"]) == "7:33"
     assert format_hm(result["delta_hours"], signed=True) == "-0:03"
     assert "break_short" not in result["warnings"]
+
+
+def _rounded_model(**extra):
+    base = dict(
+        hours_mon=7.6,
+        hours_tue=7.6,
+        hours_wed=7.6,
+        hours_thu=7.6,
+        hours_fri=7.6,
+        hours_sat=0,
+        hours_sun=0,
+        round_start_before=0,
+        round_start_after=0,
+        round_end_before=0,
+        round_end_after=0,
+        round_first_threshold=2,
+        round_first_step=15,
+        round_last_threshold=0,
+        round_last_step=0,
+        booking_corridor="",
+    )
+    base.update(extra)
+    return SimpleNamespace(**base)
+
+
+def test_first_booking_rounds_up_from_two_minutes():
+    from app.balance import format_hm
+
+    day = date(2026, 8, 7)
+    punches = [
+        _p_on(day, "in", 6, 24),
+        _p_on(day, "out", 10, 39),
+        _p_on(day, "break_start", 10, 39),
+        _p_on(day, "break_end", 11, 7),
+        _p_on(day, "in", 11, 7),
+        _p_on(day, "out", 14, 46),
+    ]
+    result = summarize_day(
+        punches,
+        day,
+        _rounded_model(),
+        now=datetime(2026, 8, 8, tzinfo=ZoneInfo("UTC")),
+        auto_break=True,
+    )
+    assert result["first_in"] == "06:30"
+    assert result["last_out"] == "14:46"
+    assert result["punches"][0]["time"] == "06:24"
+    assert format_hm(result["work_hours"]) == "7:46"
+    assert format_hm(result["delta_hours"], signed=True) == "+0:10"
+
+    early = summarize_day(
+        [_p_on(day, "in", 6, 1), _p_on(day, "out", 14, 0)],
+        day,
+        _rounded_model(),
+        now=datetime(2026, 8, 8, tzinfo=ZoneInfo("UTC")),
+        auto_break=False,
+    )
+    assert early["first_in"] == "06:00"
+
+
+def test_corridor_drops_time_before_the_start_and_can_pull_the_end():
+    day = date(2026, 8, 7)
+    corridor = json.dumps({"fri": {"start": "06:30", "end": "14:00"}})
+    snapped = summarize_day(
+        [_p_on(day, "in", 6, 20), _p_on(day, "out", 14, 46)],
+        day,
+        _rounded_model(round_first_step=0, round_first_threshold=0, round_start_before=15, booking_corridor=corridor),
+        now=datetime(2026, 8, 8, tzinfo=ZoneInfo("UTC")),
+        auto_break=False,
+    )
+    assert snapped["first_in"] == "06:30"
+    assert snapped["last_out"] == "14:46"
+
+    clipped = summarize_day(
+        [_p_on(day, "in", 5, 30), _p_on(day, "out", 14, 10)],
+        day,
+        _rounded_model(
+            round_first_step=0,
+            round_first_threshold=0,
+            round_end_after=20,
+            booking_corridor=corridor,
+        ),
+        now=datetime(2026, 8, 8, tzinfo=ZoneInfo("UTC")),
+        auto_break=False,
+    )
+    assert clipped["first_in"] == "06:30"
+    assert clipped["last_out"] == "14:00"
 
 
 def test_auto_break_tops_up_only_the_overhang_above_six_hours():

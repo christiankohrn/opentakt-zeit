@@ -137,6 +137,31 @@ def ensure_schema() -> None:
         alters.append("ALTER TABLE punches ADD COLUMN device_id VARCHAR(80)")
     if "terminal_name" not in punch_cols:
         alters.append("ALTER TABLE punches ADD COLUMN terminal_name VARCHAR(120) NOT NULL DEFAULT ''")
+    model_cols = (
+        {c["name"] for c in inspect(engine).get_columns("work_models")}
+        if inspect(engine).has_table("work_models")
+        else set()
+    )
+    for column, ddl in (
+        ("round_start_before", "INTEGER NOT NULL DEFAULT 0"),
+        ("round_start_after", "INTEGER NOT NULL DEFAULT 0"),
+        ("round_end_before", "INTEGER NOT NULL DEFAULT 0"),
+        ("round_end_after", "INTEGER NOT NULL DEFAULT 0"),
+        ("round_first_threshold", "INTEGER NOT NULL DEFAULT 0"),
+        ("round_first_step", "INTEGER NOT NULL DEFAULT 0"),
+        ("round_last_threshold", "INTEGER NOT NULL DEFAULT 0"),
+        ("round_last_step", "INTEGER NOT NULL DEFAULT 0"),
+        ("booking_corridor", "TEXT NOT NULL DEFAULT ''"),
+    ):
+        if column not in model_cols:
+            alters.append(f"ALTER TABLE work_models ADD COLUMN {column} {ddl}")
+    closing_cols = (
+        {c["name"] for c in inspect(engine).get_columns("month_closings")}
+        if inspect(engine).has_table("month_closings")
+        else set()
+    )
+    if "rules_json" not in closing_cols:
+        alters.append("ALTER TABLE month_closings ADD COLUMN rules_json TEXT")
     term_cols = (
         {c["name"] for c in inspect(engine).get_columns("terminal_devices")}
         if inspect(engine).has_table("terminal_devices")

@@ -86,6 +86,11 @@ class StatusOut(BaseModel):
     recent_days: list[dict] = Field(default_factory=list)
 
 
+class CorridorDay(BaseModel):
+    start: Optional[str] = None
+    end: Optional[str] = None
+
+
 class WorkModelIn(BaseModel):
     name: str
     kind: str = "flextime"
@@ -96,11 +101,21 @@ class WorkModelIn(BaseModel):
     hours_fri: float = 8
     hours_sat: float = 0
     hours_sun: float = 0
+    round_start_before: int = Field(default=0, ge=0, le=720)
+    round_start_after: int = Field(default=0, ge=0, le=720)
+    round_end_before: int = Field(default=0, ge=0, le=720)
+    round_end_after: int = Field(default=0, ge=0, le=720)
+    round_first_threshold: int = Field(default=0, ge=0, le=59)
+    round_first_step: int = Field(default=0, ge=0, le=60)
+    round_last_threshold: int = Field(default=0, ge=0, le=59)
+    round_last_step: int = Field(default=0, ge=0, le=60)
+    booking_corridor: dict[str, CorridorDay] = Field(default_factory=dict)
 
 
 class WorkModelOut(WorkModelIn):
     id: int
-    model_config = {"from_attributes": True}
+    closed_months: int = 0
+    notice: Optional[str] = None
 
 
 class DepartmentIn(BaseModel):

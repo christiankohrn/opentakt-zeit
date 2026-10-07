@@ -78,10 +78,16 @@ from app.mail import MailError, apply_smtp, has_open_invite, normalize_email, se
 from app.reports import safe_csv_cell
 from app.timecalc import punches_window_for_month, summarize_day
 from app.workmodels import (
+    CLOSED_NOTICE,
+    closed_month_count,
     ensure_initial_assignment,
+    freeze_rules,
+    load_frozen_map,
     load_timeline,
     load_timelines,
     model_for,
+    normalize_corridor,
+    overlay_model,
     sync_current_model,
     upsert_assignment,
 )
@@ -669,16 +675,59 @@ def send_user_access_mail(user_id: int, request: Request, db: Session = Depends(
     return {"ok": True}
 
 
+def _model_out(db: Session, model: WorkModel, notice: str | None = None) -> WorkModelOut:
+    try:
+        corridor = normalize_corridor(json.loads(model.booking_corridor or "{}"))
+    except (json.JSONDecodeError, ValueError):
+        corridor = {}
+    closed = closed_month_count(db, model.id)
+    return WorkModelOut(
+        id=model.id,
+        name=model.name,
+        kind=model.kind,
+        hours_mon=model.hours_mon,
+        hours_tue=model.hours_tue,
+        hours_wed=model.hours_wed,
+        hours_thu=model.hours_thu,
+        hours_fri=model.hours_fri,
+        hours_sat=model.hours_sat,
+        hours_sun=model.hours_sun,
+        round_start_before=model.round_start_before,
+        round_start_after=model.round_start_after,
+        round_end_before=model.round_end_before,
+        round_end_after=model.round_end_after,
+        round_first_threshold=model.round_first_threshold,
+        round_first_step=model.round_first_step,
+        round_last_threshold=model.round_last_threshold,
+        round_last_step=model.round_last_step,
+        booking_corridor=corridor,
+        closed_months=closed,
+        notice=notice,
+    )
+
+
+def _apply_model(model: WorkModel, payload: WorkModelIn) -> None:
+    try:
+        corridor = normalize_corridor(payload.booking_corridor)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    data = payload.model_dump(exclude={"booking_corridor"})
+    for key, value in data.items():
+        setattr(model, key, value)
+    model.booking_corridor = json.dumps(corridor)
+
+
 @router.get("/work-models", response_model=list[WorkModelOut])
 def list_models(request: Request, db: Session = Depends(get_db)):
     _actor(request, db)
-    return list(db.scalars(select(WorkModel).order_by(WorkModel.name)))
+    return [_model_out(db, model) for model in db.scalars(select(WorkModel).order_by(WorkModel.name))]
 
 
 @router.post("/work-models", response_model=WorkModelOut)
 def create_model(payload: WorkModelIn, request: Request, db: Session = Depends(get_db)):
     actor = _actor_full(request, db)
-    model = WorkModel(**payload.model_dump())
+    model = WorkModel(name=payload.name, kind=payload.kind)
+    _apply_model(model, payload)
     db.add(model)
     db.flush()
     db.add(
@@ -691,7 +740,32 @@ def create_model(payload: WorkModelIn, request: Request, db: Session = Depends(g
     )
     db.commit()
     db.refresh(model)
-    return model
+    return _model_out(db, model)
+
+
+@router.patch("/work-models/{model_id}", response_model=WorkModelOut)
+def update_model(model_id: int, payload: WorkModelIn, request: Request, db: Session = Depends(get_db)):
+    actor = _actor_full(request, db)
+    model = db.get(WorkModel, model_id)
+    if model is None:
+        raise HTTPException(404, "Nicht gefunden")
+    closed = closed_month_count(db, model.id)
+    if closed:
+        freeze_rules(db, model)
+    _apply_model(model, payload)
+    notice = CLOSED_NOTICE if closed else None
+    db.add(
+        AuditEvent(
+            actor_id=actor.id,
+            action="workmodel.update",
+            entity_type="work_model",
+            entity_id=str(model.id),
+            payload=json.dumps({"closed_months": closed}, ensure_ascii=False),
+        )
+    )
+    db.commit()
+    db.refresh(model)
+    return _model_out(db, model, notice=notice)
 
 
 @router.get("/departments", response_model=list[DepartmentOut])
@@ -1303,8 +1377,13 @@ def accept_day(
     absence = db.scalar(select(Absence).where(Absence.user_id == user_id, Absence.day == day))
     timeline = load_timeline(db, user_id)
     cal = calendar_map(db, day, day)
+    model = model_for(timeline, day, user.work_model)
+    frozen = load_frozen_map(db, [user_id]).get((user_id, day.year, day.month)) or {}
+    fields = frozen.get(str(model.id)) if model is not None else None
+    if isinstance(fields, dict):
+        model = overlay_model(model, fields)
     summary = summarize_day(
-        punches, day, model_for(timeline, day, user.work_model), absence=absence, auto_break=bool(user.auto_break), calendar=cal.get(day)
+        punches, day, model, absence=absence, auto_break=bool(user.auto_break), calendar=cal.get(day)
     )
     warning_json = json.dumps(summary.get("warnings") or [], ensure_ascii=False)
     existing = db.scalar(select(DayAcceptance).where(DayAcceptance.user_id == user_id, DayAcceptance.day == day))
@@ -1656,6 +1735,7 @@ def balances(
     q_start, q_end = punches_window_for_month(start, last)
     users = sorted(db.scalars(_user_with_rels()), key=_by_name)
     timelines = load_timelines(db, [u.id for u in users])
+    frozen_map = load_frozen_map(db, [u.id for u in users])
     cal = calendar_map(db, start, last)
     today = as_local(now_utc()).date()
     people = []
@@ -1681,6 +1761,7 @@ def balances(
                 timelines.get(user.id, []),
                 absence=absences.get(cur),
                 calendar=cal.get(cur),
+                frozen=frozen_map.get((user.id, cur.year, cur.month)),
             )
             if cur <= today:
                 work += float(summary["work_hours"] or 0)
@@ -1720,6 +1801,7 @@ def plausibility(
     )
     users.sort(key=_by_name)
     timelines = load_timelines(db, [u.id for u in users])
+    frozen_map = load_frozen_map(db, [u.id for u in users])
     cal = calendar_map(db, start, last)
     rows = []
     for user in users:
@@ -1754,6 +1836,7 @@ def plausibility(
                 timelines.get(user.id, []),
                 absence=absences.get(cur),
                 calendar=cal.get(cur),
+                frozen=frozen_map.get((user.id, cur.year, cur.month)),
             )
             issues = [w for w in summary["warnings"] if w in counts]
             if issues:
@@ -1809,6 +1892,7 @@ def export_csv(
         q = q.where(User.id == user_id)
     users = sorted(db.scalars(q), key=_by_name)
     timelines = load_timelines(db, [u.id for u in users])
+    frozen_map = load_frozen_map(db, [u.id for u in users])
     year, mon = (int(x) for x in month.split("-"))
     start = date(year, mon, 1)
     end = date(year + 1, 1, 1) if mon == 12 else date(year, mon + 1, 1)
@@ -1842,6 +1926,7 @@ def export_csv(
                 timelines.get(user.id, []),
                 absence=absences.get(cur),
                 calendar=cal.get(cur),
+                frozen=frozen_map.get((user.id, cur.year, cur.month)),
             )
             if day["work_hours"] or day["first_in"] or day["warnings"] or day["absence"] or day.get("calendar"):
                 day_cal = day.get("calendar") or {}

@@ -102,6 +102,8 @@ export type WorkModelAssignment = {
   created_at: string;
 };
 
+export type CorridorDay = { start?: string | null; end?: string | null };
+
 export type WorkModel = {
   id: number;
   name: string;
@@ -113,6 +115,17 @@ export type WorkModel = {
   hours_fri: number;
   hours_sat: number;
   hours_sun: number;
+  round_start_before: number;
+  round_start_after: number;
+  round_end_before: number;
+  round_end_after: number;
+  round_first_threshold: number;
+  round_first_step: number;
+  round_last_threshold: number;
+  round_last_step: number;
+  booking_corridor: Record<string, CorridorDay>;
+  closed_months: number;
+  notice?: string | null;
 };
 
 export type Department = {
@@ -544,6 +557,8 @@ export const api = {
   models: () => request<WorkModel[]>("/api/hr/work-models"),
   createModel: (body: Record<string, unknown>) =>
     request<WorkModel>("/api/hr/work-models", { method: "POST", body: JSON.stringify(body) }),
+  updateModel: (id: number, body: Record<string, unknown>) =>
+    request<WorkModel>(`/api/hr/work-models/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   departments: () => request<Department[]>("/api/hr/departments"),
   createDepartment: (body: { name: string }) =>
     request<Department>("/api/hr/departments", { method: "POST", body: JSON.stringify(body) }),
