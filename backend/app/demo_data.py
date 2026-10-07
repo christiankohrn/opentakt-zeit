@@ -1,231 +1,257 @@
 from __future__ import annotations
 
-"""Demo-Buchungen für Max Mustermann. Idempotent, Quelle = demo."""
+"""Demo für zwei Konten, etwa sechs Wochen bis heute. Idempotent, Quelle = demo."""
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import delete, select
 
 from app.auth import normalize_username, now_utc
 from app.config import get_config
-from app.database import SessionLocal
-from app.models import Absence, Punch, User, WorkModel
+from app.database import SessionLocal, ensure_schema
+from app.models import Absence, Department, Punch, User, WorkModel
 from app.security import hash_password
 from app.seed import seed_if_empty
+from app.workmodels import ensure_initial_assignment
 
 TZ = ZoneInfo("Europe/Berlin")
 UTC = ZoneInfo("UTC")
 
-# Nur für lokale Demo-Daten. Das Skript gibt die Logins auf stdout aus.
+# Nur für die Demo auf dem Entwicklungsserver. Das Skript gibt die Logins aus.
 DEMO_PASSWORD = "change-me"
+
+
+def _today() -> date:
+    return datetime.now(TZ).date()
 
 
 def _at(day: date, hour: int, minute: int = 0) -> datetime:
     return datetime(day.year, day.month, day.day, hour, minute, tzinfo=TZ).astimezone(UTC)
 
 
-def _punch(user_id: int, day: date, kind: str, hour: int, minute: int = 0, *, seq: int = 1, voided: bool = False, note: str | None = None) -> Punch:
-    p = Punch(
+def _punch(user_id: int, day: date, kind: str, hour: int, minute: int = 0, *, seq: int = 1) -> Punch:
+    return Punch(
         user_id=user_id,
         kind=kind,
         server_time=_at(day, hour, minute),
         source="demo",
-        client_event_id=f"demo-{day.isoformat()}-{kind}-{seq}",
-        note=note,
+        client_event_id=f"demo-{user_id}-{day.isoformat()}-{kind}-{seq}",
     )
-    if voided:
-        p.voided_at = now_utc()
-        p.void_reason = "Demo: falsch gestempelt"
-    return p
 
 
-def _ensure_demo_user(db, *, username: str, display_name: str, email: str, work_model_id: int | None) -> User:
+def _workdays(start: date, end: date) -> list[date]:
+    days: list[date] = []
+    cursor = start
+    while cursor <= end:
+        if cursor.weekday() < 5:
+            days.append(cursor)
+        cursor += timedelta(days=1)
+    return days
+
+
+def _ensure_demo_user(
+    db,
+    *,
+    username: str,
+    first_name: str,
+    last_name: str,
+    email: str,
+    work_model_id: int | None,
+    department_id: int | None,
+    opening_hours: float,
+    opening_on: date,
+) -> User:
     key = normalize_username(username)
     user = db.scalar(select(User).where(User.username == key))
     if user is None:
         user = User(
             username=key,
-            display_name=display_name,
+            display_name=f"{first_name} {last_name}",
             email=email,
-            password_hash=hash_password(DEMO_PASSWORD),
             role="employee",
-            work_model_id=work_model_id,
             auth_source="local",
         )
         db.add(user)
         db.flush()
-        print(f"Benutzer {key} / {DEMO_PASSWORD} angelegt")
+    user.first_name = first_name
+    user.last_name = last_name
+    user.display_name = f"{first_name} {last_name}"
+    user.email = email
+    user.password_hash = hash_password(DEMO_PASSWORD)
+    user.must_change_password = False
+    user.web_login = True
+    user.active = True
+    user.auto_break = True
+    user.work_model_id = work_model_id
+    user.department_id = department_id
+    user.hired_on = date(2024, 4, 1)
+    user.vacation_days_year = 28
+    user.opening_balance_hours = opening_hours
+    user.opening_balance_on = opening_on
+    db.flush()
+    ensure_initial_assignment(db, user, valid_from=date(2024, 4, 1))
     return user
+
+
+def _add(punches: list[Punch], user_id: int, day: date, events: list[tuple[str, int, int]]) -> None:
+    for index, (kind, hour, minute) in enumerate(events, start=1):
+        punches.append(_punch(user_id, day, kind, hour, minute, seq=index))
+
+
+def _office(day: date, *, short_break: bool = False, no_break: bool = False, open_shift: bool = False) -> list[tuple[str, int, int]]:
+    start = 48 + (day.day % 6)
+    events: list[tuple[str, int, int]] = [("in", 7, start)]
+    if open_shift:
+        return events
+    if no_break:
+        return events + [("out", 16, 12)]
+    pause = 12 if short_break else 30
+    end = 22 + (day.day % 8)
+    return events + [("break_start", 12, 0), ("break_end", 12, pause), ("out", 16, end)]
+
+
+def _early(day: date, *, open_shift: bool = False) -> list[tuple[str, int, int]]:
+    events: list[tuple[str, int, int]] = [("in", 6, day.day % 5)]
+    if open_shift:
+        return events
+    return events + [("break_start", 9, 30), ("break_end", 10, 0), ("out", 14, 4 + day.day % 6)]
+
+
+def _late(day: date) -> list[tuple[str, int, int]]:
+    return [
+        ("in", 14, day.day % 4),
+        ("break_start", 18, 0),
+        ("break_end", 18, 30),
+        ("out", 22, 6 + day.day % 5),
+    ]
 
 
 def run() -> None:
     get_config()
+    ensure_schema()
     db = SessionLocal()
     try:
         seed_if_empty(db)
-        admin = db.scalar(select(User).where(User.username == normalize_username("admin")))
-        if not admin:
-            raise SystemExit("Seed-Admin fehlt")
+        admin = db.scalar(select(User).where(User.role == "admin").order_by(User.id))
+        if admin is None:
+            raise SystemExit("Administrator fehlt")
+        admin.password_hash = hash_password(DEMO_PASSWORD)
+        admin.must_change_password = False
+        admin.web_login = True
+
+        today = _today()
+        start = today - timedelta(days=42)
+        days = _workdays(start, today)
+        history = days[:-1] if days and days[-1] == today else list(days)
+        if len(history) < 24:
+            raise SystemExit("Zu wenig Werktage für die Demo")
+
         flextime = db.scalar(select(WorkModel).where(WorkModel.kind == "flextime"))
-        user = _ensure_demo_user(
+        shift = db.scalar(select(WorkModel).where(WorkModel.kind == "shift"))
+        produktion = db.scalar(select(Department).where(Department.name == "Produktion"))
+        lager = db.scalar(select(Department).where(Department.name == "Lager"))
+
+        max_user = _ensure_demo_user(
             db,
             username="mitarbeiter",
-            display_name="Max Mustermann",
-            email="mitarbeiter@localhost",
+            first_name="Max",
+            last_name="Mustermann",
+            email="max@example.com",
             work_model_id=flextime.id if flextime else None,
+            department_id=produktion.id if produktion else None,
+            opening_hours=12.5,
+            opening_on=start,
+        )
+        erika = _ensure_demo_user(
+            db,
+            username="erika",
+            first_name="Erika",
+            last_name="Schicht",
+            email="erika@example.com",
+            work_model_id=shift.id if shift else None,
+            department_id=lager.id if lager else None,
+            opening_hours=-6.25,
+            opening_on=start,
         )
 
-        db.execute(delete(Punch).where(Punch.user_id == user.id))
-        db.execute(delete(Absence).where(Absence.user_id == user.id))
+        for person in (max_user, erika):
+            db.execute(delete(Punch).where(Punch.user_id == person.id))
+            db.execute(delete(Absence).where(Absence.user_id == person.id))
         db.flush()
 
         punches: list[Punch] = []
         absences: list[Absence] = []
+        vacation = set(history[4:7])
+        sick = {history[9]}
+        comp_time = {history[13]}
+        school = {history[16]}
+        missing = {history[18]}
+        short = history[11]
+        forgotten = history[20]
+        night_friday = next(day for day in history if day.weekday() == 4 and day not in vacation)
 
-        def day_off(d: date, kind: str, note: str) -> None:
-            absences.append(
-                Absence(user_id=user.id, day=d, kind=kind, note=note, created_by_id=admin.id)
+        def away(user: User, day: date, kind: str) -> None:
+            absences.append(Absence(user_id=user.id, day=day, kind=kind, note=None, created_by_id=admin.id))
+
+        for day in history:
+            if day in vacation:
+                away(max_user, day, "vacation")
+                continue
+            if day in sick:
+                away(max_user, day, "sick")
+                continue
+            if day in comp_time:
+                away(max_user, day, "comp_time")
+                continue
+            if day in school:
+                away(max_user, day, "school")
+                continue
+            if day in missing:
+                continue
+            if day == forgotten:
+                _add(punches, max_user.id, day, [("in", 8, 2)])
+                continue
+            _add(
+                punches,
+                max_user.id,
+                day,
+                _office(day, short_break=day == short, no_break=day == history[22]),
             )
 
-        def add(day: date, *events: tuple) -> None:
-            for i, ev in enumerate(events, start=1):
-                extra: dict = {}
-                parts = list(ev)
-                if parts and isinstance(parts[-1], dict):
-                    extra = parts.pop()
-                kind, hour, minute = parts[0], parts[1], parts[2] if len(parts) > 2 else 0
-                punches.append(
-                    _punch(
-                        user.id,
-                        day,
-                        kind,
-                        hour,
-                        minute,
-                        seq=i,
-                        voided=bool(extra.get("voided")),
-                        note=extra.get("note"),
-                    )
-                )
+        if today.weekday() < 5:
+            _add(punches, max_user.id, today, _office(today, open_shift=True))
 
-        # August 2026 — voller Katalog praxisnaher Fälle
-        add(date(2026, 8, 3), ("in", 8, 0), ("break_start", 12, 0), ("break_end", 12, 30), ("out", 16, 30))
-        add(date(2026, 8, 4), ("in", 8, 5))  # Gehen vergessen
-        day_off(date(2026, 8, 5), "vacation", "Demo: Urlaub")
-        day_off(date(2026, 8, 6), "vacation", "Demo: Urlaub")
-        day_off(date(2026, 8, 7), "vacation", "Demo: Urlaub")
-        day_off(date(2026, 8, 10), "sick", "Demo: AU Grippe")
-        add(date(2026, 8, 11), ("in", 8, 0), ("break_start", 12, 0), ("break_end", 12, 15), ("out", 17, 0))  # Pause 15 Min
-        add(date(2026, 8, 12), ("in", 7, 0), ("break_start", 12, 0), ("break_end", 12, 30), ("out", 17, 0))  # >9h, Pause nur 30
-        add(date(2026, 8, 13), ("in", 7, 0), ("break_start", 12, 0), ("break_end", 12, 45), ("out", 17, 0))  # 9h+ mit 45 Min
-        add(date(2026, 8, 14), ("in", 7, 0), ("break_start", 12, 0), ("break_end", 12, 45), ("out", 18, 30))  # >10 Stunden
-        # 17.8. Montag: Fehlzeit, keine Buchung
-        add(date(2026, 8, 18), ("in", 8, 0), ("out", 11, 30), ("in", 13, 30), ("out", 17, 30))  # Arzttermin dazwischen
-        add(date(2026, 8, 19), ("in", 8, 0), ("out", 16, 30))  # keine Pause
-        add(date(2026, 8, 20), ("in", 8, 0), ("break_start", 12, 0), ("break_end", 14, 0), ("out", 17, 0))  # 2h Pause
-        day_off(date(2026, 8, 21), "holiday", "Demo: Brückentag")
-        add(date(2026, 8, 24), ("in", 10, 0), ("break_start", 13, 0), ("break_end", 13, 30), ("out", 18, 30))  # später Beginn
-        add(date(2026, 8, 25), ("in", 8, 0), ("out", 12, 0))  # halber Tag, gegangen
-        add(
-            date(2026, 8, 26),
-            ("in", 7, 58, {"voided": True, "note": "Demo: zu früh, storniert"}),
-            ("in", 8, 12),
-            ("break_start", 12, 5),
-            ("break_end", 12, 35),
-            ("out", 16, 40),
-        )
-        add(date(2026, 8, 27), ("in", 8, 0), ("break_start", 12, 0), ("out", 12, 20))  # aus Pause nach Hause
-        add(date(2026, 8, 28), ("in", 8, 0), ("break_start", 12, 0), ("out", 16, 30))  # Pause nicht beendet, dann Gehen
-        add(date(2026, 8, 31), ("in", 7, 45), ("break_start", 11, 45), ("break_end", 12, 15), ("out", 16, 15))
-
-        add(date(2026, 9, 1), ("in", 8, 0), ("break_start", 12, 0), ("break_end", 12, 30), ("out", 16, 30))
-        # 2.9. Fehlzeit
-        add(date(2026, 9, 3), ("in", 8, 10), ("break_start", 12, 2), ("break_end", 12, 32), ("out", 17, 5))
+        erika_vacation = set(history[14:16])
+        erika_sick = {history[21]}
+        for day in history:
+            if day in erika_vacation:
+                away(erika, day, "vacation")
+                continue
+            if day in erika_sick:
+                away(erika, day, "sick")
+                continue
+            if day == night_friday:
+                _add(punches, erika.id, day, [("in", 22, 0)])
+                _add(punches, erika.id, day + timedelta(days=1), [("out", 6, 10)])
+                continue
+            if day.isocalendar().week % 2 == 0:
+                _add(punches, erika.id, day, _early(day))
+            else:
+                _add(punches, erika.id, day, _late(day))
+        if today.weekday() < 5 and today not in erika_vacation:
+            _add(punches, erika.id, today, _early(today, open_shift=True))
 
         db.add_all(punches)
         db.add_all(absences)
         db.commit()
-        print(f"Demo: {len(punches)} Stempel, {len(absences)} Abwesenheiten für {user.display_name}")
-        _seed_erika(db, admin)
+        print(f"Zeitraum {start.isoformat()} bis {today.isoformat()}")
+        print(f"Stempel {len(punches)}, Abwesenheiten {len(absences)}")
+        print(f"Zugang {admin.username} / {DEMO_PASSWORD}  (Personal)")
+        print(f"Zugang {max_user.username} / {DEMO_PASSWORD}  (Gleitzeit)")
+        print(f"Zugang {erika.username} / {DEMO_PASSWORD}  (Schicht)")
     finally:
         db.close()
-
-
-def _seed_erika(db, admin: User) -> None:
-    shift = db.scalar(select(WorkModel).where(WorkModel.kind == "shift"))
-    if not shift:
-        shift = WorkModel(
-            name="Wechselschicht 3×8",
-            kind="shift",
-            hours_mon=8,
-            hours_tue=8,
-            hours_wed=8,
-            hours_thu=8,
-            hours_fri=8,
-            hours_sat=0,
-            hours_sun=0,
-        )
-        db.add(shift)
-        db.flush()
-    erika = _ensure_demo_user(
-        db,
-        username="erika",
-        display_name="Erika Schicht",
-        email="erika@localhost",
-        work_model_id=shift.id,
-    )
-    erika.work_model_id = shift.id
-    erika.display_name = "Erika Schicht"
-
-    db.execute(delete(Punch).where(Punch.user_id == erika.id))
-    db.execute(delete(Absence).where(Absence.user_id == erika.id))
-    db.flush()
-
-    punches: list[Punch] = []
-    absences: list[Absence] = []
-
-    def add(uid: int, day: date, *events: tuple) -> None:
-        for i, ev in enumerate(events, start=1):
-            extra: dict = {}
-            parts = list(ev)
-            if parts and isinstance(parts[-1], dict):
-                extra = parts.pop()
-            kind, hour, minute = parts[0], parts[1], parts[2] if len(parts) > 2 else 0
-            punches.append(
-                _punch(uid, day, kind, hour, minute, seq=i, voided=bool(extra.get("voided")), note=extra.get("note"))
-            )
-
-    # Frühschicht
-    add(erika.id, date(2026, 8, 3), ("in", 6, 0), ("break_start", 9, 30), ("break_end", 10, 0), ("out", 14, 0))
-    add(erika.id, date(2026, 8, 4), ("in", 6, 0), ("break_start", 9, 30), ("break_end", 10, 0), ("out", 14, 0))
-    add(erika.id, date(2026, 8, 5), ("in", 6, 5), ("break_start", 9, 40), ("break_end", 9, 55), ("out", 14, 10))  # Pause kurz
-    # Spätschicht
-    add(erika.id, date(2026, 8, 6), ("in", 14, 0), ("break_start", 18, 0), ("break_end", 18, 30), ("out", 22, 0))
-    # Nachtschicht über Mitternacht
-    add(erika.id, date(2026, 8, 7), ("in", 22, 0))
-    add(erika.id, date(2026, 8, 8), ("out", 6, 0))
-    add(erika.id, date(2026, 8, 10), ("in", 14, 0), ("break_start", 18, 0), ("break_end", 18, 30), ("out", 22, 0))
-    add(erika.id, date(2026, 8, 11), ("in", 14, 0), ("break_start", 18, 0), ("break_end", 18, 30), ("out", 22, 15))
-    add(erika.id, date(2026, 8, 12), ("in", 22, 0))
-    add(erika.id, date(2026, 8, 13), ("out", 6, 0), ("in", 22, 0))
-    add(erika.id, date(2026, 8, 14), ("out", 6, 5))
-    # 17.8. Fehlzeit
-    add(erika.id, date(2026, 8, 18), ("in", 6, 0), ("out", 14, 0))  # Früh ohne Pause
-    absences.append(Absence(user_id=erika.id, day=date(2026, 8, 19), kind="vacation", note="Demo: Urlaub Schicht", created_by_id=admin.id))
-    absences.append(Absence(user_id=erika.id, day=date(2026, 8, 20), kind="vacation", note="Demo: Urlaub Schicht", created_by_id=admin.id))
-    absences.append(Absence(user_id=erika.id, day=date(2026, 8, 21), kind="vacation", note="Demo: Urlaub Schicht", created_by_id=admin.id))
-    add(erika.id, date(2026, 8, 24), ("in", 14, 0))  # Spät, Gehen vergessen
-    add(erika.id, date(2026, 8, 25), ("in", 6, 0), ("break_start", 9, 30), ("break_end", 10, 0), ("out", 14, 0))
-    add(erika.id, date(2026, 8, 26), ("in", 6, 0), ("break_start", 9, 30), ("break_end", 11, 30), ("out", 14, 0))  # lange Pause
-    add(erika.id, date(2026, 8, 27), ("in", 22, 0))
-    add(erika.id, date(2026, 8, 28), ("out", 6, 0))
-    add(erika.id, date(2026, 8, 31), ("in", 14, 0), ("break_start", 18, 0), ("break_end", 18, 30), ("out", 22, 0))
-    add(erika.id, date(2026, 9, 1), ("in", 6, 0), ("break_start", 9, 30), ("break_end", 10, 0), ("out", 14, 0))
-
-    db.add_all(punches)
-    db.add_all(absences)
-    db.commit()
-    print(f"Demo Schicht: {len(punches)} Stempel, {len(absences)} Abwesenheiten für {erika.display_name}")
 
 
 if __name__ == "__main__":
