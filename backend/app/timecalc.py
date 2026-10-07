@@ -34,6 +34,21 @@ def allowed_kinds(state: str) -> list[str]:
     return sorted(VALID_TRANSITIONS.get(state, set()))
 
 
+def stamped_break_minutes(events: list[Punch]) -> int:
+    """Dauer der Paare Pause Beginn/Ende, auch zwischen Gehen und Kommen."""
+    pause = timedelta(0)
+    open_break: datetime | None = None
+    for punch in events:
+        t = _as_minute(punch.server_time)
+        if punch.kind == "break_start":
+            open_break = t
+        elif punch.kind == "break_end" and open_break is not None:
+            if t > open_break:
+                pause += t - open_break
+            open_break = None
+    return int(pause.total_seconds() // 60)
+
+
 def required_break_minutes(gross_minutes: int) -> int:
     """Mindestpause aus der Anwesenheit. Gestempelte Minuten zählen darauf an."""
     if gross_minutes > 9 * 60 + 45:
@@ -224,7 +239,7 @@ def summarize_day(
                 work += day_end - open_in
 
     work_minutes = int(work.total_seconds() // 60)
-    pause_minutes = int(pause.total_seconds() // 60)
+    pause_minutes = max(int(pause.total_seconds() // 60), stamped_break_minutes(events))
     auto_minutes = 0
     if auto_break and not still_open:
         required = required_break_minutes(work_minutes + pause_minutes)

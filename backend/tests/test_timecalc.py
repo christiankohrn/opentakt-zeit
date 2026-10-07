@@ -399,6 +399,41 @@ def test_auto_break_tops_up_a_short_stamped_pause():
     assert format_hm(longer["work_hours"]) == "7:50"
 
 
+def test_pause_between_checkout_and_checkin_is_not_deducted_twice():
+    from app.balance import format_hm
+
+    day = date(2026, 8, 3)
+    model = SimpleNamespace(
+        hours_mon=7.6,
+        hours_tue=7.6,
+        hours_wed=7.6,
+        hours_thu=7.6,
+        hours_fri=7.6,
+        hours_sat=0,
+        hours_sun=0,
+    )
+    punches = [
+        _p_on(day, "in", 6, 30),
+        _p_on(day, "out", 10, 40),
+        _p_on(day, "break_start", 10, 40),
+        _p_on(day, "break_end", 11, 10),
+        _p_on(day, "in", 11, 10),
+        _p_on(day, "out", 14, 33),
+    ]
+    result = summarize_day(
+        punches,
+        day,
+        model,
+        now=datetime(2026, 8, 4, tzinfo=ZoneInfo("UTC")),
+        auto_break=True,
+    )
+    assert result["auto_break_minutes"] == 0
+    assert format_hm(result["break_hours"]) == "0:30"
+    assert format_hm(result["work_hours"]) == "7:33"
+    assert format_hm(result["delta_hours"], signed=True) == "-0:03"
+    assert "break_short" not in result["warnings"]
+
+
 def test_auto_break_tops_up_only_the_overhang_above_six_hours():
     from app.balance import format_hm
 
