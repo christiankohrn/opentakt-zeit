@@ -767,6 +767,16 @@ export const api = {
       `/api/hr/reports/vacation-days.pdf?${reportQuery({ from, to, user_ids: userIdsQuery(userIds) })}`,
       `urlaubstage-${from}-${to}.pdf`,
     ),
+  downloadVacationPlannerCsv: (from: string, to: string, userIds?: number[] | null) =>
+    downloadFile(
+      `/api/hr/reports/vacation-planner.csv?${reportQuery({ from, to, user_ids: userIdsQuery(userIds) })}`,
+      `urlaubsplaner-${from}-${to}.csv`,
+    ),
+  downloadVacationPlannerPdf: (from: string, to: string, userIds?: number[] | null) =>
+    downloadFile(
+      `/api/hr/reports/vacation-planner.pdf?${reportQuery({ from, to, user_ids: userIdsQuery(userIds) })}`,
+      `urlaubsplaner-${from}-${to}.pdf`,
+    ),
   downloadMonthBalancesCsv: (month: string, asOf: string, userIds?: number[] | null) =>
     downloadFile(
       `/api/hr/reports/month-balances.csv?${reportQuery({ month, as_of: asOf, user_ids: userIdsQuery(userIds) })}`,

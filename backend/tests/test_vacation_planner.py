@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from test_reports import create_person, login
+from test_reports import assert_pdf, create_person, login
 
 
 def _planner(client, query: str):
@@ -99,6 +99,25 @@ def test_planner_user_filter_and_calendar(client):
     assert len(year_body["people"]) == 2
     law_days = {(day["day"], day["kind"]) for day in year_body["calendar"]}
     assert ("2026-01-01", "holiday") in law_days
+
+
+def test_planner_csv_and_pdf_export(client):
+    login(client)
+    person = create_person(
+        client, "plan-export", "Export, Pia", hired_on="2025-01-01", vacation_days_year=30
+    )
+    _book(client, person["id"], "vacation", "2026-02-02", "2026-02-02")
+    _book(client, person["id"], "sick", "2026-02-10", "2026-02-10")
+    query = f"from=2026-02-01&to=2026-02-28&as_of=2026-06-30&user_ids={person['id']}"
+    csv_res = client.get(f"/api/hr/reports/vacation-planner.csv?{query}")
+    assert csv_res.status_code == 200, csv_res.text
+    assert "text/csv" in csv_res.headers["content-type"]
+    text = csv_res.text
+    assert "Name;Abteilung;Datum;Art;Anspruch;Genommen;Geplant;Rest" in text
+    assert "02.02.2026;Urlaub" in text
+    assert "10.02.2026;Krankheit" in text
+    assert_pdf(client.get(f"/api/hr/reports/vacation-planner.pdf?{query}"))
+    assert_pdf(client.get(f"/api/hr/reports/vacation-planner?{query}&format=pdf"))
 
 
 def test_planner_rejects_oversize_range(client):
