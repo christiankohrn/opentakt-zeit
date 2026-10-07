@@ -34,6 +34,19 @@ def allowed_kinds(state: str) -> list[str]:
     return sorted(VALID_TRANSITIONS.get(state, set()))
 
 
+def required_break_minutes(gross_minutes: int) -> int:
+    """Mindestpause aus der Anwesenheit. Gestempelte Minuten zählen darauf an."""
+    if gross_minutes > 9 * 60 + 45:
+        return 45
+    if gross_minutes > 9 * 60 + 30:
+        return gross_minutes - 9 * 60
+    if gross_minutes > 6 * 60 + 30:
+        return 30
+    if gross_minutes > 6 * 60:
+        return gross_minutes - 6 * 60
+    return 0
+
+
 def punches_window_for_month(start: date, last: date) -> tuple[datetime, datetime]:
     """Include the neighbouring days so night shifts across midnight are visible."""
     q_start, _ = local_day_bounds(start - timedelta(days=1))
@@ -214,19 +227,11 @@ def summarize_day(
     pause_minutes = int(pause.total_seconds() // 60)
     auto_minutes = 0
     if auto_break and not still_open:
-        stamped_break = pause_minutes > 0 or any(p.kind in {"break_start", "break_end"} for p in events)
-        if not stamped_break:
-            if work_minutes > 9 * 60 + 45:
-                auto_minutes = 45
-            elif work_minutes > 9 * 60 + 30:
-                auto_minutes = work_minutes - 9 * 60
-            elif work_minutes > 6 * 60 + 30:
-                auto_minutes = 30
-            elif work_minutes > 6 * 60:
-                auto_minutes = work_minutes - 6 * 60
-            if auto_minutes:
-                work_minutes -= auto_minutes
-                pause_minutes = auto_minutes
+        required = required_break_minutes(work_minutes + pause_minutes)
+        if pause_minutes < required:
+            auto_minutes = required - pause_minutes
+            work_minutes -= auto_minutes
+            pause_minutes = required
     work_h = work_minutes / 60
     pause_h = pause_minutes / 60
     auto_applied = auto_minutes / 60

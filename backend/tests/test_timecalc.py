@@ -358,6 +358,69 @@ def test_auto_break_skips_if_break_stamped():
     assert abs(day["break_hours"] - 0.5) < 0.05
 
 
+def test_auto_break_tops_up_a_short_stamped_pause():
+    from app.balance import format_hm
+
+    now = datetime(2026, 9, 5, tzinfo=ZoneInfo("UTC"))
+    short_four = summarize_day(
+        [_p("in", 8), _p("break_start", 12), _p("break_end", 12, 26), _p("out", 16, 26)],
+        date(2026, 9, 4),
+        _full_week(),
+        now=now,
+        auto_break=True,
+    )
+    assert short_four["auto_break_minutes"] == 4
+    assert abs(short_four["break_hours"] - 0.5) < 1e-9
+    assert format_hm(short_four["delta_hours"], signed=True) == "-0:04"
+    assert "break_short" not in short_four["warnings"]
+
+    short_ten = summarize_day(
+        [_p("in", 8), _p("break_start", 12), _p("break_end", 12, 20), _p("out", 16, 40)],
+        date(2026, 9, 4),
+        _full_week(),
+        now=now,
+        auto_break=True,
+    )
+    assert short_ten["auto_break_minutes"] == 10
+    assert abs(short_ten["break_hours"] - 0.5) < 1e-9
+    assert format_hm(short_ten["work_hours"]) == "8:10"
+    assert format_hm(short_ten["delta_hours"], signed=True) == "+0:10"
+    assert "break_short" not in short_ten["warnings"]
+
+    longer = summarize_day(
+        [_p("in", 8), _p("break_start", 12), _p("break_end", 12, 40), _p("out", 16, 30)],
+        date(2026, 9, 4),
+        _full_week(),
+        now=now,
+        auto_break=True,
+    )
+    assert longer["auto_break_minutes"] == 0
+    assert format_hm(longer["break_hours"]) == "0:40"
+    assert format_hm(longer["work_hours"]) == "7:50"
+
+
+def test_auto_break_tops_up_only_the_overhang_above_six_hours():
+    from app.balance import format_hm
+
+    day = date(2026, 9, 17)
+    topped = summarize_day(
+        [
+            _p_on(day, "in", 8, 0),
+            _p_on(day, "break_start", 12, 0),
+            _p_on(day, "break_end", 12, 5),
+            _p_on(day, "out", 14, 13),
+        ],
+        day,
+        _full_week(),
+        now=datetime(2026, 9, 18, tzinfo=ZoneInfo("UTC")),
+        auto_break=True,
+    )
+    assert topped["auto_break_minutes"] == 8
+    assert format_hm(topped["break_hours"]) == "0:13"
+    assert format_hm(topped["work_hours"]) == "6:00"
+    assert "break_short" not in topped["warnings"]
+
+
 def test_model_on_day_picks_latest_valid():
     full = SimpleNamespace(hours_mon=8)
     part = SimpleNamespace(hours_mon=4)
