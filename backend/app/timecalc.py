@@ -147,20 +147,27 @@ def credit_start(t: datetime, model, day: date) -> datetime:
 
 
 def credit_end(t: datetime, model, day: date) -> datetime:
-    """Letztes Gehen: Fenster zieht auf das Ende, sonst Raster. Nach dem Korridor bleibt die Zeit."""
+    """Letztes Gehen: nach dem Korridor zählt nicht, Fenster zieht auf das Ende, sonst Raster."""
     local = as_local(t)
     minute = local.hour * 60 + local.minute
     _start, end = _corridor_bounds(model, day)
     before = int(getattr(model, "round_end_before", 0) or 0)
     after = int(getattr(model, "round_end_after", 0) or 0)
-    if end is not None and _near(minute, end, before, after):
+    pinned = False
+    if end is not None and minute > end:
         minute = end
-    else:
+        pinned = True
+    elif end is not None and _near(minute, end, before, after):
+        minute = end
+        pinned = True
+    if not pinned:
         minute = _grid_minute(
             minute,
             int(getattr(model, "round_last_step", 0) or 0),
             int(getattr(model, "round_last_threshold", 0) or 0),
         )
+        if end is not None and minute > end:
+            minute = end
     return _shift_to_minute(t, minute)
 
 
@@ -327,7 +334,8 @@ def summarize_day(
                 pause += t - open_break
                 open_break = None
             if open_in:
-                work += t - open_in
+                if t > open_in:
+                    work += t - open_in
                 open_in = None
             last_out = t
 

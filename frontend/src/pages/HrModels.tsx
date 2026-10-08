@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, type WorkModel } from "../api";
+import { ApiError, api, type WorkModel } from "../api";
 import { useAuth } from "../auth";
 import LoadingNote from "../components/LoadingNote";
 import SearchField, { matchesQuery } from "../components/SearchField";
@@ -84,6 +84,11 @@ function minutes(value: string) {
   return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : 0;
 }
 
+function previousWeekday(key: string): [string, string] {
+  const index = WEEKDAYS.findIndex(([day]) => day === key);
+  return WEEKDAYS[(index + WEEKDAYS.length - 1) % WEEKDAYS.length];
+}
+
 export default function HrModels() {
   const { user: me } = useAuth();
   const canManage = me?.role === "hr" || me?.role === "admin";
@@ -91,6 +96,9 @@ export default function HrModels() {
   const [draft, setDraft] = useState<Draft>(blankDraft);
   const [editing, setEditing] = useState<WorkModel | null>(null);
   const [notice, setNotice] = useState("");
+  const [msg, setMsg] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const visible = models.filter((m) => matchesQuery(query, [m.name, m.kind === "shift" ? "Schicht" : "Gleitzeit"]));
@@ -133,15 +141,33 @@ export default function HrModels() {
     };
   }
 
+  function copyCorridorFromPrevious(key: string) {
+    const [previous] = previousWeekday(key);
+    setDraft((current) => ({
+      ...current,
+      corridor: { ...current.corridor, [key]: { ...current.corridor[previous] } },
+    }));
+  }
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setNotice("");
-    const body = payload();
-    const saved = editing ? await api.updateModel(editing.id, body) : await api.createModel(body);
-    setNotice(saved.notice || "");
-    if (editing) setEditing(saved);
-    else setDraft(blankDraft());
-    await load();
+    setMsg("");
+    setError("");
+    setBusy(true);
+    try {
+      const body = payload();
+      const saved = editing ? await api.updateModel(editing.id, body) : await api.createModel(body);
+      setNotice(saved.notice || "");
+      setMsg("Gespeichert.");
+      if (editing) setEditing(saved);
+      else setDraft(blankDraft());
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Speichern fehlgeschlagen");
+    } finally {
+      setBusy(false);
+    }
   }
 
   const field = "w-full rounded-lg border border-line bg-bg px-3 py-2";
@@ -181,6 +207,8 @@ export default function HrModels() {
                       setEditing(m);
                       setDraft(draftFrom(m));
                       setNotice(m.closed_months > 0 ? CLOSED_HINT : "");
+                      setMsg("");
+                      setError("");
                     }}
                   >
                     Anpassen
@@ -249,34 +277,47 @@ export default function HrModels() {
           </fieldset>
           <fieldset className="space-y-2">
             <legend className="text-sm font-medium">Buchungskorridor</legend>
-            <p className="text-xs text-muted">Optional. Kommen vor dem Beginn zählt ab dem Korridor. Das Arbeitsende der Rundung ist das Korridorende.</p>
-            {WEEKDAYS.map(([key, label]) => (
-              <div key={key} className="grid grid-cols-[7rem_1fr_1fr] items-center gap-2 text-sm">
-                <span>{label}</span>
-                <input
-                  type="time"
-                  aria-label={`${label} von`}
-                  value={draft.corridor[key].start}
-                  onChange={(e) =>
-                    setDraft({ ...draft, corridor: { ...draft.corridor, [key]: { ...draft.corridor[key], start: e.target.value } } })
-                  }
-                  className={field}
-                />
-                <input
-                  type="time"
-                  aria-label={`${label} bis`}
-                  value={draft.corridor[key].end}
-                  onChange={(e) =>
-                    setDraft({ ...draft, corridor: { ...draft.corridor, [key]: { ...draft.corridor[key], end: e.target.value } } })
-                  }
-                  className={field}
-                />
-              </div>
-            ))}
+            <p className="text-xs text-muted">Optional. Kommen vor dem Beginn und Gehen nach dem Ende zählen nur innerhalb des Korridors.</p>
+            {WEEKDAYS.map(([key, label]) => {
+              const [, previousLabel] = previousWeekday(key);
+              return (
+                <div key={key} className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className="w-28 shrink-0">{label}</span>
+                  <input
+                    type="time"
+                    aria-label={`${label} von`}
+                    value={draft.corridor[key].start}
+                    onChange={(e) =>
+                      setDraft({ ...draft, corridor: { ...draft.corridor, [key]: { ...draft.corridor[key], start: e.target.value } } })
+                    }
+                    className={`${field} min-w-0 flex-1`}
+                  />
+                  <input
+                    type="time"
+                    aria-label={`${label} bis`}
+                    value={draft.corridor[key].end}
+                    onChange={(e) =>
+                      setDraft({ ...draft, corridor: { ...draft.corridor, [key]: { ...draft.corridor[key], end: e.target.value } } })
+                    }
+                    className={`${field} min-w-0 flex-1`}
+                  />
+                  <button
+                    type="button"
+                    className="shrink-0 rounded-lg border border-line px-2 py-1 text-xs"
+                    title={`Beginn und Ende von ${previousLabel} übernehmen`}
+                    onClick={() => copyCorridorFromPrevious(key)}
+                  >
+                    wie {previousLabel}
+                  </button>
+                </div>
+              );
+            })}
           </fieldset>
+          {msg ? <p className="text-sm text-present">{msg}</p> : null}
+          {error ? <p className="text-sm text-danger">{error}</p> : null}
           <div className="flex gap-2">
-            <button type="submit" className="flex-1 rounded-xl bg-present py-2 text-white">
-              {editing ? "Speichern" : "Modell anlegen"}
+            <button type="submit" disabled={busy} className="flex-1 rounded-xl bg-present py-2 text-white disabled:opacity-60">
+              {busy ? "Speichern …" : editing ? "Speichern" : "Modell anlegen"}
             </button>
             {editing ? (
               <button
@@ -286,6 +327,8 @@ export default function HrModels() {
                   setEditing(null);
                   setDraft(blankDraft());
                   setNotice("");
+                  setMsg("");
+                  setError("");
                 }}
               >
                 Neu
