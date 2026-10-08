@@ -360,7 +360,7 @@ export default function HrModels() {
                 </select>
               </label>
               {draft.shifts.map((slot, index) => (
-                <div key={index} className="space-y-2 rounded-xl border border-line p-3">
+                <div key={index} className="w-fit max-w-full space-y-2 rounded-xl border border-line p-3">
                   <input
                     aria-label={`Schicht ${index + 1} Name`}
                     value={slot.name}
@@ -376,51 +376,36 @@ export default function HrModels() {
                   {WEEKDAYS.map(([key, label]) => {
                     const [, previousLabel] = previousWeekday(key);
                     return (
-                      <div key={key} className="flex flex-wrap items-center gap-2 text-sm">
-                        <span className="w-28 shrink-0">{label}</span>
-                        <input
-                          type="time"
-                          aria-label={`${slot.name || "Schicht"} ${label} von`}
-                          value={slot.days[key].start}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            setDraft((current) => ({
-                              ...current,
-                              shifts: current.shifts.map((item, itemIndex) =>
-                                itemIndex === index
-                                  ? { ...item, days: { ...item.days, [key]: { ...item.days[key], start: value } } }
-                                  : item,
-                              ),
-                            }));
-                          }}
-                          className={`${field} min-w-0 flex-1`}
-                        />
-                        <input
-                          type="time"
-                          aria-label={`${slot.name || "Schicht"} ${label} bis`}
-                          value={slot.days[key].end}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            setDraft((current) => ({
-                              ...current,
-                              shifts: current.shifts.map((item, itemIndex) =>
-                                itemIndex === index
-                                  ? { ...item, days: { ...item.days, [key]: { ...item.days[key], end: value } } }
-                                  : item,
-                              ),
-                            }));
-                          }}
-                          className={`${field} min-w-0 flex-1`}
-                        />
-                        <button
-                          type="button"
-                          className="shrink-0 rounded-lg border border-line px-2 py-1 text-xs"
-                          title={`Beginn und Ende von ${previousLabel} übernehmen`}
-                          onClick={() => copyShiftDay(index, key)}
-                        >
-                          wie {previousLabel}
-                        </button>
-                      </div>
+                      <CorridorDayRow
+                        key={key}
+                        label={label}
+                        previousLabel={previousLabel}
+                        start={slot.days[key].start}
+                        end={slot.days[key].end}
+                        startLabel={`${slot.name || "Schicht"} ${label} von`}
+                        endLabel={`${slot.name || "Schicht"} ${label} bis`}
+                        onStart={(value) =>
+                          setDraft((current) => ({
+                            ...current,
+                            shifts: current.shifts.map((item, itemIndex) =>
+                              itemIndex === index
+                                ? { ...item, days: { ...item.days, [key]: { ...item.days[key], start: value } } }
+                                : item,
+                            ),
+                          }))
+                        }
+                        onEnd={(value) =>
+                          setDraft((current) => ({
+                            ...current,
+                            shifts: current.shifts.map((item, itemIndex) =>
+                              itemIndex === index
+                                ? { ...item, days: { ...item.days, [key]: { ...item.days[key], end: value } } }
+                                : item,
+                            ),
+                          }))
+                        }
+                        onCopy={() => copyShiftDay(index, key)}
+                      />
                     );
                   })}
                 </div>
@@ -428,41 +413,28 @@ export default function HrModels() {
             </fieldset>
           ) : null}
           {draft.kind !== "shift" || draft.shifts.length === 0 ? (
-          <fieldset className="space-y-2">
+          <fieldset className="w-fit max-w-full space-y-2">
             <legend className="text-sm font-medium">Buchungskorridor</legend>
             <p className="text-xs text-muted">Optional. Kommen vor dem Beginn und Gehen nach dem Ende zählen nur innerhalb des Korridors.</p>
             {WEEKDAYS.map(([key, label]) => {
               const [, previousLabel] = previousWeekday(key);
               return (
-                <div key={key} className="flex flex-wrap items-center gap-2 text-sm">
-                  <span className="w-28 shrink-0">{label}</span>
-                  <input
-                    type="time"
-                    aria-label={`${label} von`}
-                    value={draft.corridor[key].start}
-                    onChange={(e) =>
-                      setDraft({ ...draft, corridor: { ...draft.corridor, [key]: { ...draft.corridor[key], start: e.target.value } } })
-                    }
-                    className={`${field} min-w-0 flex-1`}
-                  />
-                  <input
-                    type="time"
-                    aria-label={`${label} bis`}
-                    value={draft.corridor[key].end}
-                    onChange={(e) =>
-                      setDraft({ ...draft, corridor: { ...draft.corridor, [key]: { ...draft.corridor[key], end: e.target.value } } })
-                    }
-                    className={`${field} min-w-0 flex-1`}
-                  />
-                  <button
-                    type="button"
-                    className="shrink-0 rounded-lg border border-line px-2 py-1 text-xs"
-                    title={`Beginn und Ende von ${previousLabel} übernehmen`}
-                    onClick={() => copyCorridorFromPrevious(key)}
-                  >
-                    wie {previousLabel}
-                  </button>
-                </div>
+                <CorridorDayRow
+                  key={key}
+                  label={label}
+                  previousLabel={previousLabel}
+                  start={draft.corridor[key].start}
+                  end={draft.corridor[key].end}
+                  startLabel={`${label} von`}
+                  endLabel={`${label} bis`}
+                  onStart={(value) =>
+                    setDraft({ ...draft, corridor: { ...draft.corridor, [key]: { ...draft.corridor[key], start: value } } })
+                  }
+                  onEnd={(value) =>
+                    setDraft({ ...draft, corridor: { ...draft.corridor, [key]: { ...draft.corridor[key], end: value } } })
+                  }
+                  onCopy={() => copyCorridorFromPrevious(key)}
+                />
               );
             })}
           </fieldset>
@@ -491,6 +463,45 @@ export default function HrModels() {
           </div>
         </form>
       ) : null}
+    </div>
+  );
+}
+
+function CorridorDayRow({
+  label,
+  previousLabel,
+  start,
+  end,
+  startLabel,
+  endLabel,
+  onStart,
+  onEnd,
+  onCopy,
+}: {
+  label: string;
+  previousLabel: string;
+  start: string;
+  end: string;
+  startLabel: string;
+  endLabel: string;
+  onStart: (value: string) => void;
+  onEnd: (value: string) => void;
+  onCopy: () => void;
+}) {
+  const time = "w-full min-w-0 rounded-lg border border-line bg-bg px-2 py-1.5";
+  return (
+    <div className="grid grid-cols-[5.5rem_minmax(0,1fr)_minmax(0,1fr)] items-center gap-2 text-sm sm:grid-cols-[7rem_9.5rem_9.5rem_8.75rem] sm:justify-start">
+      <span>{label}</span>
+      <input type="time" aria-label={startLabel} value={start} onChange={(e) => onStart(e.target.value)} className={time} />
+      <input type="time" aria-label={endLabel} value={end} onChange={(e) => onEnd(e.target.value)} className={time} />
+      <button
+        type="button"
+        className="col-span-3 h-9 rounded-lg border border-line px-2 text-xs sm:col-span-1"
+        title={`Beginn und Ende von ${previousLabel} übernehmen`}
+        onClick={onCopy}
+      >
+        wie {previousLabel}
+      </button>
     </div>
   );
 }

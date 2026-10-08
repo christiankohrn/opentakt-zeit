@@ -92,6 +92,22 @@ textarea {
   }
 }
 
+input[type="time"] {
+  min-width: 0;
+}
+
+input[type="time"]::-webkit-datetime-edit,
+input[type="time"]::-webkit-datetime-edit-fields-wrapper,
+input[type="time"]::-webkit-datetime-edit-hour-field,
+input[type="time"]::-webkit-datetime-edit-minute-field,
+input[type="time"]::-webkit-datetime-edit-ampm-field {
+  padding: 0;
+}
+
+input[type="time"]::-webkit-calendar-picker-indicator {
+  margin-inline-start: auto;
+}
+
 input[type="date"] {
   appearance: none;
   -webkit-appearance: none;
