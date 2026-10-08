@@ -32,6 +32,8 @@ export function punchLabel(kind: string) {
 }
 
 export function warnLabel(code: string) {
+  const custom = code.match(/^break_short:(\d+):(\d+(?:\.\d+)?)$/);
+  if (custom) return `Pause unter ${custom[1]} Min. (ab ${custom[2].replace(".", ",")} Std.)`;
   return WARNING_LABELS[code] ?? code;
 }
 

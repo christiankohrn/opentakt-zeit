@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ApiError, api, type ShiftCorridor, type WorkModel } from "../api";
+import { ApiError, api, type BreakRule, type ShiftCorridor, type WorkModel } from "../api";
 import { useAuth } from "../auth";
 import LoadingNote from "../components/LoadingNote";
 import SearchField, { matchesQuery } from "../components/SearchField";
@@ -23,7 +23,14 @@ type Corridor = Record<string, { start: string; end: string }>;
 
 type ShiftDraft = { name: string; days: Corridor };
 
+type BreakDraft = { after: string; minutes: string };
+
 const SHIFT_NAMES = ["Früh", "Spät", "Nacht", "Schicht 4"];
+
+const DEFAULT_BREAKS: BreakDraft[] = [
+  { after: "6", minutes: "30" },
+  { after: "9", minutes: "45" },
+];
 
 type Draft = {
   name: string;
@@ -39,6 +46,7 @@ type Draft = {
   round_last_step: string;
   corridor: Corridor;
   shifts: ShiftDraft[];
+  breaks: BreakDraft[];
 };
 
 function emptyCorridor(): Corridor {
@@ -60,6 +68,7 @@ function blankDraft(): Draft {
     round_last_step: "0",
     corridor: emptyCorridor(),
     shifts: [],
+    breaks: DEFAULT_BREAKS.map((row) => ({ ...row })),
   };
 }
 
@@ -103,7 +112,21 @@ function draftFrom(model: WorkModel): Draft {
       name: slot.name || SHIFT_NAMES[index] || `Schicht ${index + 1}`,
       days: shiftDays(slot),
     })),
+    breaks: (model.break_rules ?? []).map((rule) => ({
+      after: String(rule.after_hours).replace(".", ","),
+      minutes: String(rule.minutes),
+    })),
   };
+}
+
+function pauseSummary(rules: BreakRule[] | undefined) {
+  if (!rules?.length) return "keine Mindestpause";
+  return rules
+    .map((rule) => {
+      const hours = Number.isInteger(rule.after_hours) ? formatDecimal(rule.after_hours, 0) : formatDecimal(rule.after_hours, 1);
+      return `${rule.minutes} Min. ab ${hours} Std.`;
+    })
+    .join(", ");
 }
 
 function minutes(value: string) {
@@ -181,6 +204,10 @@ export default function HrModels() {
               };
             })
           : [],
+      break_rules: draft.breaks.map((row) => ({
+        after_hours: Number(row.after.trim().replace(",", ".")),
+        minutes: minutes(row.minutes),
+      })),
     };
   }
 
@@ -212,6 +239,15 @@ export default function HrModels() {
       draft.shifts.some((slot) => WEEKDAYS.some(([key]) => Boolean(slot.days[key].start) !== Boolean(slot.days[key].end)))
     ) {
       setError("Jeder angegebene Korridor braucht Beginn und Ende.");
+      return;
+    }
+    if (
+      draft.breaks.some((row) => {
+        const after = Number(row.after.trim().replace(",", "."));
+        return !row.after.trim() || !row.minutes.trim() || minutes(row.minutes) < 1 || !Number.isFinite(after) || after < 0 || after > 24;
+      })
+    ) {
+      setError("Jede Pausenschwelle braucht Stunden und Minuten.");
       return;
     }
     setBusy(true);
@@ -263,6 +299,7 @@ export default function HrModels() {
                     {formatDecimal(m.hours_tue)}/{formatDecimal(m.hours_wed)}/{formatDecimal(m.hours_thu)}/
                     {formatDecimal(m.hours_fri)} · Sa {formatDecimal(m.hours_sat)} · So {formatDecimal(m.hours_sun)}
                   </p>
+                  <p className="text-xs text-muted">Pause {pauseSummary(m.break_rules)}</p>
                 </div>
                 {canManage ? (
                   <button
@@ -339,6 +376,63 @@ export default function HrModels() {
               onBefore={(value) => setDraft({ ...draft, round_last_threshold: value })}
               onAfter={(value) => setDraft({ ...draft, round_last_step: value })}
             />
+          </fieldset>
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium">Pausen</legend>
+            <p className="text-xs text-muted">
+              Mindestpause aus der Anwesenheit. Gestempelte Minuten zählen darauf an. Voreinstellung: 30 Minuten ab 6 Stunden und 45 Minuten ab 9 Stunden.
+            </p>
+            {draft.breaks.map((row, index) => (
+              <div key={index} className="flex flex-wrap items-center gap-2 text-sm">
+                <span>ab</span>
+                <input
+                  aria-label={`Pause ${index + 1} ab Stunden`}
+                  value={row.after}
+                  inputMode="decimal"
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setDraft((current) => ({
+                      ...current,
+                      breaks: current.breaks.map((item, itemIndex) => (itemIndex === index ? { ...item, after: value } : item)),
+                    }));
+                  }}
+                  className="w-20 rounded-lg border border-line bg-bg px-2 py-1"
+                />
+                <span>Stunden</span>
+                <input
+                  aria-label={`Pause ${index + 1} Minuten`}
+                  value={row.minutes}
+                  inputMode="numeric"
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setDraft((current) => ({
+                      ...current,
+                      breaks: current.breaks.map((item, itemIndex) => (itemIndex === index ? { ...item, minutes: value } : item)),
+                    }));
+                  }}
+                  className="w-20 rounded-lg border border-line bg-bg px-2 py-1"
+                />
+                <span>Minuten</span>
+                <button
+                  type="button"
+                  className="rounded-lg border border-line px-2 py-1 text-xs"
+                  onClick={() =>
+                    setDraft((current) => ({ ...current, breaks: current.breaks.filter((_, itemIndex) => itemIndex !== index) }))
+                  }
+                >
+                  Entfernen
+                </button>
+              </div>
+            ))}
+            {draft.breaks.length < 4 ? (
+              <button
+                type="button"
+                className="rounded-lg border border-line px-3 py-1.5 text-sm"
+                onClick={() => setDraft((current) => ({ ...current, breaks: [...current.breaks, { after: "", minutes: "" }] }))}
+              >
+                Schwelle hinzufügen
+              </button>
+            ) : null}
           </fieldset>
           {draft.kind === "shift" ? (
             <fieldset className="space-y-2">

@@ -50,17 +50,79 @@ def stamped_break_minutes(events: list[Punch]) -> int:
     return int(pause.total_seconds() // 60)
 
 
-def required_break_minutes(gross_minutes: int) -> int:
-    """Mindestpause aus der Anwesenheit. Gestempelte Minuten zählen darauf an."""
-    if gross_minutes > 9 * 60 + 45:
-        return 45
-    if gross_minutes > 9 * 60 + 30:
-        return gross_minutes - 9 * 60
-    if gross_minutes > 6 * 60 + 30:
-        return 30
-    if gross_minutes > 6 * 60:
-        return gross_minutes - 6 * 60
-    return 0
+DEFAULT_BREAK_RULES: tuple[dict[str, int], ...] = (
+    {"after_hours": 6, "minutes": 30},
+    {"after_hours": 9, "minutes": 45},
+)
+
+
+def default_break_steps() -> list[tuple[int, int]]:
+    return [(int(item["after_hours"]) * 60, int(item["minutes"])) for item in DEFAULT_BREAK_RULES]
+
+
+def break_steps(model: object | None) -> list[tuple[int, int]]:
+    """Schwellen (ab Minute, Mindestpause). Leer heißt: keine Mindestpause."""
+    raw = getattr(model, "break_rules", None) if model is not None else None
+    if raw is None or raw == "":
+        return default_break_steps()
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            return default_break_steps()
+    if not isinstance(raw, list):
+        return default_break_steps()
+    steps: list[tuple[int, int]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        after = item.get("after_hours")
+        minutes = item.get("minutes")
+        if after is None or minutes is None:
+            continue
+        try:
+            after_minutes = int(round(float(after) * 60))
+            need = int(minutes)
+        except (TypeError, ValueError):
+            continue
+        if need <= 0 or after_minutes < 0:
+            continue
+        steps.append((after_minutes, need))
+    steps.sort()
+    return steps
+
+
+def required_break_minutes(gross_minutes: int, steps: list[tuple[int, int]] | None = None) -> int:
+    """Mindestpause aus der Anwesenheit. Gestempelte Minuten zählen darauf an.
+
+    Über einer Schwelle wächst die Pause minutenweise bis zu ihrem vollen Wert,
+    danach bleibt sie stehen. Die höhere Schwelle ersetzt die niedrigere erst,
+    wenn sie mehr verlangt.
+    """
+    rules = default_break_steps() if steps is None else steps
+    required = 0
+    for after, need in rules:
+        if gross_minutes > after + need:
+            required = max(required, need)
+        elif gross_minutes > after:
+            required = max(required, gross_minutes - after)
+    return required
+
+
+def break_warning_codes(work_minutes: int, pause_minutes: int, steps: list[tuple[int, int]]) -> list[str]:
+    codes: list[str] = []
+    for after, need in steps:
+        if work_minutes <= after or pause_minutes >= need:
+            continue
+        if after == 6 * 60 and need == 30:
+            codes.append("break_short")
+        elif after == 9 * 60 and need == 45:
+            codes.append("break_short_9h")
+        else:
+            hours = after / 60
+            token = str(int(hours)) if hours.is_integer() else f"{hours:.2f}".rstrip("0").rstrip(".")
+            codes.append(f"break_short:{need}:{token}")
+    return codes
 
 
 _WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
@@ -514,9 +576,10 @@ def summarize_day(
 
     work_minutes = int(work.total_seconds() // 60)
     pause_minutes = max(int(pause.total_seconds() // 60), stamped_break_minutes(events))
+    steps = break_steps(model)
     auto_minutes = 0
     if auto_break and not still_open:
-        required = required_break_minutes(work_minutes + pause_minutes)
+        required = required_break_minutes(work_minutes + pause_minutes, steps)
         if pause_minutes < required:
             auto_minutes = required - pause_minutes
             work_minutes -= auto_minutes
@@ -532,10 +595,7 @@ def summarize_day(
             warnings.append("overnight")
         else:
             warnings.append("checkout_missing")
-    if work_h > 6 and pause_h < 0.5:
-        warnings.append("break_short")
-    if work_h > 9 and pause_h < 0.75:
-        warnings.append("break_short_9h")
+    warnings.extend(break_warning_codes(work_minutes, pause_minutes, steps))
     if work_h > 10:
         warnings.append("over_10h")
     if pause_h >= 1.5:

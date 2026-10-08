@@ -72,7 +72,7 @@ export default function HrDay() {
   const punchesDirty = rowsKey(rows) !== rowsKey(baselineRows);
   const dirty = punchesDirty || pendingAbsence !== null || pendingAccept;
   const blocker = useUnsavedGuard(dirty);
-  const issues = (summary?.warnings ?? []).filter((w) => ISSUE_KEYS.has(w));
+  const issues = (summary?.warnings ?? []).filter((w) => ISSUE_KEYS.has(w) || w.startsWith("break_short:"));
 
   async function load() {
     try {

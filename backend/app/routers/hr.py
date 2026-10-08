@@ -88,8 +88,10 @@ from app.workmodels import (
     load_timeline,
     load_timelines,
     model_for,
+    normalize_break_rules,
     normalize_corridor,
     normalize_shifts,
+    stored_break_rules,
     sync_current_model,
     upsert_assignment,
 )
@@ -108,6 +110,10 @@ _WARN_DE = {
 
 
 def _warn_de(code: str) -> str:
+    if code.startswith("break_short:") and code.count(":") == 2:
+        _, minutes, hours = code.split(":")
+        if minutes.isdigit():
+            return f"Pause unter {minutes} Min. (ab {hours.replace('.', ',')} Std.)"
     return _WARN_DE.get(code, code)
 
 
@@ -686,6 +692,7 @@ def _model_out(db: Session, model: WorkModel, notice: str | None = None) -> Work
         shifts = normalize_shifts(json.loads(model.shifts or "[]"))
     except (json.JSONDecodeError, ValueError):
         shifts = []
+    rules = stored_break_rules(model.break_rules)
     closed = closed_month_count(db, model.id)
     return WorkModelOut(
         id=model.id,
@@ -708,6 +715,7 @@ def _model_out(db: Session, model: WorkModel, notice: str | None = None) -> Work
         round_last_step=model.round_last_step,
         booking_corridor=corridor,
         shifts=shifts,
+        break_rules=rules,
         closed_months=closed,
         notice=notice,
     )
@@ -717,13 +725,15 @@ def _apply_model(model: WorkModel, payload: WorkModelIn) -> None:
     try:
         corridor = normalize_corridor(payload.booking_corridor)
         shifts = normalize_shifts(payload.shifts)
+        rules = normalize_break_rules(payload.break_rules)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    data = payload.model_dump(exclude={"booking_corridor", "shifts"})
+    data = payload.model_dump(exclude={"booking_corridor", "shifts", "break_rules"})
     for key, value in data.items():
         setattr(model, key, value)
     model.booking_corridor = json.dumps(corridor)
     model.shifts = json.dumps(shifts)
+    model.break_rules = json.dumps(rules)
 
 
 @router.get("/work-models", response_model=list[WorkModelOut])
@@ -1938,10 +1948,10 @@ def plausibility(
                 frozen=frozen_map.get((user.id, cur.year, cur.month)),
                 model_override=day_models.get(cur),
             )
-            issues = [w for w in summary["warnings"] if w in counts]
+            issues = [w for w in summary["warnings"] if w in counts or w.startswith("break_short:")]
             if issues:
                 for w in issues:
-                    counts[w] += 1
+                    counts[w] = counts.get(w, 0) + 1
                 flagged.append({"date": summary["date"], "warnings": issues})
             cur += timedelta(days=1)
         total = sum(counts.values())

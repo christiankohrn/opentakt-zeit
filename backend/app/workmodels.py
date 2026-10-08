@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.auth import as_local, now_utc
 from app.models import DayModel, MonthClosing, User, WorkModel, WorkModelAssignment
-from app.timecalc import model_on_day
+from app.timecalc import DEFAULT_BREAK_RULES, model_on_day
 
 WEEKDAY_KEYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 _CLOCK = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
@@ -33,6 +33,7 @@ RULE_FIELDS = (
     "round_last_step",
     "booking_corridor",
     "shifts",
+    "break_rules",
 )
 CLOSED_NOTICE = (
     "Abgeschlossene Monate behalten die bisherige Berechnung. Die Änderung gilt nur für offene Monate."
@@ -199,6 +200,57 @@ def normalize_shifts(raw: list | None) -> list[dict]:
     return out
 
 
+def normalize_break_rules(raw: list | None) -> list[dict]:
+    if not raw:
+        return []
+    if len(raw) > 4:
+        raise ValueError("Höchstens 4 Pausenschwellen")
+    out: list[dict] = []
+    seen: set[int] = set()
+    for item in raw:
+        if isinstance(item, dict):
+            after = item.get("after_hours")
+            minutes = item.get("minutes")
+        else:
+            after = getattr(item, "after_hours", None)
+            minutes = getattr(item, "minutes", None)
+        try:
+            after_hours = float(after)
+            need = int(minutes)
+        except (TypeError, ValueError):
+            raise ValueError("Jede Pausenschwelle braucht Stunden und Minuten") from None
+        if after_hours < 0 or after_hours > 24:
+            raise ValueError("Pause gilt ab 0 bis 24 Stunden")
+        if need < 1 or need > 180:
+            raise ValueError("Mindestpause zwischen 1 und 180 Minuten")
+        after_minutes = int(round(after_hours * 60))
+        if after_minutes in seen:
+            raise ValueError("Jede Schwelle braucht eine eigene Stundenzahl")
+        seen.add(after_minutes)
+        hours = after_minutes / 60
+        stored = int(hours) if hours == int(hours) else hours
+        out.append({"after_hours": stored, "minutes": need})
+    out.sort(key=lambda row: (row["after_hours"], row["minutes"]))
+    return out
+
+
+def stored_break_rules(raw: object) -> list[dict]:
+    """Leeres Feld heißt Voreinstellung. Eine gespeicherte leere Liste bleibt leer."""
+    if raw is None or raw == "":
+        return [dict(item) for item in DEFAULT_BREAK_RULES]
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            return [dict(item) for item in DEFAULT_BREAK_RULES]
+    if not isinstance(raw, list):
+        return [dict(item) for item in DEFAULT_BREAK_RULES]
+    try:
+        return normalize_break_rules(raw)
+    except ValueError:
+        return [dict(item) for item in DEFAULT_BREAK_RULES]
+
+
 def shifts_list(raw: object) -> list:
     if isinstance(raw, list):
         data = raw
@@ -213,9 +265,14 @@ def shifts_list(raw: object) -> list:
 
 
 def rules_payload(model: WorkModel) -> dict:
-    payload = {name: getattr(model, name) for name in RULE_FIELDS if name not in {"booking_corridor", "shifts"}}
+    payload = {
+        name: getattr(model, name)
+        for name in RULE_FIELDS
+        if name not in {"booking_corridor", "shifts", "break_rules"}
+    }
     payload["booking_corridor"] = corridor_dict(model.booking_corridor)
     payload["shifts"] = shifts_list(getattr(model, "shifts", ""))
+    payload["break_rules"] = stored_break_rules(getattr(model, "break_rules", ""))
     return payload
 
 
@@ -228,6 +285,11 @@ def overlay_model(model: WorkModel | None, fields: dict | None):
         data["booking_corridor"] = json.dumps(data["booking_corridor"])
     if isinstance(data.get("shifts"), list):
         data["shifts"] = json.dumps(data["shifts"])
+    if isinstance(data.get("break_rules"), list):
+        data["break_rules"] = json.dumps(data["break_rules"])
+    # Abschlüsse vor den Pausenschwellen kennen das Feld nicht und behalten 30/45.
+    if "break_rules" not in fields:
+        data["break_rules"] = json.dumps([dict(item) for item in DEFAULT_BREAK_RULES])
     return SimpleNamespace(**data)
 
 

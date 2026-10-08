@@ -116,6 +116,11 @@ export type ShiftCorridor = {
   end?: string | null;
 };
 
+export type BreakRule = {
+  after_hours: number;
+  minutes: number;
+};
+
 export type WorkModel = {
   id: number;
   name: string;
@@ -137,6 +142,7 @@ export type WorkModel = {
   round_last_step: number;
   booking_corridor: Record<string, CorridorDay>;
   shifts: ShiftCorridor[];
+  break_rules: BreakRule[];
   closed_months: number;
   notice?: string | null;
 };

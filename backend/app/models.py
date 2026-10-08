@@ -46,6 +46,7 @@ class WorkModel(Base):
     round_last_step: Mapped[int] = mapped_column(Integer, default=0)
     booking_corridor: Mapped[str] = mapped_column(Text, default="")
     shifts: Mapped[str] = mapped_column(Text, default="")
+    break_rules: Mapped[str] = mapped_column(Text, default="")
     core_start: Mapped[Optional[time]] = mapped_column(Time, nullable=True)
     core_end: Mapped[Optional[time]] = mapped_column(Time, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)

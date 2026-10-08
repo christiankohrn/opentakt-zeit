@@ -98,6 +98,15 @@ class ShiftCorridor(BaseModel):
     end: Optional[str] = None
 
 
+class BreakRule(BaseModel):
+    after_hours: float = Field(ge=0, le=24)
+    minutes: int = Field(ge=1, le=180)
+
+
+def default_break_rules() -> list[dict]:
+    return [{"after_hours": 6, "minutes": 30}, {"after_hours": 9, "minutes": 45}]
+
+
 class WorkModelIn(BaseModel):
     name: str
     kind: str = "flextime"
@@ -118,6 +127,7 @@ class WorkModelIn(BaseModel):
     round_last_step: int = Field(default=0, ge=0, le=60)
     booking_corridor: dict[str, CorridorDay] = Field(default_factory=dict)
     shifts: list[ShiftCorridor] = Field(default_factory=list)
+    break_rules: list[BreakRule] = Field(default_factory=default_break_rules, max_length=4)
 
 
 class WorkModelOut(WorkModelIn):

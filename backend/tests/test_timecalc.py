@@ -856,6 +856,107 @@ def test_auto_break_tops_up_only_the_overhang_above_six_hours():
     assert "break_short" not in topped["warnings"]
 
 
+def _break_model(rules: list[dict]):
+    model = _full_week()
+    model.break_rules = json.dumps(rules)
+    return model
+
+
+def test_break_rules_on_the_model_can_start_at_four_hours():
+    from app.balance import format_hm
+
+    model = _break_model([{"after_hours": 4, "minutes": 30}, {"after_hours": 9, "minutes": 45}])
+    now = datetime(2026, 9, 18, tzinfo=ZoneInfo("UTC"))
+    day = date(2026, 9, 17)
+
+    def span(start: tuple[int, int], end: tuple[int, int], auto: bool = True) -> dict:
+        return summarize_day(
+            [_p_on(day, "in", *start), _p_on(day, "out", *end)],
+            day,
+            model,
+            now=now,
+            auto_break=auto,
+        )
+
+    short = span((8, 0), (11, 30))
+    assert short["auto_break_minutes"] == 0
+    assert format_hm(short["work_hours"]) == "3:30"
+
+    ramp = span((8, 0), (12, 10))
+    assert ramp["auto_break_minutes"] == 10
+    assert format_hm(ramp["work_hours"]) == "4:00"
+
+    full = span((8, 0), (13, 0))
+    assert full["auto_break_minutes"] == 30
+    assert format_hm(full["work_hours"]) == "4:30"
+    assert "break_short" not in full["warnings"]
+
+    nine = span((7, 0), (16, 46))
+    assert nine["auto_break_minutes"] == 45
+
+    raw = span((8, 0), (13, 0), auto=False)
+    assert "break_short:30:4" in raw["warnings"]
+    assert "break_short" not in raw["warnings"]
+
+    only_four = _break_model([{"after_hours": 4, "minutes": 30}])
+    long = summarize_day(
+        [_p_on(day, "in", 7, 0), _p_on(day, "out", 17, 0)],
+        day,
+        only_four,
+        now=now,
+        auto_break=True,
+    )
+    assert long["auto_break_minutes"] == 30
+    assert format_hm(long["work_hours"]) == "9:30"
+
+
+def test_closed_month_without_break_rules_keeps_thirty_and_forty_five():
+    from app.workmodels import overlay_model
+
+    live = SimpleNamespace(
+        id=1,
+        name="Vollzeit",
+        kind="flextime",
+        hours_mon=8,
+        hours_tue=8,
+        hours_wed=8,
+        hours_thu=8,
+        hours_fri=8,
+        hours_sat=0,
+        hours_sun=0,
+        round_start_before=0,
+        round_start_after=0,
+        round_end_before=0,
+        round_end_after=0,
+        round_first_threshold=0,
+        round_first_step=0,
+        round_last_threshold=0,
+        round_last_step=0,
+        booking_corridor="",
+        shifts="",
+        break_rules=json.dumps([{"after_hours": 4, "minutes": 30}]),
+    )
+    frozen = overlay_model(live, {"hours_mon": 8})
+    day = date(2026, 9, 17)
+    now = datetime(2026, 9, 18, tzinfo=ZoneInfo("UTC"))
+    five = summarize_day(
+        [_p_on(day, "in", 8, 0), _p_on(day, "out", 13, 0)],
+        day,
+        frozen,
+        now=now,
+        auto_break=True,
+    )
+    assert five["auto_break_minutes"] == 0
+    seven = summarize_day(
+        [_p_on(day, "in", 8, 0), _p_on(day, "out", 15, 30)],
+        day,
+        frozen,
+        now=now,
+        auto_break=True,
+    )
+    assert seven["auto_break_minutes"] == 30
+
+
 def test_model_on_day_picks_latest_valid():
     full = SimpleNamespace(hours_mon=8)
     part = SimpleNamespace(hours_mon=4)
