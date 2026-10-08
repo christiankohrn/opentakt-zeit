@@ -93,7 +93,6 @@ export default function HrUserMonth() {
   const [monthClosed, setMonthClosed] = useState(false);
   const [openingHours, setOpeningHours] = useState("0");
   const [openingOn, setOpeningOn] = useState("");
-  const [capHours, setCapHours] = useState("");
   const [openingMsg, setOpeningMsg] = useState("");
   const [openingOpen, setOpeningOpen] = useState(false);
   const closed = useClosedMonth();
@@ -106,7 +105,6 @@ export default function HrUserMonth() {
     setMonthClosed(Boolean(r.closed));
     setOpeningHours(signedHours(r.user.opening_balance_hours ?? 0));
     setOpeningOn(r.user.opening_balance_on ?? "");
-    setCapHours(r.user.flex_cap_hours != null ? formatHours(r.user.flex_cap_hours) : "");
     setDays(r.days);
     setMonthFlex(r.month_flex ?? 0);
     setTotalFlex(r.total_flex ?? 0);
@@ -812,6 +810,7 @@ export default function HrUserMonth() {
           <AccountBooks
             userId={userId}
             year={Number(month.slice(0, 4))}
+            flexCap={user.flex_cap_hours ?? null}
             attempt={closed.attempt}
             onChanged={reload}
           />
@@ -828,20 +827,10 @@ export default function HrUserMonth() {
                 setOpeningMsg("Stunden als hh:mm eingeben, zum Beispiel 12:30 oder -4:15.");
                 return;
               }
-              const cap = capHours.trim() === "" ? null : parseHours(capHours);
-              if (cap == null && capHours.trim() !== "") {
-                setOpeningMsg("Kappung als hh:mm oder Dezimalzahl eingeben, zum Beispiel 30:00 oder 30.");
-                return;
-              }
-              if (cap != null && cap < 0) {
-                setOpeningMsg("Die Kappung kann nicht negativ sein.");
-                return;
-              }
               void closed.attempt(async (confirmClosed) => {
                 await api.patchUserAccount(userId, {
                   opening_balance_hours: hours,
                   opening_balance_on: openingOn || null,
-                  flex_cap_hours: cap,
                   confirm_closed: confirmClosed,
                 });
                 setOpeningMsg("Startkonto gespeichert.");
@@ -871,24 +860,10 @@ export default function HrUserMonth() {
                   type="date"
                   value={openingOn}
                   onChange={(e) => setOpeningOn(e.target.value)}
-                  className="mt-1 block rounded-lg border border-line bg-bg px-2 py-1"
-                />
-              </label>
-              <label className="text-sm">
-                Kappung der Plus-Stunden
-                <input
-                  value={capHours}
-                  onChange={(e) => setCapHours(e.target.value)}
-                  placeholder="keine"
                   className="mt-1 block w-28 rounded-lg border border-line bg-bg px-2 py-1"
                 />
               </label>
             </div>
-            <p className="text-xs text-muted">
-              Leer lassen für keine Kappung. Ist ein Wert gesetzt und steht das Konto am Monatsende höher,
-              bucht der Monatsabschluss automatisch eine Korrektur auf diesen Wert. Die Buchung steht danach
-              mit dem Hinweis „Automatische Kappung“ im Zeitkonto.
-            </p>
             <button type="submit" className="rounded-xl bg-navy px-3 py-2 text-sm text-white">
               Startkonto speichern
             </button>

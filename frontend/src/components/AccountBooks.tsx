@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { api, type UserLedger } from "../api";
 import { IconTrash } from "./Icons";
-import { isoDate, parseHours, signedHours } from "../labels";
+import { formatHours, isoDate, parseHours, signedHours } from "../labels";
 
 type Attempt = (action: (confirmClosed: boolean) => Promise<void>, fail: (message: string) => void) => Promise<void>;
 
@@ -25,11 +25,13 @@ function parseDays(value: string): number | null {
 export default function AccountBooks({
   userId,
   year,
+  flexCap,
   attempt,
   onChanged,
 }: {
   userId: number;
   year: number;
+  flexCap: number | null;
   attempt: Attempt;
   onChanged: () => Promise<void>;
 }) {
@@ -42,7 +44,12 @@ export default function AccountBooks({
   const [vacDay, setVacDay] = useState(isoDate);
   const [vacAmount, setVacAmount] = useState("");
   const [vacReason, setVacReason] = useState("");
+  const [capInput, setCapInput] = useState("");
   const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    setCapInput(flexCap != null ? formatHours(flexCap) : "");
+  }, [userId, flexCap]);
 
   async function load() {
     setLedger(await api.userLedger(userId, year));
@@ -152,6 +159,42 @@ export default function AccountBooks({
           </label>
           <button type="submit" className="rounded-xl bg-navy px-3 py-2 text-sm text-white">Buchen</button>
         </form>
+        <div className="border-t border-line pt-3">
+          <p className="text-sm font-medium">Einstellungen</p>
+          <form
+            className="mt-2 flex flex-wrap items-end gap-2"
+            onSubmit={(e: FormEvent) => {
+              e.preventDefault();
+              setMsg("");
+              const cap = capInput.trim() === "" ? null : parseHours(capInput);
+              if (cap == null && capInput.trim() !== "") {
+                setMsg("Kappung als hh:mm oder Dezimalzahl eingeben, zum Beispiel 30:00 oder 30.");
+                return;
+              }
+              if (cap != null && cap < 0) {
+                setMsg("Die Kappung kann nicht negativ sein.");
+                return;
+              }
+              void api
+                .patchUserAccount(userId, { flex_cap_hours: cap })
+                .then(async () => {
+                  await onChanged();
+                  setMsg("Kappung gespeichert.");
+                })
+                .catch((err: unknown) => setMsg(err instanceof Error ? err.message : "Kappung konnte nicht gespeichert werden."));
+            }}
+          >
+            <label className="text-xs text-muted">
+              Kappung der Plus-Stunden
+              <input value={capInput} onChange={(e) => setCapInput(e.target.value)} placeholder="keine" className={`${field} w-28`} />
+            </label>
+            <button type="submit" className="rounded-xl bg-navy px-3 py-2 text-sm text-white">Speichern</button>
+          </form>
+          <p className="mt-2 text-xs text-muted">
+            Leer lassen für keine Kappung. Ist ein Wert gesetzt und steht das Konto am Monatsende höher,
+            bucht der Monatsabschluss automatisch eine Korrektur auf diesen Wert.
+          </p>
+        </div>
       </section>
       ) : null}
       {vacationOpen ? (
