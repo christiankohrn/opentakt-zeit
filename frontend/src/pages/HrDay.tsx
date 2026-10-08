@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { api, type DaySummary, type PunchKind, type User } from "../api";
+import { api, ApiError, type DaySummary, type PunchKind, type User, type WorkModel } from "../api";
+import { useAuth } from "../auth";
 import { useClosedMonth } from "../closedMonth";
 import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
 import LoadingNote from "../components/LoadingNote";
@@ -24,6 +25,8 @@ function cloneRows(rows: Row[]) {
 }
 
 export default function HrDay() {
+  const { user: me } = useAuth();
+  const canManage = me?.role === "hr" || me?.role === "admin" || me?.role === "supervisor";
   const { id, date } = useParams();
   const [search] = useSearchParams();
   const nav = useNavigate();
@@ -62,6 +65,8 @@ export default function HrDay() {
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
   const [monthClosed, setMonthClosed] = useState(false);
+  const [models, setModels] = useState<WorkModel[]>([]);
+  const [modelId, setModelId] = useState("");
   const closed = useClosedMonth();
 
   const punchesDirty = rowsKey(rows) !== rowsKey(baselineRows);
@@ -83,6 +88,7 @@ export default function HrDay() {
       }));
       setRows(next);
       setBaselineRows(cloneRows(next));
+      setModelId(found?.model_id ? String(found.model_id) : "");
       setPendingAbsence(null);
       setPendingAccept(false);
       setMsg("");
@@ -96,6 +102,11 @@ export default function HrDay() {
     if (userId && day) void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, day]);
+
+  useEffect(() => {
+    if (!canManage) return;
+    api.models().then(setModels).catch(() => setModels([]));
+  }, [canManage]);
 
   function discardLocal() {
     setRows(cloneRows(baselineRows));
@@ -194,6 +205,50 @@ export default function HrDay() {
     }
   }
 
+  async function saveDayModel(e: FormEvent) {
+    e.preventDefault();
+    if (!modelId) {
+      setMsg("Arbeitszeitmodell wählen.");
+      return;
+    }
+    setBusy(true);
+    setMsg("");
+    try {
+      await closed.attempt(async (confirmClosed) => {
+        const saved = await api.setDayModel(userId, day, {
+          work_model_id: Number(modelId),
+          confirm_closed: confirmClosed,
+        });
+        await load();
+        setMsg(
+          saved.work_model_id
+            ? "Arbeitszeitmodell für diesen Tag gespeichert."
+            : "Die Zuordnung gilt wieder.",
+        );
+      }, setMsg);
+    } catch (err) {
+      setMsg(err instanceof ApiError ? err.message : "Speichern fehlgeschlagen");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function clearDayModel() {
+    setBusy(true);
+    setMsg("");
+    try {
+      await closed.attempt(async (confirmClosed) => {
+        await api.clearDayModel(userId, day, confirmClosed);
+        await load();
+        setMsg("Die Zuordnung gilt wieder.");
+      }, setMsg);
+    } catch (err) {
+      setMsg(err instanceof ApiError ? err.message : "Zurücksetzen fehlgeschlagen");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const pendingNotes: string[] = [];
   if (pendingAbsence === "vacation") pendingNotes.push("Wird als Urlaub gespeichert.");
   if (pendingAbsence === "sick") pendingNotes.push("Wird als Krankheitstag gespeichert.");
@@ -254,6 +309,41 @@ export default function HrDay() {
             {summary.calendar.source === "law" ? " · gesetzlich" : " · Kalender"}
           </p>
         </div>
+      ) : null}
+      {canManage ? (
+        <form onSubmit={saveDayModel} className="mt-4 w-fit max-w-full space-y-2 rounded-2xl border border-line bg-card p-4">
+          <p className="text-sm font-medium">Arbeitszeitmodell an diesem Tag</p>
+          <p className="max-w-md text-xs text-muted">
+            Gilt nur für diesen Tag. Soll, Rundung, Schichten und Buchungskorridor kommen aus dem gewählten Modell. Am nächsten Tag gilt wieder die Zuordnung.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              aria-label="Arbeitszeitmodell an diesem Tag"
+              value={modelId}
+              onChange={(e) => setModelId(e.target.value)}
+              className="max-w-full rounded-lg border border-line bg-bg px-2 py-1.5 text-sm"
+            >
+              {models.map((model) => (
+                <option key={model.id} value={model.id}>
+                  {model.name}
+                </option>
+              ))}
+              {modelId && !models.some((model) => String(model.id) === modelId) && summary?.model_name ? (
+                <option value={modelId}>{summary.model_name}</option>
+              ) : null}
+            </select>
+            <button type="submit" disabled={busy} className="rounded-lg bg-present px-3 py-1.5 text-sm text-white disabled:opacity-60">
+              Übernehmen
+            </button>
+            {summary?.day_model ? (
+              <button type="button" disabled={busy} className="rounded-lg border border-line px-3 py-1.5 text-sm" onClick={() => void clearDayModel()}>
+                Zurücksetzen
+              </button>
+            ) : null}
+          </div>
+        </form>
+      ) : summary?.day_model && summary.model_name ? (
+        <p className="mt-3 text-sm text-muted">Arbeitszeitmodell {summary.model_name}</p>
       ) : null}
       {summary?.absence && pendingAbsence !== "clear" ? (
         <p className="mt-2 text-sm text-present">

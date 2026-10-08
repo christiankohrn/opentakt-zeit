@@ -550,8 +550,14 @@ def summarize_day(
             if not events:
                 result["break_hours"] = 0.0
                 result["auto_break_minutes"] = 0
-            result["work_hours"] = float(result["soll_hours"]) + stamped
-            result["delta_hours"] = stamped
+            target = float(result["soll_hours"])
+            # Krankheit füllt nur die Lücke bis zur Sollzeit. Anwesenheit darüber bleibt.
+            if absence is not None and absence.kind == "sick":
+                result["work_hours"] = max(target, stamped)
+                result["delta_hours"] = result["work_hours"] - target
+            else:
+                result["work_hours"] = target + stamped
+                result["delta_hours"] = stamped
         elif not events:
             result["work_hours"] = 0.0
             result["break_hours"] = 0.0

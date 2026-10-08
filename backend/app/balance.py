@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.auth import as_local, now_utc
 from app.holidays import calendar_map
-from app.models import Absence, Punch, User
+from app.models import Absence, DayModel, Punch, User, WorkModel
 from app.timecalc import punches_window_for_month, summarize_day
 from app.workmodels import load_frozen_map, load_timeline, model_for, overlay_model
 
@@ -42,9 +42,12 @@ def summarize_user_day(
     absence=None,
     calendar=None,
     frozen: dict | None = None,
+    model_override: WorkModel | None = None,
 ) -> dict:
     employed = is_employed(user, day)
-    model = model_for(timeline, day, user.work_model) if employed else None
+    model = None
+    if employed:
+        model = model_override if model_override is not None else model_for(timeline, day, user.work_model)
     if model is not None and frozen:
         fields = frozen.get(str(model.id))
         if isinstance(fields, dict):
@@ -57,6 +60,9 @@ def summarize_user_day(
         auto_break=bool(user.auto_break),
         calendar=calendar,
     )
+    summary["model_id"] = model.id if model is not None else None
+    summary["model_name"] = model.name if model is not None else None
+    summary["day_model"] = model_override is not None
     if not employed:
         summary["soll_hours"] = 0.0
         summary["delta_hours"] = 0.0
@@ -71,6 +77,26 @@ def _flex_sum(days: list[dict], month: str | None = None) -> float:
             continue
         total += float(d.get("delta_hours") or 0)
     return total
+
+
+def load_day_models(db: Session, user_id: int, start: date, last: date) -> dict[date, WorkModel]:
+    rows = db.scalars(
+        select(DayModel)
+        .options(selectinload(DayModel.work_model))
+        .where(DayModel.user_id == user_id, DayModel.day >= start, DayModel.day <= last)
+    )
+    return {row.day: row.work_model for row in rows}
+
+
+def load_day_model_map(db: Session, user_ids: list[int], start: date, last: date) -> dict[tuple[int, date], WorkModel]:
+    if not user_ids:
+        return {}
+    rows = db.scalars(
+        select(DayModel)
+        .options(selectinload(DayModel.work_model))
+        .where(DayModel.user_id.in_(user_ids), DayModel.day >= start, DayModel.day <= last)
+    )
+    return {(row.user_id, row.day): row.work_model for row in rows}
 
 
 def days_in_range(db: Session, user: User, start: date, last: date) -> list[dict]:
@@ -92,6 +118,7 @@ def days_in_range(db: Session, user: User, start: date, last: date) -> list[dict
     timeline = load_timeline(db, user.id)
     cal = calendar_map(db, start, last)
     frozen = load_frozen_map(db, [user.id])
+    day_models = load_day_models(db, user.id, start, last)
     days = []
     cur = start
     while cur < end:
@@ -104,6 +131,7 @@ def days_in_range(db: Session, user: User, start: date, last: date) -> list[dict
                 absence=absences.get(cur),
                 calendar=cal.get(cur),
                 frozen=frozen.get((user.id, cur.year, cur.month)),
+                model_override=day_models.get(cur),
             )
         )
         cur += timedelta(days=1)

@@ -80,6 +80,9 @@ export type DaySummary = {
   absence: { kind: string; note: string | null } | null;
   calendar: { kind: string; name: string; source: string } | null;
   weekday: number;
+  model_id?: number | null;
+  model_name?: string | null;
+  day_model?: boolean;
   punches: { id: number; kind: string; time: string; source: string; device_id?: string | null; terminal_name?: string; voided: boolean }[];
 };
 
@@ -634,6 +637,15 @@ export const api = {
   ) => request(`/api/hr/users/${userId}/absences`, { method: "POST", body: JSON.stringify(body) }),
   deleteAbsence: (userId: number, day: string, confirmClosed = false) =>
     request(`/api/hr/users/${userId}/absences/${day}?confirm_closed=${confirmClosed ? "true" : "false"}`, { method: "DELETE" }),
+  setDayModel: (userId: number, day: string, body: { work_model_id: number; confirm_closed?: boolean }) =>
+    request<{ ok: boolean; work_model_id: number | null; work_model_name: string | null }>(
+      `/api/hr/users/${userId}/days/${day}/model`,
+      { method: "PUT", body: JSON.stringify(body) },
+    ),
+  clearDayModel: (userId: number, day: string, confirmClosed = false) =>
+    request(`/api/hr/users/${userId}/days/${day}/model?confirm_closed=${confirmClosed ? "true" : "false"}`, {
+      method: "DELETE",
+    }),
   orgSettings: () =>
     request<{ bundesland: string; bundesland_name: string; states: Record<string, string>; ledger_from?: string | null }>(
       "/api/hr/settings",

@@ -12,7 +12,7 @@ from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.auth import HR_ROLES, as_local, bump_session_rev, current_user, local_day_bounds, normalize_username, now_utc, require_admin, require_hr, require_hr_full, write_session
-from app.balance import account_hours, days_in_range, format_hm, summarize_user_day
+from app.balance import account_hours, days_in_range, format_hm, load_day_models, summarize_user_day
 from app.closing_job import job_status, start_close, start_recalculate
 from app.closings import (
     any_closing,
@@ -34,6 +34,7 @@ from app.models import (
     AuditEvent,
     CalendarEntry,
     DayAcceptance,
+    DayModel,
     Department,
     MonthClosing,
     MailToken,
@@ -52,6 +53,7 @@ from app.schemas import (
     ClosingMonthIn,
     CorrectionIn,
     DayAcceptIn,
+    DayModelIn,
     DayReplaceIn,
     DepartmentIn,
     DepartmentOut,
@@ -76,7 +78,7 @@ from app.security_policy import POLICY_ROLES, POLICY_VALUES, get_policies, passk
 from app.holidays import STATES, bundesland_of, calendar_map
 from app.mail import MailError, apply_smtp, has_open_invite, normalize_email, send_access_mail, send_test_mail, smtp_ready, smtp_status, valid_email
 from app.reports import safe_csv_cell
-from app.timecalc import punches_window_for_month, summarize_day
+from app.timecalc import punches_window_for_month
 from app.workmodels import (
     CLOSED_NOTICE,
     closed_month_count,
@@ -88,7 +90,6 @@ from app.workmodels import (
     model_for,
     normalize_corridor,
     normalize_shifts,
-    overlay_model,
     sync_current_model,
     upsert_assignment,
 )
@@ -1383,15 +1384,21 @@ def accept_day(
         )
     )
     absence = db.scalar(select(Absence).where(Absence.user_id == user_id, Absence.day == day))
+    day_model = db.scalar(
+        select(DayModel).options(selectinload(DayModel.work_model)).where(DayModel.user_id == user_id, DayModel.day == day)
+    )
     timeline = load_timeline(db, user_id)
     cal = calendar_map(db, day, day)
-    model = model_for(timeline, day, user.work_model)
-    frozen = load_frozen_map(db, [user_id]).get((user_id, day.year, day.month)) or {}
-    fields = frozen.get(str(model.id)) if model is not None else None
-    if isinstance(fields, dict):
-        model = overlay_model(model, fields)
-    summary = summarize_day(
-        punches, day, model, absence=absence, auto_break=bool(user.auto_break), calendar=cal.get(day)
+    frozen = load_frozen_map(db, [user_id]).get((user_id, day.year, day.month))
+    summary = summarize_user_day(
+        user,
+        punches,
+        day,
+        timeline,
+        absence=absence,
+        calendar=cal.get(day),
+        frozen=frozen,
+        model_override=day_model.work_model if day_model else None,
     )
     warning_json = json.dumps(summary.get("warnings") or [], ensure_ascii=False)
     existing = db.scalar(select(DayAcceptance).where(DayAcceptance.user_id == user_id, DayAcceptance.day == day))
@@ -1440,6 +1447,87 @@ def revoke_accept(user_id: int, day: date, request: Request, db: Session = Depen
             payload=json.dumps({"date": day.isoformat()}),
         )
     )
+    db.commit()
+    return {"ok": True}
+
+
+@router.put("/users/{user_id}/days/{day}/model")
+def set_day_model(
+    user_id: int,
+    day: date,
+    payload: DayModelIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    actor = _actor(request, db)
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(404, "Nicht gefunden")
+    chosen = db.get(WorkModel, payload.work_model_id)
+    if not chosen:
+        raise HTTPException(400, "Arbeitszeitmodell nicht gefunden")
+    standing = model_for(load_timeline(db, user_id), day, user.work_model)
+    recalc = require_open(db, [(user_id, day)], payload.confirm_closed)
+    row = db.scalar(select(DayModel).where(DayModel.user_id == user_id, DayModel.day == day))
+    if standing is not None and standing.id == chosen.id:
+        if row:
+            db.delete(row)
+        stored_id = None
+        stored_name = None
+    elif row:
+        row.work_model_id = chosen.id
+        row.created_by_id = actor.id
+        stored_id = chosen.id
+        stored_name = chosen.name
+    else:
+        db.add(DayModel(user_id=user_id, day=day, work_model_id=chosen.id, created_by_id=actor.id))
+        stored_id = chosen.id
+        stored_name = chosen.name
+    _clear_acceptance(db, user_id, day)
+    db.add(
+        AuditEvent(
+            actor_id=actor.id,
+            action="day.model",
+            entity_type="user",
+            entity_id=str(user_id),
+            payload=json.dumps(
+                {"date": day.isoformat(), "work_model_id": stored_id, "work_model_name": stored_name},
+                ensure_ascii=False,
+            ),
+        )
+    )
+    db.flush()
+    recalculate_pairs(db, recalc, actor.id)
+    db.commit()
+    return {"ok": True, "work_model_id": stored_id, "work_model_name": stored_name}
+
+
+@router.delete("/users/{user_id}/days/{day}/model")
+def clear_day_model(
+    user_id: int,
+    day: date,
+    request: Request,
+    db: Session = Depends(get_db),
+    confirm_closed: bool = Query(False),
+):
+    actor = _actor(request, db)
+    row = db.scalar(select(DayModel).where(DayModel.user_id == user_id, DayModel.day == day))
+    if not row:
+        raise HTTPException(404, "Kein Tagesmodell")
+    recalc = require_open(db, [(user_id, day)], confirm_closed)
+    db.delete(row)
+    _clear_acceptance(db, user_id, day)
+    db.add(
+        AuditEvent(
+            actor_id=actor.id,
+            action="day.model.clear",
+            entity_type="user",
+            entity_id=str(user_id),
+            payload=json.dumps({"date": day.isoformat()}),
+        )
+    )
+    db.flush()
+    recalculate_pairs(db, recalc, actor.id)
     db.commit()
     return {"ok": True}
 
@@ -1759,6 +1847,7 @@ def balances(
             a.day: a
             for a in db.scalars(select(Absence).where(Absence.user_id == user.id, Absence.day >= start, Absence.day <= last))
         }
+        day_models = load_day_models(db, user.id, start, last)
         work = soll = delta = 0.0
         cur = start
         while cur < end:
@@ -1770,6 +1859,7 @@ def balances(
                 absence=absences.get(cur),
                 calendar=cal.get(cur),
                 frozen=frozen_map.get((user.id, cur.year, cur.month)),
+                model_override=day_models.get(cur),
             )
             if cur <= today:
                 work += float(summary["work_hours"] or 0)
@@ -1824,6 +1914,7 @@ def plausibility(
             a.day: a
             for a in db.scalars(select(Absence).where(Absence.user_id == user.id, Absence.day >= start, Absence.day <= last))
         }
+        day_models = load_day_models(db, user.id, start, last)
         accepts = {
             a.day: a
             for a in db.scalars(
@@ -1845,6 +1936,7 @@ def plausibility(
                 absence=absences.get(cur),
                 calendar=cal.get(cur),
                 frozen=frozen_map.get((user.id, cur.year, cur.month)),
+                model_override=day_models.get(cur),
             )
             issues = [w for w in summary["warnings"] if w in counts]
             if issues:
@@ -1925,6 +2017,7 @@ def export_csv(
                 select(Absence).where(Absence.user_id == user.id, Absence.day >= start, Absence.day <= last)
             )
         }
+        day_models = load_day_models(db, user.id, start, last)
         cur = start
         while cur < end:
             day = summarize_user_day(
@@ -1935,6 +2028,7 @@ def export_csv(
                 absence=absences.get(cur),
                 calendar=cal.get(cur),
                 frozen=frozen_map.get((user.id, cur.year, cur.month)),
+                model_override=day_models.get(cur),
             )
             if day["work_hours"] or day["first_in"] or day["warnings"] or day["absence"] or day.get("calendar"):
                 day_cal = day.get("calendar") or {}

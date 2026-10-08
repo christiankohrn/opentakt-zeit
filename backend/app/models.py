@@ -175,6 +175,20 @@ class AccountEntry(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
+class DayModel(Base):
+    __tablename__ = "day_models"
+    __table_args__ = (UniqueConstraint("user_id", "day", name="uq_day_model"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    day: Mapped[date] = mapped_column(Date, index=True)
+    work_model_id: Mapped[int] = mapped_column(ForeignKey("work_models.id"), index=True)
+    created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+    work_model: Mapped[WorkModel] = relationship()
+
+
 class DayAcceptance(Base):
     __tablename__ = "day_acceptances"
     __table_args__ = (UniqueConstraint("user_id", "day", name="uq_day_acceptance"),)

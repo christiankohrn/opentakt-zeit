@@ -924,6 +924,7 @@ export default function HrUserMonth() {
                         <p className="text-sm font-medium">{formatDayLabel(d.date, "long")}</p>
                         <p className="mt-1 text-xs text-muted">{bookingText(d, "Keine Buchung")}</p>
                         {d.shift ? <p className="mt-1 text-xs text-muted">{d.shift}</p> : null}
+                        {d.day_model && d.model_name ? <p className="mt-1 text-xs text-muted">{d.model_name}</p> : null}
                         {overnight && !issues.length ? (
                           <p className="mt-1 text-xs text-muted">{warnLabel("overnight")}</p>
                         ) : null}
@@ -1003,7 +1004,9 @@ export default function HrUserMonth() {
                         {(d.calendar || d.absence) && !d.delta_hours ? "—" : signedHours(d.delta_hours)}
                       </td>
                       <td className={`px-4 py-2.5 text-xs ${issues.length ? "text-danger" : "text-muted"}`}>
-                        {[d.shift, d.warnings.map(warnLabel).join(" · ")].filter(Boolean).join(" · ") ||
+                        {[d.shift, d.day_model && d.model_name ? d.model_name : "", d.warnings.map(warnLabel).join(" · ")]
+                          .filter(Boolean)
+                          .join(" · ") ||
                           (d.accepted ? "In der Prüfung ignoriert" : "—")}
                       </td>
                     </tr>

@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.auth import as_local, now_utc
-from app.balance import days_in_range, hired_on, is_employed, month_days
+from app.balance import days_in_range, hired_on, is_employed, load_day_model_map, month_days
 from app.holidays import calendar_map
 from app.models import Absence, AccountEntry, Punch, User
 from app.names import name_sort_key
@@ -183,6 +183,7 @@ def _vacation_free_days(db: Session, users: list[User], start: date, end: date) 
     """Days that consume no vacation quota: roster weekends plus public holidays."""
     timelines = load_timelines(db, [user.id for user in users])
     frozen_map = load_frozen_map(db, [user.id for user in users])
+    day_models = load_day_model_map(db, [user.id for user in users], start, end)
     cal = calendar_map(db, start, end)
     free: dict[int, set[date]] = {}
     for user in users:
@@ -190,7 +191,7 @@ def _vacation_free_days(db: Session, users: list[User], start: date, end: date) 
         cur = start
         while cur <= end:
             entry = cal.get(cur)
-            model = model_for(timelines.get(user.id, []), cur, user.work_model)
+            model = day_models.get((user.id, cur)) or model_for(timelines.get(user.id, []), cur, user.work_model)
             blob = frozen_map.get((user.id, cur.year, cur.month)) or {}
             fields = blob.get(str(model.id)) if model is not None else None
             if isinstance(fields, dict):

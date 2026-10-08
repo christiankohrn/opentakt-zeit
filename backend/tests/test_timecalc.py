@@ -104,6 +104,35 @@ def test_school_fills_and_comp_time_keeps_the_deficit():
     assert "missing_day" not in comp["warnings"]
 
 
+def test_sick_only_fills_the_gap_beside_attendance():
+    day = date(2026, 8, 4)
+    now = datetime(2026, 8, 5, tzinfo=ZoneInfo("UTC"))
+    model = _full_week()
+    model.hours_tue = 7.6
+    sick = SimpleNamespace(kind="sick", note="")
+    partial = summarize_day(
+        [_p_on(day, "in", 7, 44), _p_on(day, "out", 8, 15)],
+        day,
+        model,
+        now=now,
+        absence=sick,
+        auto_break=False,
+    )
+    assert abs(partial["work_hours"] - 7.6) < 0.02
+    assert abs(partial["delta_hours"]) < 0.02
+
+    longer = summarize_day(
+        [_p_on(day, "in", 7), _p_on(day, "out", 16)],
+        day,
+        model,
+        now=now,
+        absence=sick,
+        auto_break=False,
+    )
+    assert abs(longer["work_hours"] - 9) < 0.02
+    assert abs(longer["delta_hours"] - 1.4) < 0.02
+
+
 def test_stamps_on_vacation_count_as_plus():
     punches = [_p_on(date(2026, 8, 5), "in", 7), _p_on(date(2026, 8, 5), "out", 9)]
     day = summarize_day(
@@ -682,6 +711,48 @@ def test_shift_day_without_a_corridor_keeps_every_booking():
     assert open_day["shift"] is None
     assert open_day["first_in"] == "06:24"
     assert open_day["last_out"] == "14:46"
+
+
+def test_day_model_replaces_soll_and_corridor_for_that_day_only():
+    from app.balance import summarize_user_day
+
+    usual = _rounded_model(
+        id=1,
+        name="Vollzeit",
+        booking_corridor=json.dumps({"thu": {"start": "05:00", "end": "16:00"}, "fri": {"start": "05:00", "end": "16:00"}}),
+        round_first_step=0,
+        round_first_threshold=0,
+    )
+    late = _rounded_model(
+        id=2,
+        name="Spät",
+        hours_thu=6.0,
+        booking_corridor=json.dumps({"thu": {"start": "13:00", "end": "22:00"}}),
+        round_first_step=0,
+        round_first_threshold=0,
+    )
+    user = SimpleNamespace(hired_on=date(2020, 1, 1), left_on=None, created_at=None, work_model=usual, auto_break=False)
+    timeline = [(date(2000, 1, 1), usual)]
+    thursday = date(2026, 8, 27)
+    friday = date(2026, 8, 28)
+    punches = [
+        _p_on(thursday, "in", 12, 0),
+        _p_on(thursday, "out", 21, 0),
+        _p_on(friday, "in", 12, 0),
+        _p_on(friday, "out", 21, 0),
+    ]
+    once = summarize_user_day(user, punches, thursday, timeline, model_override=late)
+    nxt = summarize_user_day(user, punches, friday, timeline)
+    assert once["model_name"] == "Spät"
+    assert once["day_model"] is True
+    assert once["soll_hours"] == 6.0
+    assert once["first_in"] == "13:00"
+    assert once["last_out"] == "21:00"
+    assert nxt["model_name"] == "Vollzeit"
+    assert nxt["day_model"] is False
+    assert nxt["soll_hours"] == 7.6
+    assert nxt["first_in"] == "12:00"
+    assert nxt["last_out"] == "16:00"
 
 
 def test_auto_break_tops_up_only_the_overhang_above_six_hours():

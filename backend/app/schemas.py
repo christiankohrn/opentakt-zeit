@@ -183,6 +183,11 @@ class DayReplaceIn(BaseModel):
     confirm_closed: bool = False
 
 
+class DayModelIn(BaseModel):
+    work_model_id: int
+    confirm_closed: bool = False
+
+
 class DayAcceptIn(BaseModel):
     reason: str = Field(min_length=3, max_length=300)
 

@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.auth import as_local, now_utc
-from app.models import MonthClosing, User, WorkModel, WorkModelAssignment
+from app.models import DayModel, MonthClosing, User, WorkModel, WorkModelAssignment
 from app.timecalc import model_on_day
 
 WEEKDAY_KEYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
@@ -260,13 +260,19 @@ def month_uses_model(timeline: Timeline, year: int, month: int, model_id: int, f
     return False
 
 
+def _day_model_months(db: Session, user_id: int, model_id: int) -> set[tuple[int, int]]:
+    days = db.scalars(select(DayModel.day).where(DayModel.user_id == user_id, DayModel.work_model_id == model_id))
+    return {(day.year, day.month) for day in days}
+
+
 def _affected_users(db: Session, model_id: int) -> list[User]:
     assigned = {
         row.user_id
         for row in db.scalars(select(WorkModelAssignment).where(WorkModelAssignment.work_model_id == model_id))
     }
     direct = set(db.scalars(select(User.id).where(User.work_model_id == model_id)))
-    ids = assigned | direct
+    once = set(db.scalars(select(DayModel.user_id).where(DayModel.work_model_id == model_id)))
+    ids = assigned | direct | once
     if not ids:
         return []
     return list(db.scalars(select(User).where(User.id.in_(ids))))
@@ -276,9 +282,12 @@ def closed_month_count(db: Session, model_id: int) -> int:
     count = 0
     for user in _affected_users(db, model_id):
         timeline = load_timeline(db, user.id)
+        once = _day_model_months(db, user.id, model_id)
         rows = db.scalars(select(MonthClosing).where(MonthClosing.user_id == user.id))
         for closing in rows:
-            if month_uses_model(timeline, closing.year, closing.month, model_id, user.work_model):
+            if (closing.year, closing.month) in once or month_uses_model(
+                timeline, closing.year, closing.month, model_id, user.work_model
+            ):
                 count += 1
     return count
 
@@ -289,9 +298,12 @@ def freeze_rules(db: Session, model: WorkModel) -> None:
     key = str(model.id)
     for user in _affected_users(db, model_id=model.id):
         timeline = load_timeline(db, user.id)
+        once = _day_model_months(db, user.id, model.id)
         rows = db.scalars(select(MonthClosing).where(MonthClosing.user_id == user.id))
         for closing in rows:
-            if not month_uses_model(timeline, closing.year, closing.month, model.id, user.work_model):
+            if (closing.year, closing.month) not in once and not month_uses_model(
+                timeline, closing.year, closing.month, model.id, user.work_model
+            ):
                 continue
             try:
                 blob = json.loads(closing.rules_json or "{}")
