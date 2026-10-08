@@ -594,6 +594,69 @@ def test_corridor_drops_time_after_the_end():
     assert format_hm(result["delta_hours"], signed=True) == "+0:38"
 
 
+def _three_shifts() -> str:
+    return json.dumps(
+        [
+            {"name": "Früh", "start": "05:45", "end": "14:00"},
+            {"name": "Spät", "start": "13:30", "end": "22:00"},
+            {"name": "Nacht", "start": "21:00", "end": "06:00"},
+        ]
+    )
+
+
+def test_shift_follows_the_nearest_start_and_its_corridor():
+    day = date(2026, 8, 27)
+    now = datetime(2026, 8, 28, tzinfo=ZoneInfo("UTC"))
+    model = _rounded_model(shifts=_three_shifts(), round_first_step=0, round_first_threshold=0)
+    early = summarize_day(
+        [_p_on(day, "in", 6, 24), _p_on(day, "out", 14, 46)],
+        day,
+        model,
+        now=now,
+        auto_break=False,
+    )
+    assert early["shift"] == "Früh"
+    assert early["first_in"] == "06:24"
+    assert early["last_out"] == "14:00"
+
+    late = summarize_day(
+        [_p_on(day, "in", 14, 10), _p_on(day, "out", 22, 20)],
+        day,
+        model,
+        now=now,
+        auto_break=False,
+    )
+    assert late["shift"] == "Spät"
+    assert late["first_in"] == "14:10"
+    assert late["last_out"] == "22:00"
+
+    before = summarize_day(
+        [_p_on(day, "in", 5, 30), _p_on(day, "out", 13, 0)],
+        day,
+        model,
+        now=now,
+        auto_break=False,
+    )
+    assert before["shift"] == "Früh"
+    assert before["first_in"] == "05:45"
+
+
+def test_night_shift_end_clips_the_next_morning():
+    punches = [
+        _p_on(date(2026, 8, 7), "in", 22, 0),
+        _p_on(date(2026, 8, 8), "out", 6, 10),
+    ]
+    now = datetime(2026, 8, 9, tzinfo=ZoneInfo("UTC"))
+    model = _rounded_model(shifts=_three_shifts(), round_first_step=0, round_first_threshold=0)
+    night = summarize_day(punches, date(2026, 8, 7), model, now=now)
+    morning = summarize_day(punches, date(2026, 8, 8), model, now=now)
+    assert night["shift"] == "Nacht"
+    assert abs(night["work_hours"] - 2.0) < 0.02
+    assert morning["shift"] == "Nacht"
+    assert morning["last_out"] == "06:00"
+    assert abs(morning["work_hours"] - 6.0) < 0.02
+
+
 def test_auto_break_tops_up_only_the_overhang_above_six_hours():
     from app.balance import format_hm
 

@@ -74,6 +74,7 @@ export type DaySummary = {
   delta_hours: number;
   open: boolean;
   warnings: string[];
+  shift?: string | null;
   auto_break_minutes: number;
   accepted: { reason: string; at: string } | null;
   absence: { kind: string; note: string | null } | null;
@@ -104,6 +105,8 @@ export type WorkModelAssignment = {
 
 export type CorridorDay = { start?: string | null; end?: string | null };
 
+export type ShiftCorridor = { name: string; start?: string | null; end?: string | null };
+
 export type WorkModel = {
   id: number;
   name: string;
@@ -124,6 +127,7 @@ export type WorkModel = {
   round_last_threshold: number;
   round_last_step: number;
   booking_corridor: Record<string, CorridorDay>;
+  shifts: ShiftCorridor[];
   closed_months: number;
   notice?: string | null;
 };

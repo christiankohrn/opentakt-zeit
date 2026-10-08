@@ -152,6 +152,7 @@ def ensure_schema() -> None:
         ("round_last_threshold", "INTEGER NOT NULL DEFAULT 0"),
         ("round_last_step", "INTEGER NOT NULL DEFAULT 0"),
         ("booking_corridor", "TEXT NOT NULL DEFAULT ''"),
+        ("shifts", "TEXT NOT NULL DEFAULT ''"),
     ):
         if column not in model_cols:
             alters.append(f"ALTER TABLE work_models ADD COLUMN {column} {ddl}")

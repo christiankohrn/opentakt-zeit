@@ -32,6 +32,7 @@ RULE_FIELDS = (
     "round_last_threshold",
     "round_last_step",
     "booking_corridor",
+    "shifts",
 )
 CLOSED_NOTICE = (
     "Abgeschlossene Monate behalten die bisherige Berechnung. Die Änderung gilt nur für offene Monate."
@@ -147,9 +148,52 @@ def normalize_corridor(raw: dict | None) -> dict[str, dict[str, str]]:
     return out
 
 
+def normalize_shifts(raw: list | None) -> list[dict[str, str]]:
+    out: list[dict[str, str]] = []
+    defaults = ("Früh", "Spät", "Nacht", "Schicht 4")
+    for index, slot in enumerate(raw or []):
+        if slot is None:
+            continue
+        if isinstance(slot, dict):
+            name, start, end = slot.get("name"), slot.get("start"), slot.get("end")
+        else:
+            name, start, end = getattr(slot, "name", None), getattr(slot, "start", None), getattr(slot, "end", None)
+        name = (name or "").strip()
+        start = (start or "").strip()
+        end = (end or "").strip()
+        if not name and not start and not end:
+            continue
+        if not start or not end:
+            raise ValueError("Jede Schicht braucht Beginn und Ende")
+        if not _CLOCK.match(start) or not _CLOCK.match(end):
+            raise ValueError("Schicht braucht eine Uhrzeit HH:MM")
+        if start == end:
+            raise ValueError("Beginn und Ende einer Schicht dürfen nicht gleich sein")
+        if not name:
+            name = defaults[index] if index < len(defaults) else f"Schicht {index + 1}"
+        out.append({"name": name[:40], "start": start, "end": end})
+    if len(out) > 4:
+        raise ValueError("Höchstens 4 Schichten")
+    return out
+
+
+def shifts_list(raw: object) -> list:
+    if isinstance(raw, list):
+        data = raw
+    elif isinstance(raw, str) and raw.strip():
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            return []
+    else:
+        return []
+    return data if isinstance(data, list) else []
+
+
 def rules_payload(model: WorkModel) -> dict:
-    payload = {name: getattr(model, name) for name in RULE_FIELDS if name != "booking_corridor"}
+    payload = {name: getattr(model, name) for name in RULE_FIELDS if name not in {"booking_corridor", "shifts"}}
     payload["booking_corridor"] = corridor_dict(model.booking_corridor)
+    payload["shifts"] = shifts_list(getattr(model, "shifts", ""))
     return payload
 
 
@@ -160,6 +204,8 @@ def overlay_model(model: WorkModel | None, fields: dict | None):
     data.update(fields)
     if isinstance(data.get("booking_corridor"), dict):
         data["booking_corridor"] = json.dumps(data["booking_corridor"])
+    if isinstance(data.get("shifts"), list):
+        data["shifts"] = json.dumps(data["shifts"])
     return SimpleNamespace(**data)
 
 

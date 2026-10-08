@@ -91,6 +91,12 @@ class CorridorDay(BaseModel):
     end: Optional[str] = None
 
 
+class ShiftCorridor(BaseModel):
+    name: str = ""
+    start: Optional[str] = None
+    end: Optional[str] = None
+
+
 class WorkModelIn(BaseModel):
     name: str
     kind: str = "flextime"
@@ -110,6 +116,7 @@ class WorkModelIn(BaseModel):
     round_last_threshold: int = Field(default=0, ge=0, le=59)
     round_last_step: int = Field(default=0, ge=0, le=60)
     booking_corridor: dict[str, CorridorDay] = Field(default_factory=dict)
+    shifts: list[ShiftCorridor] = Field(default_factory=list)
 
 
 class WorkModelOut(WorkModelIn):

@@ -79,6 +79,72 @@ def _clock_minutes(value: object) -> int | None:
     return None
 
 
+def _shift_rows(model) -> list[tuple[str, int, int]]:
+    raw = getattr(model, "shifts", None) or ""
+    if isinstance(raw, list):
+        data = raw
+    elif isinstance(raw, str) and raw.strip():
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            return []
+    else:
+        return []
+    if not isinstance(data, list):
+        return []
+    rows: list[tuple[str, int, int]] = []
+    for slot in data:
+        if not isinstance(slot, dict):
+            continue
+        start = _clock_minutes(slot.get("start"))
+        end = _clock_minutes(slot.get("end"))
+        if start is None or end is None or start == end:
+            continue
+        rows.append((str(slot.get("name") or ""), start, end))
+    return rows
+
+
+def _nearest_shift(minute: int, rows: list[tuple[str, int, int]]) -> tuple[str, int, int]:
+    def distance(start: int) -> int:
+        delta = abs(minute - start)
+        return min(delta, 24 * 60 - delta)
+
+    return min(rows, key=lambda row: (distance(row[1]), row[1], row[0]))
+
+
+def _open_shift_in(punches: list[Punch]) -> datetime | None:
+    started: datetime | None = None
+    state = "away"
+    for punch in sorted(punches, key=lambda item: _as_utc(item.server_time)):
+        if punch.kind == "in":
+            state = "in"
+            started = punch.server_time
+        elif punch.kind == "break_start" and state == "in":
+            state = "break"
+        elif punch.kind == "break_end" and state == "break":
+            state = "in"
+        elif punch.kind == "out":
+            state = "away"
+            started = None
+    return started if state in {"in", "break"} else None
+
+
+def _before_corridor(minute: int, start: int | None, end: int | None) -> bool:
+    if start is None:
+        return False
+    if end is None or end > start:
+        return minute < start
+    return end < minute < start
+
+
+def _after_corridor(minute: int, start: int | None, end: int | None) -> bool:
+    if end is None:
+        return False
+    if start is None or end > start:
+        return minute > end
+    return end < minute < start
+
+
 def _corridor_bounds(model, day: date) -> tuple[int | None, int | None]:
     raw = getattr(model, "booking_corridor", None) or ""
     if isinstance(raw, dict):
@@ -123,15 +189,20 @@ def _shift_to_minute(t: datetime, minute_of_day: int) -> datetime:
     return _as_minute(t + timedelta(minutes=minute_of_day - current))
 
 
-def credit_start(t: datetime, model, day: date) -> datetime:
+def credit_start(
+    t: datetime,
+    model,
+    day: date,
+    bounds: tuple[int | None, int | None] | None = None,
+) -> datetime:
     """Erstes Kommen: vor dem Korridor zählt nicht, Fenster zieht auf den Beginn, sonst Raster."""
     local = as_local(t)
     minute = local.hour * 60 + local.minute
-    start, _end = _corridor_bounds(model, day)
+    start, end = bounds if bounds is not None else _corridor_bounds(model, day)
     before = int(getattr(model, "round_start_before", 0) or 0)
     after = int(getattr(model, "round_start_after", 0) or 0)
     pinned = False
-    if start is not None and minute < start:
+    if _before_corridor(minute, start, end) and start is not None:
         minute = start
         pinned = True
     elif start is not None and _near(minute, start, before, after):
@@ -146,15 +217,20 @@ def credit_start(t: datetime, model, day: date) -> datetime:
     return _shift_to_minute(t, minute)
 
 
-def credit_end(t: datetime, model, day: date) -> datetime:
+def credit_end(
+    t: datetime,
+    model,
+    day: date,
+    bounds: tuple[int | None, int | None] | None = None,
+) -> datetime:
     """Letztes Gehen: nach dem Korridor zählt nicht, Fenster zieht auf das Ende, sonst Raster."""
     local = as_local(t)
     minute = local.hour * 60 + local.minute
-    _start, end = _corridor_bounds(model, day)
+    start, end = bounds if bounds is not None else _corridor_bounds(model, day)
     before = int(getattr(model, "round_end_before", 0) or 0)
     after = int(getattr(model, "round_end_after", 0) or 0)
     pinned = False
-    if end is not None and minute > end:
+    if _after_corridor(minute, start, end) and end is not None:
         minute = end
         pinned = True
     elif end is not None and _near(minute, end, before, after):
@@ -166,7 +242,7 @@ def credit_end(t: datetime, model, day: date) -> datetime:
             int(getattr(model, "round_last_step", 0) or 0),
             int(getattr(model, "round_last_threshold", 0) or 0),
         )
-        if end is not None and minute > end:
+        if _after_corridor(minute, start, end) and end is not None:
             minute = end
     return _shift_to_minute(t, minute)
 
@@ -309,12 +385,31 @@ def summarize_day(
 
     first_in_punch = next((p for p in events if p.kind == "in"), None)
     last_out_punch = next((p for p in reversed(events) if p.kind == "out"), None)
+    shift_rows = _shift_rows(model) if model is not None else []
+    active_bounds: tuple[int | None, int | None] | None = None
+    shift_names: list[str] = []
+    if shift_rows and prev_state in {"in", "break"}:
+        origin = _open_shift_in(prev)
+        if origin is not None:
+            local = as_local(origin)
+            name, start, end = _nearest_shift(local.hour * 60 + local.minute, shift_rows)
+            active_bounds = (start, end)
+            shift_names.append(name)
 
     for p in events:
         t = _as_minute(p.server_time)
-        if model is not None and p is first_in_punch:
+        if p.kind == "in" and open_in is None and open_break is None and shift_rows:
+            local = as_local(p.server_time)
+            name, start, end = _nearest_shift(local.hour * 60 + local.minute, shift_rows)
+            active_bounds = (start, end)
+            if name not in shift_names:
+                shift_names.append(name)
+            t = credit_start(t, model, day, active_bounds)
+        elif model is not None and p is first_in_punch and not shift_rows:
             t = credit_start(t, model, day)
-        elif model is not None and p is last_out_punch:
+        elif p.kind == "out" and shift_rows and active_bounds is not None:
+            t = credit_end(t, model, day, active_bounds)
+        elif model is not None and p is last_out_punch and not shift_rows:
             t = credit_end(t, model, day)
         if p.kind == "in":
             if open_in is None and open_break is None:
@@ -402,6 +497,7 @@ def summarize_day(
         "absence": None,
         "calendar": None,
         "weekday": day.weekday(),
+        "shift": " · ".join(shift_names) if shift_names else None,
         "punches": [
             {
                 "id": p.id,

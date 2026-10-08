@@ -87,6 +87,7 @@ from app.workmodels import (
     load_timelines,
     model_for,
     normalize_corridor,
+    normalize_shifts,
     overlay_model,
     sync_current_model,
     upsert_assignment,
@@ -680,6 +681,10 @@ def _model_out(db: Session, model: WorkModel, notice: str | None = None) -> Work
         corridor = normalize_corridor(json.loads(model.booking_corridor or "{}"))
     except (json.JSONDecodeError, ValueError):
         corridor = {}
+    try:
+        shifts = normalize_shifts(json.loads(model.shifts or "[]"))
+    except (json.JSONDecodeError, ValueError):
+        shifts = []
     closed = closed_month_count(db, model.id)
     return WorkModelOut(
         id=model.id,
@@ -701,6 +706,7 @@ def _model_out(db: Session, model: WorkModel, notice: str | None = None) -> Work
         round_last_threshold=model.round_last_threshold,
         round_last_step=model.round_last_step,
         booking_corridor=corridor,
+        shifts=shifts,
         closed_months=closed,
         notice=notice,
     )
@@ -709,12 +715,14 @@ def _model_out(db: Session, model: WorkModel, notice: str | None = None) -> Work
 def _apply_model(model: WorkModel, payload: WorkModelIn) -> None:
     try:
         corridor = normalize_corridor(payload.booking_corridor)
+        shifts = normalize_shifts(payload.shifts)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    data = payload.model_dump(exclude={"booking_corridor"})
+    data = payload.model_dump(exclude={"booking_corridor", "shifts"})
     for key, value in data.items():
         setattr(model, key, value)
     model.booking_corridor = json.dumps(corridor)
+    model.shifts = json.dumps(shifts)
 
 
 @router.get("/work-models", response_model=list[WorkModelOut])
