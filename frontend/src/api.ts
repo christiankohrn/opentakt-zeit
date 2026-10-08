@@ -32,6 +32,7 @@ export type User = {
   vacation_days_year: number | null;
   opening_balance_hours?: number;
   opening_balance_on?: string | null;
+  flex_cap_hours?: number | null;
   totp_enabled?: boolean;
   passkey_count?: number;
   security_setup_required?: string | null;
@@ -595,6 +596,7 @@ export const api = {
       department_id?: number | null;
       opening_balance_hours?: number;
       opening_balance_on?: string | null;
+      flex_cap_hours?: number | null;
       confirm_closed?: boolean;
     },
   ) => request<User>(`/api/hr/users/${id}/account`, { method: "PATCH", body: JSON.stringify(body) }),

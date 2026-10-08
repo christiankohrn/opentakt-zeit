@@ -571,6 +571,8 @@ def patch_user_account(user_id: int, payload: UserAccountIn, request: Request, d
         user.opening_balance_hours = float(payload.opening_balance_hours)
     if "opening_balance_on" in payload.model_fields_set:
         user.opening_balance_on = payload.opening_balance_on
+    if "flex_cap_hours" in payload.model_fields_set:
+        user.flex_cap_hours = None if payload.flex_cap_hours is None else float(payload.flex_cap_hours)
     if "left_on" in payload.model_fields_set:
         user.left_on = payload.left_on
     if "birthday" in payload.model_fields_set:
@@ -596,6 +598,7 @@ def patch_user_account(user_id: int, payload: UserAccountIn, request: Request, d
                     "email": user.email,
                     "opening_balance_hours": user.opening_balance_hours,
                     "opening_balance_on": user.opening_balance_on.isoformat() if user.opening_balance_on else None,
+                    "flex_cap_hours": user.flex_cap_hours,
                 }
             ),
         )
