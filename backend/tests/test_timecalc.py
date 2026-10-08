@@ -633,6 +633,35 @@ def _three_shifts() -> str:
     )
 
 
+def test_later_bookings_stay_on_the_first_shift():
+    shifts = json.dumps(
+        [
+            {"name": "Früh", "days": {"mon": {"start": "06:00", "end": "14:00"}}},
+            {"name": "Spät", "days": {"mon": {"start": "13:45", "end": "22:00"}}},
+        ]
+    )
+    day = date(2026, 8, 3)
+    model = _rounded_model(shifts=shifts, round_first_step=0, round_first_threshold=0, hours_mon=8)
+    result = summarize_day(
+        [
+            _p_on(day, "in", 6, 35),
+            _p_on(day, "out", 10, 34),
+            _p_on(day, "in", 10, 40),
+            _p_on(day, "out", 13, 0),
+            _p_on(day, "in", 13, 4),
+            _p_on(day, "out", 14, 10),
+        ],
+        day,
+        model,
+        now=datetime(2026, 8, 4, tzinfo=ZoneInfo("UTC")),
+        auto_break=False,
+    )
+    assert result["shift"] == "Früh"
+    assert result["first_in"] == "06:35"
+    assert result["last_out"] == "14:00"
+    assert abs(result["work_hours"] - (7 + 15 / 60)) < 0.02
+
+
 def test_shift_follows_the_nearest_start_and_its_corridor():
     day = date(2026, 8, 27)
     now = datetime(2026, 8, 28, tzinfo=ZoneInfo("UTC"))

@@ -457,13 +457,15 @@ def summarize_day(
     for p in events:
         t = _as_minute(p.server_time)
         if p.kind == "in" and open_in is None and open_break is None and has_shifts:
-            active_bounds = None
-            if day_rows:
+            # Eine zweite Schicht am selben Tag gibt es nicht. Spätere Buchungen
+            # bleiben im Korridor der ersten.
+            if day_rows and active_bounds is None:
                 local = as_local(p.server_time)
                 name, start, end = _nearest_shift(local.hour * 60 + local.minute, day_rows)
                 active_bounds = (start, end)
                 if name not in shift_names:
                     shift_names.append(name)
+            if active_bounds is not None:
                 t = credit_start(t, model, day, active_bounds)
         elif model is not None and p is first_in_punch and not has_shifts:
             t = credit_start(t, model, day)
