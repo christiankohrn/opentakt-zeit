@@ -522,6 +522,79 @@ def test_first_booking_rounds_up_from_two_minutes():
     assert early["first_in"] == "06:00"
 
 
+def test_comp_time_keeps_a_short_round_up_on_the_stamped_minute():
+    from app.balance import format_hm
+
+    model = _rounded_model()
+    now = datetime(2026, 8, 27, tzinfo=ZoneInfo("UTC"))
+    comp = SimpleNamespace(kind="comp_time", note=None)
+
+    def day_with(day: date, punches: list[Punch], absence=comp) -> dict:
+        return summarize_day(punches, day, model, now=now, auto_break=True, absence=absence)
+
+    monday = date(2026, 8, 24)
+    arrived = day_with(
+        monday,
+        [
+            _p_on(monday, "in", 7, 28),
+            _p_on(monday, "out", 12, 30),
+            _p_on(monday, "break_start", 12, 30),
+            _p_on(monday, "break_end", 13, 0),
+            _p_on(monday, "in", 13, 0),
+            _p_on(monday, "out", 15, 45),
+        ],
+    )
+    assert arrived["first_in"] == "07:28"
+    assert format_hm(arrived["work_hours"]) == "7:47"
+    assert format_hm(arrived["delta_hours"], signed=True) == "+0:11"
+    plain = day_with(
+        monday,
+        [
+            _p_on(monday, "in", 7, 28),
+            _p_on(monday, "out", 12, 30),
+            _p_on(monday, "break_start", 12, 30),
+            _p_on(monday, "break_end", 13, 0),
+            _p_on(monday, "in", 13, 0),
+            _p_on(monday, "out", 15, 45),
+        ],
+        absence=None,
+    )
+    assert plain["first_in"] == "07:30"
+    assert format_hm(plain["work_hours"]) == "7:45"
+
+    tuesday = date(2026, 8, 25)
+    partial = day_with(
+        tuesday,
+        [
+            _p_on(tuesday, "in", 7, 14),
+            _p_on(tuesday, "out", 12, 47),
+            _p_on(tuesday, "break_start", 12, 47),
+            _p_on(tuesday, "break_end", 13, 16),
+            _p_on(tuesday, "in", 13, 16),
+            _p_on(tuesday, "out", 15, 45),
+        ],
+    )
+    assert partial["first_in"] == "07:14"
+    assert format_hm(partial["work_hours"]) == "8:01"
+    assert format_hm(partial["delta_hours"], signed=True) == "+0:25"
+
+    wednesday = date(2026, 8, 26)
+    wider = day_with(
+        wednesday,
+        [
+            _p_on(wednesday, "in", 7, 11),
+            _p_on(wednesday, "out", 12, 39),
+            _p_on(wednesday, "break_start", 12, 39),
+            _p_on(wednesday, "break_end", 13, 5),
+            _p_on(wednesday, "in", 13, 5),
+            _p_on(wednesday, "out", 15, 45),
+        ],
+    )
+    assert wider["first_in"] == "07:15"
+    assert format_hm(wider["work_hours"]) == "8:00"
+    assert format_hm(wider["delta_hours"], signed=True) == "+0:24"
+
+
 def test_rounding_threshold_includes_the_whole_minute():
     from app.balance import format_hm
 

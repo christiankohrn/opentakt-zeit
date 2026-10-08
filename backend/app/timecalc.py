@@ -250,6 +250,24 @@ def _grid_minute(minute: int, step: int, threshold: int) -> int:
     return minute + (step - offset)
 
 
+def _grid_minute_with_comp(minute: int, step: int, threshold: int) -> int:
+    """Wie die Rasterrundung, aber ein kurzer Sprung nach oben bleibt stehen.
+
+    Zeitausgleich hat den Tag schon am Rahmenbeginn geöffnet. Liegt das Kommen
+    höchstens die Schwelle vor dem nächsten Rasterpunkt, zählt die Stempelzeit.
+    Ein größerer Sprung wird weiter aufgerundet, Abrunden bleibt.
+    """
+    if step <= 0:
+        return minute
+    offset = minute % step
+    if offset <= threshold:
+        return minute - offset
+    jump = step - offset
+    if jump <= threshold:
+        return minute
+    return minute + jump
+
+
 def _near(minute: int, bound: int, before: int, after: int) -> bool:
     if before <= 0 and after <= 0:
         return False
@@ -268,6 +286,7 @@ def credit_start(
     model,
     day: date,
     bounds: tuple[int | None, int | None] | None = None,
+    comp_time: bool = False,
 ) -> datetime:
     """Erstes Kommen: vor dem Korridor zählt nicht, Fenster zieht auf den Beginn, sonst Raster."""
     local = as_local(t)
@@ -283,11 +302,10 @@ def credit_start(
         minute = start
         pinned = True
     if not pinned:
-        minute = _grid_minute(
-            minute,
-            int(getattr(model, "round_first_step", 0) or 0),
-            int(getattr(model, "round_first_threshold", 0) or 0),
-        )
+        step = int(getattr(model, "round_first_step", 0) or 0)
+        threshold = int(getattr(model, "round_first_threshold", 0) or 0)
+        grid = _grid_minute_with_comp if comp_time else _grid_minute
+        minute = grid(minute, step, threshold)
     return _shift_to_minute(t, minute)
 
 
@@ -504,6 +522,7 @@ def summarize_day(
 
     first_in_punch = next((p for p in events if p.kind == "in"), None)
     last_out_punch = next((p for p in reversed(events) if p.kind == "out"), None)
+    comp_time = absence is not None and getattr(absence, "kind", None) == "comp_time"
     active_bounds: tuple[int | None, int | None] | None = None
     shift_names: list[str] = []
     if has_shifts and prev_state in {"in", "break"}:
@@ -528,9 +547,9 @@ def summarize_day(
                 if name not in shift_names:
                     shift_names.append(name)
             if active_bounds is not None:
-                t = credit_start(t, model, day, active_bounds)
+                t = credit_start(t, model, day, active_bounds, comp_time=comp_time and p is first_in_punch)
         elif model is not None and p is first_in_punch and not has_shifts:
-            t = credit_start(t, model, day)
+            t = credit_start(t, model, day, comp_time=comp_time)
         elif p.kind == "out" and has_shifts and active_bounds is not None:
             t = credit_end(t, model, day, active_bounds)
         elif model is not None and p is last_out_punch and not has_shifts:
