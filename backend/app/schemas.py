@@ -93,6 +93,7 @@ class CorridorDay(BaseModel):
 
 class ShiftCorridor(BaseModel):
     name: str = ""
+    days: dict[str, CorridorDay] = Field(default_factory=dict)
     start: Optional[str] = None
     end: Optional[str] = None
 

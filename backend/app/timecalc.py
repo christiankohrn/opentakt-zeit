@@ -79,7 +79,7 @@ def _clock_minutes(value: object) -> int | None:
     return None
 
 
-def _shift_rows(model) -> list[tuple[str, int, int]]:
+def _shift_data(model) -> list:
     raw = getattr(model, "shifts", None) or ""
     if isinstance(raw, list):
         data = raw
@@ -90,14 +90,26 @@ def _shift_rows(model) -> list[tuple[str, int, int]]:
             return []
     else:
         return []
-    if not isinstance(data, list):
-        return []
+    return data if isinstance(data, list) else []
+
+
+def _shift_rows(model, day: date) -> list[tuple[str, int, int]]:
+    """Korridore der Schichten an diesem Wochentag. Leere Tage liefern nichts."""
+    key = _WEEKDAYS[day.weekday()]
     rows: list[tuple[str, int, int]] = []
-    for slot in data:
+    for slot in _shift_data(model):
         if not isinstance(slot, dict):
             continue
-        start = _clock_minutes(slot.get("start"))
-        end = _clock_minutes(slot.get("end"))
+        days = slot.get("days") if isinstance(slot.get("days"), dict) else None
+        if days is not None:
+            cell = days.get(key) or {}
+            if not isinstance(cell, dict):
+                continue
+            start = _clock_minutes(cell.get("start"))
+            end = _clock_minutes(cell.get("end"))
+        else:
+            start = _clock_minutes(slot.get("start"))
+            end = _clock_minutes(slot.get("end"))
         if start is None or end is None or start == end:
             continue
         rows.append((str(slot.get("name") or ""), start, end))
@@ -385,31 +397,36 @@ def summarize_day(
 
     first_in_punch = next((p for p in events if p.kind == "in"), None)
     last_out_punch = next((p for p in reversed(events) if p.kind == "out"), None)
-    shift_rows = _shift_rows(model) if model is not None else []
+    has_shifts = bool(_shift_data(model)) if model is not None else False
+    day_rows = _shift_rows(model, day) if has_shifts else []
     active_bounds: tuple[int | None, int | None] | None = None
     shift_names: list[str] = []
-    if shift_rows and prev_state in {"in", "break"}:
+    if has_shifts and prev_state in {"in", "break"}:
         origin = _open_shift_in(prev)
         if origin is not None:
             local = as_local(origin)
-            name, start, end = _nearest_shift(local.hour * 60 + local.minute, shift_rows)
-            active_bounds = (start, end)
-            shift_names.append(name)
+            origin_rows = _shift_rows(model, local.date())
+            if origin_rows:
+                name, start, end = _nearest_shift(local.hour * 60 + local.minute, origin_rows)
+                active_bounds = (start, end)
+                shift_names.append(name)
 
     for p in events:
         t = _as_minute(p.server_time)
-        if p.kind == "in" and open_in is None and open_break is None and shift_rows:
-            local = as_local(p.server_time)
-            name, start, end = _nearest_shift(local.hour * 60 + local.minute, shift_rows)
-            active_bounds = (start, end)
-            if name not in shift_names:
-                shift_names.append(name)
-            t = credit_start(t, model, day, active_bounds)
-        elif model is not None and p is first_in_punch and not shift_rows:
+        if p.kind == "in" and open_in is None and open_break is None and has_shifts:
+            active_bounds = None
+            if day_rows:
+                local = as_local(p.server_time)
+                name, start, end = _nearest_shift(local.hour * 60 + local.minute, day_rows)
+                active_bounds = (start, end)
+                if name not in shift_names:
+                    shift_names.append(name)
+                t = credit_start(t, model, day, active_bounds)
+        elif model is not None and p is first_in_punch and not has_shifts:
             t = credit_start(t, model, day)
-        elif p.kind == "out" and shift_rows and active_bounds is not None:
+        elif p.kind == "out" and has_shifts and active_bounds is not None:
             t = credit_end(t, model, day, active_bounds)
-        elif model is not None and p is last_out_punch and not shift_rows:
+        elif model is not None and p is last_out_punch and not has_shifts:
             t = credit_end(t, model, day)
         if p.kind == "in":
             if open_in is None and open_break is None:

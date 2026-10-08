@@ -21,7 +21,7 @@ const CLOSED_HINT =
 
 type Corridor = Record<string, { start: string; end: string }>;
 
-type ShiftDraft = { name: string; start: string; end: string };
+type ShiftDraft = { name: string; days: Corridor };
 
 const SHIFT_NAMES = ["Früh", "Spät", "Nacht", "Schicht 4"];
 
@@ -64,7 +64,20 @@ function blankDraft(): Draft {
 }
 
 function resizeShifts(existing: ShiftDraft[], count: number): ShiftDraft[] {
-  return Array.from({ length: count }, (_, index) => existing[index] ?? { name: SHIFT_NAMES[index] ?? `Schicht ${index + 1}`, start: "", end: "" });
+  return Array.from(
+    { length: count },
+    (_, index) => existing[index] ?? { name: SHIFT_NAMES[index] ?? `Schicht ${index + 1}`, days: emptyCorridor() },
+  );
+}
+
+function shiftDays(slot: ShiftCorridor): Corridor {
+  const days = emptyCorridor();
+  for (const [key] of WEEKDAYS) {
+    const cell = slot.days?.[key];
+    if (cell?.start || cell?.end) days[key] = { start: cell.start || "", end: cell.end || "" };
+    else if (!slot.days && (slot.start || slot.end)) days[key] = { start: slot.start || "", end: slot.end || "" };
+  }
+  return days;
 }
 
 function draftFrom(model: WorkModel): Draft {
@@ -88,8 +101,7 @@ function draftFrom(model: WorkModel): Draft {
     corridor,
     shifts: (model.shifts ?? []).map((slot: ShiftCorridor, index) => ({
       name: slot.name || SHIFT_NAMES[index] || `Schicht ${index + 1}`,
-      start: slot.start || "",
-      end: slot.end || "",
+      days: shiftDays(slot),
     })),
   };
 }
@@ -157,11 +169,17 @@ export default function HrModels() {
       booking_corridor,
       shifts:
         draft.kind === "shift"
-          ? draft.shifts.map((slot, index) => ({
-              name: slot.name.trim() || SHIFT_NAMES[index] || `Schicht ${index + 1}`,
-              start: slot.start,
-              end: slot.end,
-            }))
+          ? draft.shifts.map((slot, index) => {
+              const days: Record<string, { start: string; end: string }> = {};
+              for (const [key] of WEEKDAYS) {
+                const cell = slot.days[key];
+                if (cell.start || cell.end) days[key] = { start: cell.start, end: cell.end };
+              }
+              return {
+                name: slot.name.trim() || SHIFT_NAMES[index] || `Schicht ${index + 1}`,
+                days,
+              };
+            })
           : [],
     };
   }
@@ -174,13 +192,26 @@ export default function HrModels() {
     }));
   }
 
+  function copyShiftDay(index: number, key: string) {
+    const [previous] = previousWeekday(key);
+    setDraft((current) => ({
+      ...current,
+      shifts: current.shifts.map((item, itemIndex) =>
+        itemIndex === index ? { ...item, days: { ...item.days, [key]: { ...item.days[previous] } } } : item,
+      ),
+    }));
+  }
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setNotice("");
     setMsg("");
     setError("");
-    if (draft.kind === "shift" && draft.shifts.some((slot) => !slot.start || !slot.end)) {
-      setError("Jede Schicht braucht Beginn und Ende.");
+    if (
+      draft.kind === "shift" &&
+      draft.shifts.some((slot) => WEEKDAYS.some(([key]) => Boolean(slot.days[key].start) !== Boolean(slot.days[key].end)))
+    ) {
+      setError("Jeder angegebene Korridor braucht Beginn und Ende.");
       return;
     }
     setBusy(true);
@@ -313,7 +344,7 @@ export default function HrModels() {
             <fieldset className="space-y-2">
               <legend className="text-sm font-medium">Schichten</legend>
               <p className="text-xs text-muted">
-                Die erste Kommen-Zeit wählt die Schicht mit dem nächsten Beginn. Kommen vor diesem Beginn und Gehen nach diesem Ende zählen nicht. Liegt das Ende vor dem Beginn, läuft die Schicht über Mitternacht.
+                Je Schicht und Wochentag. Die erste Kommen-Zeit wählt unter den Schichten dieses Tages die mit dem nächsten Beginn. Kommen vor diesem Beginn und Gehen nach diesem Ende zählen nicht. Tage ohne Angabe zählen alle Buchungen. Liegt das Ende vor dem Beginn, läuft die Schicht über Mitternacht.
               </p>
               <label className="block text-sm">
                 Anzahl
@@ -329,7 +360,7 @@ export default function HrModels() {
                 </select>
               </label>
               {draft.shifts.map((slot, index) => (
-                <div key={index} className="flex flex-wrap items-center gap-2 text-sm">
+                <div key={index} className="space-y-2 rounded-xl border border-line p-3">
                   <input
                     aria-label={`Schicht ${index + 1} Name`}
                     value={slot.name}
@@ -340,34 +371,58 @@ export default function HrModels() {
                         shifts: current.shifts.map((item, itemIndex) => (itemIndex === index ? { ...item, name: value } : item)),
                       }));
                     }}
-                    className="w-28 shrink-0 rounded-lg border border-line bg-bg px-2 py-1"
+                    className="w-40 rounded-lg border border-line bg-bg px-2 py-1 text-sm"
                   />
-                  <input
-                    type="time"
-                    aria-label={`${slot.name || "Schicht"} von`}
-                    value={slot.start}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setDraft((current) => ({
-                        ...current,
-                        shifts: current.shifts.map((item, itemIndex) => (itemIndex === index ? { ...item, start: value } : item)),
-                      }));
-                    }}
-                    className={`${field} min-w-0 flex-1`}
-                  />
-                  <input
-                    type="time"
-                    aria-label={`${slot.name || "Schicht"} bis`}
-                    value={slot.end}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setDraft((current) => ({
-                        ...current,
-                        shifts: current.shifts.map((item, itemIndex) => (itemIndex === index ? { ...item, end: value } : item)),
-                      }));
-                    }}
-                    className={`${field} min-w-0 flex-1`}
-                  />
+                  {WEEKDAYS.map(([key, label]) => {
+                    const [, previousLabel] = previousWeekday(key);
+                    return (
+                      <div key={key} className="flex flex-wrap items-center gap-2 text-sm">
+                        <span className="w-28 shrink-0">{label}</span>
+                        <input
+                          type="time"
+                          aria-label={`${slot.name || "Schicht"} ${label} von`}
+                          value={slot.days[key].start}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            setDraft((current) => ({
+                              ...current,
+                              shifts: current.shifts.map((item, itemIndex) =>
+                                itemIndex === index
+                                  ? { ...item, days: { ...item.days, [key]: { ...item.days[key], start: value } } }
+                                  : item,
+                              ),
+                            }));
+                          }}
+                          className={`${field} min-w-0 flex-1`}
+                        />
+                        <input
+                          type="time"
+                          aria-label={`${slot.name || "Schicht"} ${label} bis`}
+                          value={slot.days[key].end}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            setDraft((current) => ({
+                              ...current,
+                              shifts: current.shifts.map((item, itemIndex) =>
+                                itemIndex === index
+                                  ? { ...item, days: { ...item.days, [key]: { ...item.days[key], end: value } } }
+                                  : item,
+                              ),
+                            }));
+                          }}
+                          className={`${field} min-w-0 flex-1`}
+                        />
+                        <button
+                          type="button"
+                          className="shrink-0 rounded-lg border border-line px-2 py-1 text-xs"
+                          title={`Beginn und Ende von ${previousLabel} übernehmen`}
+                          onClick={() => copyShiftDay(index, key)}
+                        >
+                          wie {previousLabel}
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               ))}
             </fieldset>

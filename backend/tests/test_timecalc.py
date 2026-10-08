@@ -657,6 +657,33 @@ def test_night_shift_end_clips_the_next_morning():
     assert abs(morning["work_hours"] - 6.0) < 0.02
 
 
+def test_shift_day_without_a_corridor_keeps_every_booking():
+    shifts = json.dumps([{"name": "Früh", "days": {"mon": {"start": "05:45", "end": "14:00"}}}])
+    model = _rounded_model(shifts=shifts, round_first_step=0, round_first_threshold=0)
+    monday = date(2026, 8, 3)
+    thursday = date(2026, 8, 27)
+    clipped = summarize_day(
+        [_p_on(monday, "in", 6, 24), _p_on(monday, "out", 14, 46)],
+        monday,
+        model,
+        now=datetime(2026, 8, 4, tzinfo=ZoneInfo("UTC")),
+        auto_break=False,
+    )
+    open_day = summarize_day(
+        [_p_on(thursday, "in", 6, 24), _p_on(thursday, "out", 14, 46)],
+        thursday,
+        model,
+        now=datetime(2026, 8, 28, tzinfo=ZoneInfo("UTC")),
+        auto_break=False,
+    )
+    assert clipped["shift"] == "Früh"
+    assert clipped["first_in"] == "06:24"
+    assert clipped["last_out"] == "14:00"
+    assert open_day["shift"] is None
+    assert open_day["first_in"] == "06:24"
+    assert open_day["last_out"] == "14:46"
+
+
 def test_auto_break_tops_up_only_the_overhang_above_six_hours():
     from app.balance import format_hm
 

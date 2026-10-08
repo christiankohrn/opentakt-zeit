@@ -148,30 +148,52 @@ def normalize_corridor(raw: dict | None) -> dict[str, dict[str, str]]:
     return out
 
 
-def normalize_shifts(raw: list | None) -> list[dict[str, str]]:
-    out: list[dict[str, str]] = []
+def _pair(slot: object) -> tuple[str, str]:
+    if isinstance(slot, dict):
+        start, end = slot.get("start"), slot.get("end")
+    else:
+        start, end = getattr(slot, "start", None), getattr(slot, "end", None)
+    return (start or "").strip(), (end or "").strip()
+
+
+def normalize_shifts(raw: list | None) -> list[dict]:
+    out: list[dict] = []
     defaults = ("Früh", "Spät", "Nacht", "Schicht 4")
     for index, slot in enumerate(raw or []):
         if slot is None:
             continue
         if isinstance(slot, dict):
-            name, start, end = slot.get("name"), slot.get("start"), slot.get("end")
+            name = slot.get("name")
+            days_in = slot.get("days") if isinstance(slot.get("days"), dict) else {}
+            legacy_start, legacy_end = _pair(slot)
         else:
-            name, start, end = getattr(slot, "name", None), getattr(slot, "start", None), getattr(slot, "end", None)
+            name = getattr(slot, "name", None)
+            days_in = getattr(slot, "days", None) or {}
+            if not isinstance(days_in, dict):
+                days_in = {}
+            legacy_start, legacy_end = _pair(slot)
+        if not days_in and legacy_start and legacy_end:
+            days_in = {key: {"start": legacy_start, "end": legacy_end} for key in WEEKDAY_KEYS}
+        days: dict[str, dict[str, str]] = {}
+        for key, value in days_in.items():
+            if key not in WEEKDAY_KEYS or value is None:
+                continue
+            start, end = _pair(value)
+            if not start and not end:
+                continue
+            if not start or not end:
+                raise ValueError("Jeder angegebene Korridor braucht Beginn und Ende")
+            if not _CLOCK.match(start) or not _CLOCK.match(end):
+                raise ValueError("Schicht braucht eine Uhrzeit HH:MM")
+            if start == end:
+                raise ValueError("Beginn und Ende einer Schicht dürfen nicht gleich sein")
+            days[key] = {"start": start, "end": end}
         name = (name or "").strip()
-        start = (start or "").strip()
-        end = (end or "").strip()
-        if not name and not start and not end:
+        if not name and not days:
             continue
-        if not start or not end:
-            raise ValueError("Jede Schicht braucht Beginn und Ende")
-        if not _CLOCK.match(start) or not _CLOCK.match(end):
-            raise ValueError("Schicht braucht eine Uhrzeit HH:MM")
-        if start == end:
-            raise ValueError("Beginn und Ende einer Schicht dürfen nicht gleich sein")
         if not name:
             name = defaults[index] if index < len(defaults) else f"Schicht {index + 1}"
-        out.append({"name": name[:40], "start": start, "end": end})
+        out.append({"name": name[:40], "days": days})
     if len(out) > 4:
         raise ValueError("Höchstens 4 Schichten")
     return out

@@ -105,7 +105,12 @@ export type WorkModelAssignment = {
 
 export type CorridorDay = { start?: string | null; end?: string | null };
 
-export type ShiftCorridor = { name: string; start?: string | null; end?: string | null };
+export type ShiftCorridor = {
+  name: string;
+  days?: Record<string, CorridorDay>;
+  start?: string | null;
+  end?: string | null;
+};
 
 export type WorkModel = {
   id: number;
