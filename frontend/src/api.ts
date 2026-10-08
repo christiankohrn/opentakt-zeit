@@ -84,6 +84,7 @@ export type DaySummary = {
   model_name?: string | null;
   day_model?: boolean;
   punches: { id: number; kind: string; time: string; source: string; device_id?: string | null; terminal_name?: string; voided: boolean }[];
+  span_punches?: { id: number; kind: string; time: string; source: string; device_id?: string | null; terminal_name?: string; voided: boolean }[];
 };
 
 export type Status = {

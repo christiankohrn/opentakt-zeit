@@ -193,13 +193,14 @@ export function bookingText(
     calendar?: { kind: string; name: string } | null;
     absence?: { kind: string; note: string | null } | null;
     punches: { kind: string; time: string; voided: boolean }[];
+    span_punches?: { kind: string; time: string; voided: boolean }[];
     first_in: string | null;
     last_out: string | null;
     open: boolean;
   },
   empty = "—",
 ) {
-  const punches = formatPunchLine(d.punches);
+  const punches = formatPunchLine(d.span_punches ?? d.punches);
   const label = dayKindLabel(d);
   if (label && punches) return `${label} · ${punches}`;
   if (label) return label;

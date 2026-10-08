@@ -364,6 +364,24 @@ def _closed_later(punches: list[Punch], end_utc: datetime) -> bool:
     return next_kind is not None and next_kind != "in"
 
 
+def _consume_open_shift(punches: list[Punch], state: str) -> tuple[list[Punch], list[Punch]]:
+    """Punches that finish an open shift, then whatever starts the next one."""
+    if state not in {"in", "break"}:
+        return [], list(punches)
+    taken: list[Punch] = []
+    for index, punch in enumerate(punches):
+        if punch.kind == "in":
+            return taken, list(punches[index:])
+        taken.append(punch)
+        if punch.kind == "out":
+            return taken, list(punches[index + 1 :])
+        if punch.kind == "break_start":
+            state = "break"
+        elif punch.kind == "break_end":
+            state = "in"
+    return taken, []
+
+
 def summarize_day(
     punches: list[Punch],
     day: date,
@@ -381,6 +399,33 @@ def summarize_day(
 
     prev = [p for p in punches if p.voided_at is None and _as_utc(p.server_time) < start_utc]
     prev_state = status_from_punches(prev)
+    has_shifts = bool(_shift_data(model)) if model is not None else False
+    day_rows = _shift_rows(model, day) if has_shifts else []
+    # Nachtschicht bleibt am Tag des Kommens. Das Gehen am Morgen gehört nicht
+    # noch einmal zum Folgetag, auch wenn der Korridor nur an manchen Wochentagen steht.
+    carried: list[Punch] = []
+    continuation: list[Punch] = []
+    if has_shifts and prev_state in {"in", "break"}:
+        carried, events = _consume_open_shift(events, prev_state)
+        prev_state = "away"
+    if has_shifts:
+        state = prev_state
+        for punch in events:
+            if punch.kind == "in":
+                state = "in"
+            elif punch.kind == "break_start" and state == "in":
+                state = "break"
+            elif punch.kind == "break_end" and state == "break":
+                state = "in"
+            elif punch.kind == "out":
+                state = "away"
+        if state in {"in", "break"}:
+            later = [p for p in punches if p.voided_at is None and _as_utc(p.server_time) >= end_utc]
+            later.sort(key=lambda p: _as_utc(p.server_time))
+            taken, _rest = _consume_open_shift(later, state)
+            if any(p.kind == "out" for p in taken):
+                continuation = taken
+                events = [*events, *continuation]
 
     work = timedelta(0)
     pause = timedelta(0)
@@ -397,8 +442,6 @@ def summarize_day(
 
     first_in_punch = next((p for p in events if p.kind == "in"), None)
     last_out_punch = next((p for p in reversed(events) if p.kind == "out"), None)
-    has_shifts = bool(_shift_data(model)) if model is not None else False
-    day_rows = _shift_rows(model, day) if has_shifts else []
     active_bounds: tuple[int | None, int | None] | None = None
     shift_names: list[str] = []
     if has_shifts and prev_state in {"in", "break"}:
@@ -499,6 +542,18 @@ def summarize_day(
     def fmt(dt: datetime | None) -> str | None:
         return as_local(dt).strftime("%H:%M") if dt else None
 
+    def punch_row(p: Punch) -> dict:
+        return {
+            "id": p.id,
+            "kind": p.kind,
+            "time": as_local(_as_utc(p.server_time)).strftime("%H:%M"),
+            "source": p.source,
+            "device_id": p.device_id,
+            "terminal_name": p.terminal_name or "",
+            "voided": p.voided_at is not None,
+        }
+
+    carried_ids = {id(p) for p in carried}
     result = {
         "date": day.isoformat(),
         "first_in": fmt(first_in),
@@ -515,19 +570,12 @@ def summarize_day(
         "calendar": None,
         "weekday": day.weekday(),
         "shift": " · ".join(shift_names) if shift_names else None,
-        "punches": [
-            {
-                "id": p.id,
-                "kind": p.kind,
-                "time": as_local(_as_utc(p.server_time)).strftime("%H:%M"),
-                "source": p.source,
-                "device_id": p.device_id,
-                "terminal_name": p.terminal_name or "",
-                "voided": p.voided_at is not None,
-            }
-            for p in all_in_day
-        ],
+        "punches": [punch_row(p) for p in all_in_day],
     }
+    if carried or continuation:
+        span = [p for p in all_in_day if id(p) not in carried_ids]
+        span.extend(continuation)
+        result["span_punches"] = [punch_row(p) for p in span]
     # Schule und Sonderurlaub füllen die Sollzeit wie Urlaub und Krankheit.
     # Zeitausgleich nicht: der Tag bleibt bei null Ist, das Konto fällt um die Sollzeit.
     credited = {"vacation", "sick", "school", "special_leave"}

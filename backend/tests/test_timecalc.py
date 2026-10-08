@@ -680,10 +680,60 @@ def test_night_shift_end_clips_the_next_morning():
     night = summarize_day(punches, date(2026, 8, 7), model, now=now)
     morning = summarize_day(punches, date(2026, 8, 8), model, now=now)
     assert night["shift"] == "Nacht"
-    assert abs(night["work_hours"] - 2.0) < 0.02
-    assert morning["shift"] == "Nacht"
-    assert morning["last_out"] == "06:00"
-    assert abs(morning["work_hours"] - 6.0) < 0.02
+    assert night["first_in"] == "22:00"
+    assert night["last_out"] == "06:00"
+    assert abs(night["work_hours"] - 8.0) < 0.02
+    assert "overnight" not in night["warnings"]
+    assert morning["shift"] is None
+    assert morning["work_hours"] == 0
+    assert morning["span_punches"] == []
+
+
+def test_night_shift_uses_the_start_day_and_only_its_weekday_corridor():
+    shifts = json.dumps(
+        [
+            {
+                "name": "Nacht",
+                "days": {key: {"start": "21:45", "end": "06:00"} for key in ("mon", "tue", "wed", "thu", "fri")},
+            }
+        ]
+    )
+    model = _rounded_model(shifts=shifts, round_first_step=15, round_first_threshold=2)
+    sunday = date(2026, 8, 9)
+    monday = date(2026, 8, 10)
+    thursday = date(2026, 8, 13)
+    friday = date(2026, 8, 14)
+    punches = [
+        _p_on(sunday, "in", 21, 39),
+        _p_on(monday, "out", 6, 9),
+        _p_on(monday, "in", 21, 46),
+        _p_on(date(2026, 8, 11), "out", 6, 9),
+        _p_on(thursday, "in", 21, 37),
+        _p_on(friday, "out", 6, 13),
+    ]
+    now = datetime(2026, 8, 15, tzinfo=ZoneInfo("UTC"))
+    sun = summarize_day(punches, sunday, model, now=now, auto_break=True)
+    mon = summarize_day(punches, monday, model, now=now, auto_break=True)
+    thu = summarize_day(punches, thursday, model, now=now, auto_break=True)
+    fri = summarize_day(punches, friday, model, now=now, auto_break=True)
+    assert sun["shift"] is None
+    assert sun["first_in"] == "21:39"
+    assert sun["last_out"] == "06:09"
+    assert abs(sun["work_hours"] - 8.0) < 0.02
+    assert [p["time"] for p in sun["span_punches"]] == ["21:39", "06:09"]
+    assert mon["shift"] == "Nacht"
+    assert mon["first_in"] == "21:45"
+    assert mon["last_out"] == "06:00"
+    assert abs(mon["work_hours"] - 7.75) < 0.02
+    assert abs(mon["delta_hours"] - 0.15) < 0.02
+    assert [p["kind"] for p in mon["span_punches"]] == ["in", "out"]
+    assert thu["first_in"] == "21:45"
+    assert thu["last_out"] == "06:00"
+    assert abs(thu["work_hours"] - 7.75) < 0.02
+    assert fri["work_hours"] == 0
+    assert fri["span_punches"] == []
+    assert "missing_day" in fri["warnings"]
+    assert fri["punches"][0]["time"] == "06:13"
 
 
 def test_shift_day_without_a_corridor_keeps_every_booking():
