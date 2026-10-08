@@ -97,10 +97,15 @@ def _corridor_bounds(model, day: date) -> tuple[int | None, int | None]:
 
 
 def _grid_minute(minute: int, step: int, threshold: int) -> int:
+    """Rasterrundung. Die Schwellenminute rundet noch ab, samt ihrer Sekunden.
+
+    Sekunden sind hier schon abgeschnitten. Bei Schwelle 2 bleibt 2:59 unten,
+    ab der nächsten vollen Minute (3:00) wird aufgerundet.
+    """
     if step <= 0:
         return minute
     offset = minute % step
-    if offset == 0 or offset < threshold:
+    if offset <= threshold:
         return minute - offset
     return minute + (step - offset)
 

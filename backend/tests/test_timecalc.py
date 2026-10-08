@@ -12,8 +12,8 @@ def _p(kind: str, hour: int, minute: int = 0) -> Punch:
     return Punch(user_id=1, kind=kind, server_time=t, source="test")
 
 
-def _p_on(day: date, kind: str, hour: int, minute: int = 0) -> Punch:
-    t = datetime(day.year, day.month, day.day, hour, minute, tzinfo=ZoneInfo("Europe/Berlin")).astimezone(
+def _p_on(day: date, kind: str, hour: int, minute: int = 0, second: int = 0) -> Punch:
+    t = datetime(day.year, day.month, day.day, hour, minute, second, tzinfo=ZoneInfo("Europe/Berlin")).astimezone(
         ZoneInfo("UTC")
     )
     return Punch(user_id=1, kind=kind, server_time=t, source="test")
@@ -491,6 +491,52 @@ def test_first_booking_rounds_up_from_two_minutes():
         auto_break=False,
     )
     assert early["first_in"] == "06:00"
+
+
+def test_rounding_threshold_includes_the_whole_minute():
+    from app.balance import format_hm
+
+    day = date(2026, 8, 3)
+    now = datetime(2026, 8, 4, tzinfo=ZoneInfo("UTC"))
+    model = _rounded_model()
+    within = summarize_day(
+        [_p_on(day, "in", 6, 2, 40), _p_on(day, "out", 14, 46)],
+        day,
+        model,
+        now=now,
+        auto_break=False,
+    )
+    assert within["first_in"] == "06:00"
+    crossed = summarize_day(
+        [_p_on(day, "in", 6, 3), _p_on(day, "out", 14, 46)],
+        day,
+        model,
+        now=now,
+        auto_break=False,
+    )
+    assert crossed["first_in"] == "06:15"
+
+    result = summarize_day(
+        [
+            _p_on(day, "in", 6, 2),
+            _p_on(day, "out", 8, 7),
+            _p_on(day, "in", 8, 16),
+            _p_on(day, "out", 10, 50),
+            _p_on(day, "break_start", 10, 50),
+            _p_on(day, "break_end", 11, 16),
+            _p_on(day, "in", 11, 16),
+            _p_on(day, "out", 14, 46),
+        ],
+        day,
+        model,
+        now=now,
+        auto_break=True,
+    )
+    assert result["first_in"] == "06:00"
+    assert result["last_out"] == "14:46"
+    assert result["punches"][0]["time"] == "06:02"
+    assert format_hm(result["work_hours"]) == "8:07"
+    assert format_hm(result["delta_hours"], signed=True) == "+0:31"
 
 
 def test_corridor_drops_time_before_the_start_and_can_pull_the_end():

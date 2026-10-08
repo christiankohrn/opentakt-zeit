@@ -206,7 +206,10 @@ export default function HrModels() {
           </label>
           <fieldset className="space-y-3">
             <legend className="text-sm font-medium">Rundung</legend>
-            <p className="text-xs text-muted">0 lässt die jeweilige Rundung aus. Die Stempel bleiben sichtbar, nur die angerechnete Zeit ändert sich.</p>
+            <p className="text-xs text-muted">
+              0 lässt die jeweilige Rundung aus. Die Stempel bleiben sichtbar, nur die angerechnete Zeit ändert sich.
+              Die eingetragene Minute rundet noch ab, einschließlich der Sekunden. Erst die nächste volle Minute rundet auf.
+            </p>
             <RoundRow
               label="Für Buchungen, die"
               mid="Min. vor oder"
