@@ -4,7 +4,7 @@ Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Ve
 
 ## [Unreleased]
 
-- Überstunden lassen sich pro Person kappen (Einstellung im Zeitkonto der Monatsansicht, zum Beispiel 30 Stunden). Liegt das Konto am Monatsende höher, bucht der Monatsabschluss automatisch eine Korrektur auf die Grenze; die Buchung steht mit dem Hinweis „Automatische Kappung“ im Zeitkonto.
+- Überstunden lassen sich pro Person kappen (Einstellung im Zeitkonto der Monatsansicht, zum Beispiel 30 Stunden). Liegt das Konto am Monatsende höher, bucht der Monatsabschluss automatisch eine Korrektur auf die Grenze und trägt die abgezogenen Stunden am Monatsersten als Vortrag wieder ein, sodass nichts verloren geht.
 - Neuer Urlaubsplaner für Personal und Admin: Gesamtansicht aller Abwesenheiten als Personen×Tage-Matrix mit Monats- und Jahresansicht, Filter wie in den Auswertungen, Urlaubskennzahlen pro Person und CSV-/PDF-Export.
 - Im Urlaubsplaner lässt sich Urlaub per Klick eintragen und entfernen (Bearbeitungsmodus mit Knopf). Die Kontoprüfung läuft live; geht ein Konto ins Minus, warnt der Planner deutlich und bietet beim Speichern den Ausgleich im Urlaubskonto an.
 - Automatische Pause ist bei neuen Personen eingeschaltet (30 Minuten ab 6:30 Stunden, 45 Minuten ab 9:45 Stunden).

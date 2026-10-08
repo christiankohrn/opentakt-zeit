@@ -192,7 +192,8 @@ export default function AccountBooks({
           </form>
           <p className="mt-2 text-xs text-muted">
             Leer lassen für keine Kappung. Ist ein Wert gesetzt und steht das Konto am Monatsende höher,
-            bucht der Monatsabschluss automatisch eine Korrektur auf diesen Wert.
+            bucht der Monatsabschluss automatisch eine Korrektur auf diesen Wert und trägt die abgezogenen
+            Stunden am Monatsersten als Vortrag wieder ein, sodass nichts verloren geht.
           </p>
         </div>
       </section>

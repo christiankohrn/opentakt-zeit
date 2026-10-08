@@ -46,10 +46,15 @@ def month_label(year: int, month: int) -> str:
 
 
 CAP_REASON_PREFIX = "Automatische Kappung"
+VORTRAG_REASON_PREFIX = "Vortrag aus Kappung"
 
 
 def cap_reason(cap: float, year: int, month: int) -> str:
     return f"{CAP_REASON_PREFIX} auf {cap:g} Stunden ({month_label(year, month)})"
+
+
+def vortrag_reason(year: int, month: int) -> str:
+    return f"{VORTRAG_REASON_PREFIX} ({month_label(year, month)})"
 
 
 def flex_cap(user: User) -> float | None:
@@ -313,28 +318,40 @@ def _apply_cap(
 ) -> bool:
     """Bucht je neu abgeschlossenem Monat über der Grenze eine negative Korrektur.
 
+    Die abgezogenen Stunden werden am Monatsersten als Vortrag wieder
+    gutgeschrieben, sodass nichts verloren geht. Korrektur und Vortrag heben
+    sich auf, daher rechnet jeder Folgemonat mit dem ungekürzten Verlauf.
     Gibt True zurück, wenn Buchungen entstanden sind und der Aufrufer neu
     laufen muss, damit die gespeicherten Stände exakt zum Konto passen.
     """
     author = actor_id if actor_id is not None else user.id
     created = False
-    adjustment = 0.0
     year, month = begin
     while (year, month) in snapshots:
-        excess = snapshots[(year, month)] + adjustment - cap
-        if excess >= 0.005:
-            amount = -round(excess, 2)
+        excess = snapshots[(year, month)] - cap
+        cut = round(excess, 2) if excess >= 0.005 else 0.0
+        if cut > 0:
+            last_day = month_end(year, month)
             db.add(
                 AccountEntry(
                     user_id=user.id,
                     kind="time",
-                    day=month_end(year, month),
-                    amount=amount,
+                    day=last_day,
+                    amount=-cut,
                     reason=cap_reason(cap, year, month),
                     created_by_id=author,
                 )
             )
-            adjustment += amount
+            db.add(
+                AccountEntry(
+                    user_id=user.id,
+                    kind="time",
+                    day=last_day + timedelta(days=1),
+                    amount=cut,
+                    reason=vortrag_reason(year, month),
+                    created_by_id=author,
+                )
+            )
             created = True
         year, month = next_month(year, month)
     if created:
