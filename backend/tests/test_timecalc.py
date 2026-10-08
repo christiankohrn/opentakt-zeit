@@ -522,7 +522,7 @@ def test_first_booking_rounds_up_from_two_minutes():
     assert early["first_in"] == "06:00"
 
 
-def test_comp_time_keeps_a_short_round_up_on_the_stamped_minute():
+def test_comp_time_does_not_round_the_first_booking():
     from app.balance import format_hm
 
     model = _rounded_model()
@@ -590,9 +590,9 @@ def test_comp_time_keeps_a_short_round_up_on_the_stamped_minute():
             _p_on(wednesday, "out", 15, 45),
         ],
     )
-    assert wider["first_in"] == "07:15"
-    assert format_hm(wider["work_hours"]) == "8:00"
-    assert format_hm(wider["delta_hours"], signed=True) == "+0:24"
+    assert wider["first_in"] == "07:11"
+    assert format_hm(wider["work_hours"]) == "8:04"
+    assert format_hm(wider["delta_hours"], signed=True) == "+0:28"
 
 
 def test_rounding_threshold_includes_the_whole_minute():

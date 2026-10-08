@@ -250,24 +250,6 @@ def _grid_minute(minute: int, step: int, threshold: int) -> int:
     return minute + (step - offset)
 
 
-def _grid_minute_with_comp(minute: int, step: int, threshold: int) -> int:
-    """Wie die Rasterrundung, aber ein kurzer Sprung nach oben bleibt stehen.
-
-    Zeitausgleich hat den Tag schon am Rahmenbeginn geöffnet. Liegt das Kommen
-    höchstens die Schwelle vor dem nächsten Rasterpunkt, zählt die Stempelzeit.
-    Ein größerer Sprung wird weiter aufgerundet, Abrunden bleibt.
-    """
-    if step <= 0:
-        return minute
-    offset = minute % step
-    if offset <= threshold:
-        return minute - offset
-    jump = step - offset
-    if jump <= threshold:
-        return minute
-    return minute + jump
-
-
 def _near(minute: int, bound: int, before: int, after: int) -> bool:
     if before <= 0 and after <= 0:
         return False
@@ -288,7 +270,10 @@ def credit_start(
     bounds: tuple[int | None, int | None] | None = None,
     comp_time: bool = False,
 ) -> datetime:
-    """Erstes Kommen: vor dem Korridor zählt nicht, Fenster zieht auf den Beginn, sonst Raster."""
+    """Erstes Kommen: vor dem Korridor zählt nicht, Fenster zieht auf den Beginn, sonst Raster.
+
+    Mit Zeitausgleich entfällt das Raster. Korridor und das Fenster um den Arbeitsbeginn bleiben.
+    """
     local = as_local(t)
     minute = local.hour * 60 + local.minute
     start, end = bounds if bounds is not None else _corridor_bounds(model, day)
@@ -301,11 +286,12 @@ def credit_start(
     elif start is not None and _near(minute, start, before, after):
         minute = start
         pinned = True
-    if not pinned:
-        step = int(getattr(model, "round_first_step", 0) or 0)
-        threshold = int(getattr(model, "round_first_threshold", 0) or 0)
-        grid = _grid_minute_with_comp if comp_time else _grid_minute
-        minute = grid(minute, step, threshold)
+    if not pinned and not comp_time:
+        minute = _grid_minute(
+            minute,
+            int(getattr(model, "round_first_step", 0) or 0),
+            int(getattr(model, "round_first_threshold", 0) or 0),
+        )
     return _shift_to_minute(t, minute)
 
 
