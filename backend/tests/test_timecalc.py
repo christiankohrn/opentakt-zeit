@@ -147,6 +147,43 @@ def test_stamps_on_vacation_count_as_plus():
     assert day["first_in"] == "07:00"
 
 
+def test_pause_after_checkout_does_not_reopen_the_next_day():
+    """24.09. endet mit Pause ohne weiteres Gehen. Der 25.09. beginnt nicht um Mitternacht."""
+    from app.balance import format_hm
+
+    punches = [
+        _p_on(date(2026, 9, 24), "in", 6, 3),
+        _p_on(date(2026, 9, 24), "out", 8, 10),
+        _p_on(date(2026, 9, 24), "in", 8, 16),
+        _p_on(date(2026, 9, 24), "out", 9, 46),
+        _p_on(date(2026, 9, 24), "in", 9, 51),
+        _p_on(date(2026, 9, 24), "out", 11, 37),
+        _p_on(date(2026, 9, 24), "break_start", 11, 37),
+        _p_on(date(2026, 9, 24), "break_end", 12, 9),
+        _p_on(date(2026, 9, 25), "in", 6, 24),
+        _p_on(date(2026, 9, 25), "out", 8, 53),
+        _p_on(date(2026, 9, 25), "in", 8, 58),
+        _p_on(date(2026, 9, 25), "out", 12, 2),
+        _p_on(date(2026, 9, 25), "break_start", 12, 2),
+        _p_on(date(2026, 9, 25), "break_end", 12, 35),
+        _p_on(date(2026, 9, 25), "in", 12, 35),
+        _p_on(date(2026, 9, 25), "out", 14, 32),
+    ]
+    now = datetime(2026, 9, 26, tzinfo=ZoneInfo("UTC"))
+    model = _rounded_model()
+    thursday = summarize_day(punches, date(2026, 9, 24), model, now=now, auto_break=True)
+    friday = summarize_day(punches, date(2026, 9, 25), model, now=now, auto_break=True)
+    assert status_from_punches(punches[:8]) == "away"
+    assert thursday["first_in"] == "06:15"
+    assert format_hm(thursday["work_hours"]) == "5:11"
+    assert format_hm(thursday["delta_hours"], signed=True) == "-2:25"
+    assert friday["first_in"] == "06:30"
+    assert friday["last_out"] == "14:32"
+    assert format_hm(friday["work_hours"]) == "7:24"
+    assert format_hm(friday["delta_hours"], signed=True) == "-0:12"
+    assert "over_10h" not in friday["warnings"]
+
+
 def test_overnight_shift_split_across_midnight():
     punches = [
         _p_on(date(2026, 8, 7), "in", 22, 0),

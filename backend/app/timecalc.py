@@ -16,10 +16,13 @@ VALID_TRANSITIONS = {
 
 
 def status_from_punches(punches: list[Punch]) -> str:
+    """Zustand nach den Buchungen. Eine Pause nach dem Gehen öffnet den Tag nicht wieder."""
     active = [p for p in punches if p.voided_at is None]
     active.sort(key=lambda p: _as_utc(p.server_time))
     state = "away"
     for p in active:
+        if p.kind not in VALID_TRANSITIONS.get(state, set()):
+            continue
         if p.kind == "in":
             state = "in"
         elif p.kind == "break_start":
