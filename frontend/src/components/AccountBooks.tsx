@@ -89,7 +89,7 @@ export default function AccountBooks({
     }, setMsg);
   }
 
-  const field = "mt-1 block rounded-lg border border-line bg-bg px-2 py-1 text-sm text-ink";
+  const field = "mt-1 block h-10 rounded-xl border border-line bg-bg px-3 py-0 text-sm text-ink";
 
   return (
     <>
@@ -151,7 +151,7 @@ export default function AccountBooks({
         >
           <label className="text-xs text-muted">
             Datum
-            <input type="date" value={timeDay} onChange={(e) => setTimeDay(e.target.value)} className={field} />
+            <input type="date" value={timeDay} onChange={(e) => setTimeDay(e.target.value)} className={`${field} ledger-date`} />
           </label>
           <label className="text-xs text-muted">
             Stunden
@@ -161,7 +161,7 @@ export default function AccountBooks({
             Grund
             <input value={timeReason} onChange={(e) => setTimeReason(e.target.value)} placeholder="Auszahlung" className={`${field} w-full`} />
           </label>
-          <button type="submit" className="rounded-xl bg-navy px-3 py-2 text-sm text-white">Buchen</button>
+          <button type="submit" className="h-10 rounded-xl bg-navy px-4 text-sm text-white">Buchen</button>
         </form>
         <div className="border-t border-line pt-3">
           <p className="text-sm font-medium">Einstellungen</p>
@@ -190,9 +190,9 @@ export default function AccountBooks({
           >
             <label className="text-xs text-muted">
               Kappung der Plus-Stunden
-              <input value={capInput} onChange={(e) => setCapInput(e.target.value)} placeholder="keine" className={`${field} w-28`} />
+              <input value={capInput} onChange={(e) => setCapInput(e.target.value)} placeholder="keine" className={`${field} w-36`} />
             </label>
-            <button type="submit" className="rounded-xl bg-navy px-3 py-2 text-sm text-white">Speichern</button>
+            <button type="submit" className="h-10 rounded-xl bg-navy px-4 text-sm text-white">Speichern</button>
           </form>
           <p className="mt-2 text-xs text-muted">
             Leer lassen für keine Kappung. Ist ein Wert gesetzt und steht das Konto am Monatsende höher,
@@ -288,7 +288,7 @@ export default function AccountBooks({
         >
           <label className="text-xs text-muted">
             Datum
-            <input type="date" value={vacDay} onChange={(e) => setVacDay(e.target.value)} className={field} />
+            <input type="date" value={vacDay} onChange={(e) => setVacDay(e.target.value)} className={`${field} ledger-date`} />
           </label>
           <label className="text-xs text-muted">
             Tage
@@ -298,7 +298,7 @@ export default function AccountBooks({
             Grund
             <input value={vacReason} onChange={(e) => setVacReason(e.target.value)} placeholder="Korrektur" className={`${field} w-full`} />
           </label>
-          <button type="submit" className="rounded-xl bg-navy px-3 py-2 text-sm text-white">Buchen</button>
+          <button type="submit" className="h-10 rounded-xl bg-navy px-4 text-sm text-white">Buchen</button>
         </form>
       </section>
       ) : null}

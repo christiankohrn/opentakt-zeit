@@ -206,6 +206,23 @@ input[type="month"].month-compact {
   padding-block: 0.2rem;
 }
 
+input[type="date"].ledger-date {
+  width: 10.75rem;
+  min-width: 10.75rem;
+  max-width: 10.75rem;
+  height: 2.5rem;
+  min-height: 2.5rem;
+  padding-block: 0;
+}
+
+input[type="date"].ledger-date::-webkit-datetime-edit,
+input[type="date"].ledger-date::-webkit-date-and-time-value {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  line-height: normal;
+}
+
 input[type="date"].date-compact {
   width: 11.5rem;
   min-width: 11.5rem;
