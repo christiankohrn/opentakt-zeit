@@ -790,6 +790,12 @@ export default function HrUserMonth() {
             <span className={hoursTone(monthFlex)}>{signedHours(monthFlex)}</span>
             {" · "}
             Gesamt <span className={hoursTone(totalFlex)}>{signedHours(totalFlex)}</span>
+            {user?.flex_cap_hours != null ? (
+              <>
+                {" · "}
+                Kappung <span className="tabular-nums">+{formatHours(user.flex_cap_hours)}</span>
+              </>
+            ) : null}
           </p>
         ) : null}
         {monthClosed ? (
@@ -804,6 +810,7 @@ export default function HrUserMonth() {
           <AccountBooks
             userId={userId}
             year={Number(month.slice(0, 4))}
+            flexCap={user.flex_cap_hours ?? null}
             attempt={closed.attempt}
             onChanged={reload}
           />
@@ -844,7 +851,7 @@ export default function HrUserMonth() {
                 <input
                   value={openingHours}
                   onChange={(e) => setOpeningHours(e.target.value)}
-                  className="mt-1 block w-28 rounded-lg border border-line bg-bg px-2 py-1"
+                  className="mt-1 block h-10 w-28 rounded-lg border border-line bg-bg px-2 text-sm"
                 />
               </label>
               <label className="text-sm">
@@ -853,7 +860,7 @@ export default function HrUserMonth() {
                   type="date"
                   value={openingOn}
                   onChange={(e) => setOpeningOn(e.target.value)}
-                  className="mt-1 block rounded-lg border border-line bg-bg px-2 py-1"
+                  className="mt-1 block h-10 w-28 rounded-lg border border-line bg-bg px-2 text-sm"
                 />
               </label>
             </div>

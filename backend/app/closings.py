@@ -45,6 +45,32 @@ def month_label(year: int, month: int) -> str:
     return f"{MONTH_NAMES[month - 1]} {year}"
 
 
+CAP_REASON_PREFIX = "Automatische Kappung"
+VORTRAG_REASON_PREFIX = "Vortrag aus Kappung"
+
+
+def cap_reason(cap: float, year: int, month: int) -> str:
+    return f"{CAP_REASON_PREFIX} auf {cap:g} Stunden ({month_label(year, month)})"
+
+
+def vortrag_reason(year: int, month: int) -> str:
+    return f"{VORTRAG_REASON_PREFIX} ({month_label(year, month)})"
+
+
+def flex_cap(user: User) -> float | None:
+    """Kappungsgrenze in Stunden oder None, wenn nicht gekappt wird."""
+    cap = user.flex_cap_hours
+    if cap is None:
+        return None
+    try:
+        value = float(cap)
+    except (TypeError, ValueError):
+        return None
+    if value < 0:
+        return None
+    return value
+
+
 def opening_hours(user: User) -> float:
     return float(user.opening_balance_hours or 0)
 
@@ -282,6 +308,57 @@ def assert_past_month(year: int, month: int) -> None:
         raise HTTPException(status_code=400, detail="Nur Monate, die schon vorbei sind")
 
 
+def _apply_cap(
+    db: Session,
+    user: User,
+    snapshots: dict[tuple[int, int], float],
+    begin: tuple[int, int],
+    cap: float,
+    actor_id: int | None,
+) -> bool:
+    """Bucht je neu abgeschlossenem Monat über der Grenze eine negative Korrektur.
+
+    Die abgezogenen Stunden werden am Monatsersten als Vortrag wieder
+    gutgeschrieben, sodass nichts verloren geht. Korrektur und Vortrag heben
+    sich auf, daher rechnet jeder Folgemonat mit dem ungekürzten Verlauf.
+    Gibt True zurück, wenn Buchungen entstanden sind und der Aufrufer neu
+    laufen muss, damit die gespeicherten Stände exakt zum Konto passen.
+    """
+    author = actor_id if actor_id is not None else user.id
+    created = False
+    year, month = begin
+    while (year, month) in snapshots:
+        excess = snapshots[(year, month)] - cap
+        cut = round(excess, 2) if excess >= 0.005 else 0.0
+        if cut > 0:
+            last_day = month_end(year, month)
+            db.add(
+                AccountEntry(
+                    user_id=user.id,
+                    kind="time",
+                    day=last_day,
+                    amount=-cut,
+                    reason=cap_reason(cap, year, month),
+                    created_by_id=author,
+                )
+            )
+            db.add(
+                AccountEntry(
+                    user_id=user.id,
+                    kind="time",
+                    day=last_day + timedelta(days=1),
+                    amount=cut,
+                    reason=vortrag_reason(year, month),
+                    created_by_id=author,
+                )
+            )
+            created = True
+        year, month = next_month(year, month)
+    if created:
+        db.flush()
+    return created
+
+
 def close_one(db: Session, user: User, year: int, month: int, actor_id: int | None) -> int:
     first = first_closable(db, user)
     if first > (year, month):
@@ -300,6 +377,9 @@ def close_one(db: Session, user: User, year: int, month: int, actor_id: int | No
         if begin < first:
             begin = first
     _total, snapshots = _walk(db, user, month_end(year, month))
+    cap = flex_cap(user)
+    if cap is not None and _apply_cap(db, user, snapshots, begin, cap, actor_id):
+        _total, snapshots = _walk(db, user, month_end(year, month))
     return _store(db, user, snapshots, actor_id, begin, create=True)
 
 

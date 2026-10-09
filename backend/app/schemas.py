@@ -34,6 +34,7 @@ class UserOut(BaseModel):
     vacation_days_year: Optional[float] = None
     opening_balance_hours: float = 0
     opening_balance_on: Optional[date] = None
+    flex_cap_hours: Optional[float] = None
     totp_enabled: bool = False
     passkey_count: int = 0
     security_setup_required: Optional[str] = None
@@ -240,6 +241,7 @@ class UserAccountIn(BaseModel):
     department_id: Optional[int] = None
     opening_balance_hours: Optional[float] = None
     opening_balance_on: Optional[date] = None
+    flex_cap_hours: Optional[float] = Field(default=None, ge=0, le=10000)
     confirm_closed: bool = False
 
 
