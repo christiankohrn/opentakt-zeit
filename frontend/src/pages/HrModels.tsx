@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ApiError, api, type BreakRule, type ShiftCorridor, type WorkModel } from "../api";
+import { ApiError, api, type ShiftCorridor, type WorkModel } from "../api";
 import { useAuth } from "../auth";
 import LoadingNote from "../components/LoadingNote";
 import SearchField, { matchesQuery } from "../components/SearchField";
@@ -28,8 +28,8 @@ type BreakDraft = { after: string; minutes: string };
 const SHIFT_NAMES = ["Früh", "Spät", "Nacht", "Schicht 4"];
 
 const DEFAULT_BREAKS: BreakDraft[] = [
-  { after: "6", minutes: "30" },
-  { after: "9", minutes: "45" },
+  { after: "6:00", minutes: "30" },
+  { after: "9:00", minutes: "45" },
 ];
 
 type Draft = {
@@ -47,6 +47,8 @@ type Draft = {
   corridor: Corridor;
   shifts: ShiftDraft[];
   breaks: BreakDraft[];
+  breakMode: "threshold" | "fixed";
+  fixedBreaks: Corridor;
 };
 
 function emptyCorridor(): Corridor {
@@ -69,7 +71,28 @@ function blankDraft(): Draft {
     corridor: emptyCorridor(),
     shifts: [],
     breaks: DEFAULT_BREAKS.map((row) => ({ ...row })),
+    breakMode: "threshold",
+    fixedBreaks: emptyCorridor(),
   };
+}
+
+function formatAfter(hours: number) {
+  const total = Math.round(hours * 60);
+  const whole = Math.floor(total / 60);
+  const mins = total % 60;
+  return `${whole}:${String(mins).padStart(2, "0")}`;
+}
+
+function parseAfter(value: string) {
+  const text = value.trim();
+  const clock = text.match(/^(\d{1,2}):(\d{2})$/);
+  if (clock) {
+    const hour = Number(clock[1]);
+    const minute = Number(clock[2]);
+    if (hour > 24 || minute > 59 || (hour === 24 && minute > 0)) return Number.NaN;
+    return hour + minute / 60;
+  }
+  return Number(text.replace(",", "."));
 }
 
 function resizeShifts(existing: ShiftDraft[], count: number): ShiftDraft[] {
@@ -113,20 +136,30 @@ function draftFrom(model: WorkModel): Draft {
       days: shiftDays(slot),
     })),
     breaks: (model.break_rules ?? []).map((rule) => ({
-      after: String(rule.after_hours).replace(".", ","),
+      after: formatAfter(rule.after_hours),
       minutes: String(rule.minutes),
     })),
+    breakMode: model.break_mode === "fixed" ? "fixed" : "threshold",
+    fixedBreaks: Object.fromEntries(
+      WEEKDAYS.map(([key]) => {
+        const slot = model.fixed_breaks?.[key];
+        return [key, { start: slot?.start || "", end: slot?.end || "" }];
+      }),
+    ),
   };
 }
 
-function pauseSummary(rules: BreakRule[] | undefined) {
+function pauseSummary(model: WorkModel) {
+  if (model.break_mode === "fixed") {
+    const slots = WEEKDAYS.flatMap(([key, label]) => {
+      const slot = model.fixed_breaks?.[key];
+      return slot?.start && slot.end ? [`${label.slice(0, 2)} ${slot.start}–${slot.end}`] : [];
+    });
+    return slots.length ? `fest ${slots.join(", ")}` : "feste Pausenzeiten";
+  }
+  const rules = model.break_rules;
   if (!rules?.length) return "keine Mindestpause";
-  return rules
-    .map((rule) => {
-      const hours = Number.isInteger(rule.after_hours) ? formatDecimal(rule.after_hours, 0) : formatDecimal(rule.after_hours, 1);
-      return `${rule.minutes} Min. ab ${hours} Std.`;
-    })
-    .join(", ");
+  return rules.map((rule) => `${rule.minutes} Min. ab ${formatAfter(rule.after_hours)}`).join(", ");
 }
 
 function minutes(value: string) {
@@ -205,9 +238,16 @@ export default function HrModels() {
             })
           : [],
       break_rules: draft.breaks.map((row) => ({
-        after_hours: Number(row.after.trim().replace(",", ".")),
+        after_hours: parseAfter(row.after),
         minutes: minutes(row.minutes),
       })),
+      break_mode: draft.breakMode,
+      fixed_breaks: Object.fromEntries(
+        WEEKDAYS.flatMap(([key]) => {
+          const slot = draft.fixedBreaks[key];
+          return slot.start || slot.end ? [[key, { start: slot.start, end: slot.end }]] : [];
+        }),
+      ),
     };
   }
 
@@ -242,12 +282,20 @@ export default function HrModels() {
       return;
     }
     if (
+      draft.breakMode === "threshold" &&
       draft.breaks.some((row) => {
-        const after = Number(row.after.trim().replace(",", "."));
+        const after = parseAfter(row.after);
         return !row.after.trim() || !row.minutes.trim() || minutes(row.minutes) < 1 || !Number.isFinite(after) || after < 0 || after > 24;
       })
     ) {
-      setError("Jede Pausenschwelle braucht Stunden und Minuten.");
+      setError("Jede Pausenschwelle braucht eine Zeit wie 9:45 und die Minuten der Pause.");
+      return;
+    }
+    if (
+      draft.breakMode === "fixed" &&
+      WEEKDAYS.some(([key]) => Boolean(draft.fixedBreaks[key].start) !== Boolean(draft.fixedBreaks[key].end))
+    ) {
+      setError("Jede hinterlegte Pause braucht Beginn und Ende.");
       return;
     }
     setBusy(true);
@@ -299,7 +347,7 @@ export default function HrModels() {
                     {formatDecimal(m.hours_tue)}/{formatDecimal(m.hours_wed)}/{formatDecimal(m.hours_thu)}/
                     {formatDecimal(m.hours_fri)} · Sa {formatDecimal(m.hours_sat)} · So {formatDecimal(m.hours_sun)}
                   </p>
-                  <p className="text-xs text-muted">Pause {pauseSummary(m.break_rules)}</p>
+                  <p className="text-xs text-muted">Pause {pauseSummary(m)}</p>
                 </div>
                 {canManage ? (
                   <button
@@ -379,16 +427,68 @@ export default function HrModels() {
           </fieldset>
           <fieldset className="space-y-2">
             <legend className="text-sm font-medium">Pausen</legend>
-            <p className="text-xs text-muted">
-              Mindestpause aus der Anwesenheit. Gestempelte Minuten zählen darauf an. Voreinstellung: 30 Minuten ab 6 Stunden und 45 Minuten ab 9 Stunden.
-            </p>
-            {draft.breaks.map((row, index) => (
+            <label className="block text-sm">
+              Regel
+              <select
+                className={`${field} mt-1`}
+                value={draft.breakMode}
+                onChange={(e) => setDraft({ ...draft, breakMode: e.target.value === "fixed" ? "fixed" : "threshold" })}
+              >
+                <option value="threshold">Automatisch ab Schwelle</option>
+                <option value="fixed">Feste Pausenzeiten</option>
+              </select>
+            </label>
+            {draft.breakMode === "threshold" ? (
+              <p className="text-xs text-muted">
+                Mindestpause ab einer Arbeitszeit. Die Zeit steht als Stunden:Minuten, zum Beispiel 9:45. Gestempelte Minuten zählen darauf an. Voreinstellung: 30 Minuten ab 6:00 und 45 Minuten ab 9:00.
+              </p>
+            ) : (
+              <p className="text-xs text-muted">
+                Es gilt die hier hinterlegte Uhrzeit. Wer in diesem Fenster arbeitet, verliert diese Minuten. Eine gestempelte Pause daneben bleibt zusätzlich stehen.
+              </p>
+            )}
+            {draft.breakMode === "fixed"
+              ? WEEKDAYS.map(([key, label]) => (
+                  <div key={key} className="flex flex-wrap items-center gap-2 text-sm">
+                    <span className="w-24">{label}</span>
+                    <input
+                      type="time"
+                      aria-label={`${label} Pause von`}
+                      value={draft.fixedBreaks[key].start}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setDraft((current) => ({
+                          ...current,
+                          fixedBreaks: { ...current.fixedBreaks, [key]: { ...current.fixedBreaks[key], start: value } },
+                        }));
+                      }}
+                      className="rounded-lg border border-line bg-bg px-2 py-1"
+                    />
+                    <span>bis</span>
+                    <input
+                      type="time"
+                      aria-label={`${label} Pause bis`}
+                      value={draft.fixedBreaks[key].end}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setDraft((current) => ({
+                          ...current,
+                          fixedBreaks: { ...current.fixedBreaks, [key]: { ...current.fixedBreaks[key], end: value } },
+                        }));
+                      }}
+                      className="rounded-lg border border-line bg-bg px-2 py-1"
+                    />
+                  </div>
+                ))
+              : null}
+            {draft.breakMode === "threshold" ? draft.breaks.map((row, index) => (
               <div key={index} className="flex flex-wrap items-center gap-2 text-sm">
                 <span>ab</span>
                 <input
-                  aria-label={`Pause ${index + 1} ab Stunden`}
+                  aria-label={`Pause ${index + 1} ab`}
                   value={row.after}
-                  inputMode="decimal"
+                  placeholder="9:45"
+                  inputMode="text"
                   onChange={(e) => {
                     const value = e.target.value;
                     setDraft((current) => ({
@@ -398,7 +498,6 @@ export default function HrModels() {
                   }}
                   className="w-20 rounded-lg border border-line bg-bg px-2 py-1"
                 />
-                <span>Stunden</span>
                 <input
                   aria-label={`Pause ${index + 1} Minuten`}
                   value={row.minutes}
@@ -423,8 +522,8 @@ export default function HrModels() {
                   Entfernen
                 </button>
               </div>
-            ))}
-            {draft.breaks.length < 4 ? (
+            )) : null}
+            {draft.breakMode === "threshold" && draft.breaks.length < 4 ? (
               <button
                 type="button"
                 className="rounded-lg border border-line px-3 py-1.5 text-sm"

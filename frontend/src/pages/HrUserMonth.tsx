@@ -811,6 +811,7 @@ export default function HrUserMonth() {
             userId={userId}
             year={Number(month.slice(0, 4))}
             flexCap={user.flex_cap_hours ?? null}
+            skipFlexOnClose={user.skip_flex_on_close ?? false}
             attempt={closed.attempt}
             onChanged={reload}
           />

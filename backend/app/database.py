@@ -82,6 +82,8 @@ def ensure_schema() -> None:
         alters.append("ALTER TABLE users ADD COLUMN opening_balance_on DATE")
     if "flex_cap_hours" not in cols:
         alters.append("ALTER TABLE users ADD COLUMN flex_cap_hours FLOAT")
+    if "skip_flex_on_close" not in cols:
+        alters.append("ALTER TABLE users ADD COLUMN skip_flex_on_close BOOLEAN NOT NULL DEFAULT 0")
     if "department_id" not in cols:
         alters.append("ALTER TABLE users ADD COLUMN department_id INTEGER")
     if "totp_secret" not in cols:
@@ -156,6 +158,8 @@ def ensure_schema() -> None:
         ("booking_corridor", "TEXT NOT NULL DEFAULT ''"),
         ("shifts", "TEXT NOT NULL DEFAULT ''"),
         ("break_rules", "TEXT NOT NULL DEFAULT ''"),
+        ("break_mode", "VARCHAR(16) NOT NULL DEFAULT 'threshold'"),
+        ("fixed_breaks", "TEXT NOT NULL DEFAULT ''"),
     ):
         if column not in model_cols:
             alters.append(f"ALTER TABLE work_models ADD COLUMN {column} {ddl}")

@@ -4,6 +4,8 @@ Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Ve
 
 ## [Unreleased]
 
+- Pausenschwellen lassen sich auf die Minute setzen, zum Beispiel 45 Minuten ab 9:45. Ein Arbeitszeitmodell kann stattdessen feste Pausenzeiten je Wochentag verwenden. Die Voreinstellung bleibt die automatische Schwelle.
+- Pro Person lässt sich das Zeitkonto vom Monatsabschluss ausnehmen. Der Abschluss speichert dann 0, der Folgemonat beginnt bei 0, und es entsteht keine Korrekturbuchung. Die Stunden des Monats bleiben in der Tagesrechnung.
 - Überstunden lassen sich pro Person kappen (Einstellung im Zeitkonto der Monatsansicht, zum Beispiel 30 Stunden). Liegt das Konto am Monatsende höher, bucht der Monatsabschluss automatisch eine Korrektur auf die Grenze und trägt die abgezogenen Stunden am Monatsersten als Vortrag wieder ein, sodass nichts verloren geht.
 - Neuer Urlaubsplaner für Personal und Admin: Gesamtansicht aller Abwesenheiten als Personen×Tage-Matrix mit Monats- und Jahresansicht, Filter wie in den Auswertungen, Urlaubskennzahlen pro Person und CSV-/PDF-Export.
 - Im Urlaubsplaner lässt sich Urlaub per Klick eintragen und entfernen (Bearbeitungsmodus mit Knopf). Die Kontoprüfung läuft live; geht ein Konto ins Minus, warnt der Planner deutlich und bietet beim Speichern den Ausgleich im Urlaubskonto an.

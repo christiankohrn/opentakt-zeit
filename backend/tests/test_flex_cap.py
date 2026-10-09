@@ -34,6 +34,7 @@ def _reset_user(user_id: int, days: list[date]) -> None:
             user.opening_balance_hours = 0
             user.opening_balance_on = None
             user.flex_cap_hours = None
+            user.skip_flex_on_close = False
         db.execute(delete(MonthClosing).where(MonthClosing.user_id == user_id))
         db.execute(
             delete(AccountEntry).where(
@@ -236,3 +237,32 @@ def test_cap_applies_to_each_closed_month(client):
         assert carried[0]["amount"] == pytest.approx(19.5)
     finally:
         _reset_user(person["id"], [day_p, day_m])
+
+
+def test_close_stores_zero_when_time_account_is_skipped(client):
+    login(client)
+    person = users_by_name(client)["mitarbeiter"]
+    day = _ended_weekday()
+    try:
+        account = client.patch(
+            f"/api/hr/users/{person['id']}/account",
+            json={
+                "hired_on": day.replace(day=1).isoformat(),
+                "opening_balance_hours": 10,
+                "opening_balance_on": day.isoformat(),
+                "flex_cap_hours": 30,
+                "skip_flex_on_close": True,
+            },
+        )
+        assert account.status_code == 200, account.text
+        assert account.json()["skip_flex_on_close"] is True
+
+        stored = put_day(client, person["id"], day, "08:00", "16:00")
+        assert stored.status_code == 200, stored.text
+
+        _close_month(day.year, day.month, person["id"])
+        assert flex_of(client, day.year, day.month, person["id"]) == 0
+        assert _time_entries(client, person["id"], day.year) == []
+        assert _time_entries(client, person["id"], day.year + 1) == []
+    finally:
+        _reset_user(person["id"], [day])

@@ -35,6 +35,7 @@ class UserOut(BaseModel):
     opening_balance_hours: float = 0
     opening_balance_on: Optional[date] = None
     flex_cap_hours: Optional[float] = None
+    skip_flex_on_close: bool = False
     totp_enabled: bool = False
     passkey_count: int = 0
     security_setup_required: Optional[str] = None
@@ -129,6 +130,8 @@ class WorkModelIn(BaseModel):
     booking_corridor: dict[str, CorridorDay] = Field(default_factory=dict)
     shifts: list[ShiftCorridor] = Field(default_factory=list)
     break_rules: list[BreakRule] = Field(default_factory=default_break_rules, max_length=4)
+    break_mode: str = "threshold"
+    fixed_breaks: dict[str, CorridorDay] = Field(default_factory=dict)
 
 
 class WorkModelOut(WorkModelIn):
@@ -242,6 +245,7 @@ class UserAccountIn(BaseModel):
     opening_balance_hours: Optional[float] = None
     opening_balance_on: Optional[date] = None
     flex_cap_hours: Optional[float] = Field(default=None, ge=0, le=10000)
+    skip_flex_on_close: Optional[bool] = None
     confirm_closed: bool = False
 
 

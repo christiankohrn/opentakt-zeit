@@ -1156,6 +1156,43 @@ def _break_model(rules: list[dict]):
     return model
 
 
+def test_break_threshold_keeps_the_minutes():
+    from app.timecalc import break_steps
+
+    model = SimpleNamespace(break_rules=json.dumps([{"after_hours": 9.75, "minutes": 45}]))
+    assert break_steps(model) == [(9 * 60 + 45, 45)]
+
+
+def test_fixed_pause_window_is_deducted_besides_a_later_stamp():
+    """23.09.: feste Pause 12:00–12:30, zwei Minuten Stempel direkt danach."""
+    from app.balance import format_hm
+
+    day = date(2026, 9, 23)
+    fixed = {key: {"start": "12:00", "end": "12:30"} for key in ("mon", "tue", "wed", "thu", "fri")}
+    model = _rounded_model(break_mode="fixed", fixed_breaks=json.dumps(fixed))
+    result = summarize_day(
+        [
+            _p_on(day, "in", 6, 47),
+            _p_on(day, "out", 12, 30),
+            _p_on(day, "break_start", 12, 30),
+            _p_on(day, "in", 12, 32),
+            _p_on(day, "break_end", 12, 32),
+            _p_on(day, "out", 16, 17),
+        ],
+        day,
+        model,
+        now=datetime(2026, 9, 24, tzinfo=ZoneInfo("UTC")),
+        auto_break=True,
+    )
+    assert result["first_in"] == "06:45"
+    assert result["last_out"] == "16:17"
+    assert result["auto_break_minutes"] == 30
+    assert format_hm(result["break_hours"]) == "0:32"
+    assert format_hm(result["work_hours"]) == "9:00"
+    assert format_hm(result["delta_hours"], signed=True) == "+1:24"
+    assert result["warnings"] == []
+
+
 def test_break_rules_on_the_model_can_start_at_four_hours():
     from app.balance import format_hm
 

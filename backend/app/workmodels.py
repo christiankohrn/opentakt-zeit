@@ -34,6 +34,8 @@ RULE_FIELDS = (
     "booking_corridor",
     "shifts",
     "break_rules",
+    "break_mode",
+    "fixed_breaks",
 )
 CLOSED_NOTICE = (
     "Abgeschlossene Monate behalten die bisherige Berechnung. Die Änderung gilt nur für offene Monate."
@@ -200,6 +202,43 @@ def normalize_shifts(raw: list | None) -> list[dict]:
     return out
 
 
+def normalize_fixed_breaks(raw: dict | None) -> dict[str, dict[str, str]]:
+    out: dict[str, dict[str, str]] = {}
+    for key in WEEKDAY_KEYS:
+        slot = (raw or {}).get(key)
+        if slot is None:
+            continue
+        start, end = _pair(slot)
+        if not start and not end:
+            continue
+        if not start or not end:
+            raise ValueError("Jede hinterlegte Pause braucht Beginn und Ende")
+        if not _CLOCK.match(start) or not _CLOCK.match(end):
+            raise ValueError("Hinterlegte Pause braucht eine Uhrzeit HH:MM")
+        if start >= end:
+            raise ValueError("Das Ende der hinterlegten Pause muss nach dem Beginn liegen")
+        out[key] = {"start": start, "end": end}
+    return out
+
+
+def fixed_breaks_dict(raw: object) -> dict:
+    if isinstance(raw, dict):
+        data = raw
+    elif isinstance(raw, str) and raw.strip():
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            return {}
+    else:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    try:
+        return normalize_fixed_breaks(data)
+    except ValueError:
+        return {}
+
+
 def normalize_break_rules(raw: list | None) -> list[dict]:
     if not raw:
         return []
@@ -268,11 +307,13 @@ def rules_payload(model: WorkModel) -> dict:
     payload = {
         name: getattr(model, name)
         for name in RULE_FIELDS
-        if name not in {"booking_corridor", "shifts", "break_rules"}
+        if name not in {"booking_corridor", "shifts", "break_rules", "fixed_breaks"}
     }
     payload["booking_corridor"] = corridor_dict(model.booking_corridor)
     payload["shifts"] = shifts_list(getattr(model, "shifts", ""))
     payload["break_rules"] = stored_break_rules(getattr(model, "break_rules", ""))
+    payload["break_mode"] = "fixed" if getattr(model, "break_mode", None) == "fixed" else "threshold"
+    payload["fixed_breaks"] = fixed_breaks_dict(getattr(model, "fixed_breaks", ""))
     return payload
 
 
@@ -287,9 +328,16 @@ def overlay_model(model: WorkModel | None, fields: dict | None):
         data["shifts"] = json.dumps(data["shifts"])
     if isinstance(data.get("break_rules"), list):
         data["break_rules"] = json.dumps(data["break_rules"])
+    if isinstance(data.get("fixed_breaks"), dict):
+        data["fixed_breaks"] = json.dumps(data["fixed_breaks"])
     # Abschlüsse vor den Pausenschwellen kennen das Feld nicht und behalten 30/45.
     if "break_rules" not in fields:
         data["break_rules"] = json.dumps([dict(item) for item in DEFAULT_BREAK_RULES])
+    # Ältere Abschlüsse kennen keine festen Pausenzeiten und bleiben bei der Schwelle.
+    if "break_mode" not in fields:
+        data["break_mode"] = "threshold"
+    if "fixed_breaks" not in fields:
+        data["fixed_breaks"] = ""
     return SimpleNamespace(**data)
 
 

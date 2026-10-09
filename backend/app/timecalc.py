@@ -4,7 +4,7 @@ import json
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from app.auth import as_local, local_day_bounds
+from app.auth import as_local, local_day_bounds, local_tz
 from app.models import Punch, WorkModel
 
 KINDS = ("in", "out", "break_start", "break_end")
@@ -61,6 +61,53 @@ DEFAULT_BREAK_RULES: tuple[dict[str, int], ...] = (
 
 def default_break_steps() -> list[tuple[int, int]]:
     return [(int(item["after_hours"]) * 60, int(item["minutes"])) for item in DEFAULT_BREAK_RULES]
+
+
+def break_mode_of(model: object | None) -> str:
+    mode = getattr(model, "break_mode", None) if model is not None else None
+    return "fixed" if mode == "fixed" else "threshold"
+
+
+def fixed_break_window(model: object | None, day: date) -> tuple[str, str] | None:
+    """Hinterlegte Pause dieses Wochentags, von/bis als HH:MM."""
+    raw = getattr(model, "fixed_breaks", None) if model is not None else None
+    if raw is None or raw == "":
+        return None
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(raw, dict):
+        return None
+    slot = raw.get(_WEEKDAYS[day.weekday()])
+    if not isinstance(slot, dict):
+        return None
+    start = str(slot.get("start") or "").strip()
+    end = str(slot.get("end") or "").strip()
+    if not start or not end or start >= end:
+        return None
+    return start, end
+
+
+def _at_clock(day: date, value: str) -> datetime:
+    hour, minute = (int(part) for part in value.split(":", 1))
+    local = datetime(day.year, day.month, day.day, hour, minute, tzinfo=local_tz())
+    return _as_minute(local)
+
+
+def fixed_break_minutes(
+    day: date,
+    spans: list[tuple[datetime, datetime]],
+    breaks: list[tuple[datetime, datetime]],
+    window: tuple[str, str] | None,
+) -> int:
+    """Gearbeitete Minuten innerhalb der hinterlegten Pause. Eine Stempelpause darin zählt nicht doppelt."""
+    if window is None:
+        return 0
+    start = _at_clock(day, window[0])
+    end = _at_clock(day, window[1])
+    return max(0, _covered_minutes(spans, start, end) - _covered_minutes(breaks, start, end))
 
 
 def break_steps(model: object | None) -> list[tuple[int, int]]:
@@ -660,9 +707,18 @@ def summarize_day(
 
     work_minutes = int(work.total_seconds() // 60)
     pause_minutes = max(int(pause.total_seconds() // 60), stamped_break_minutes(events))
-    steps = break_steps(model)
+    use_fixed = break_mode_of(model) == "fixed"
+    steps = [] if use_fixed else break_steps(model)
     auto_minutes = 0
-    if auto_break and not still_open:
+    if auto_break and not still_open and use_fixed:
+        # Hinterlegte Uhrzeit. Gearbeitet darin wird abgezogen, eine Stempelpause
+        # außerhalb bleibt zusätzlich stehen.
+        owed = fixed_break_minutes(day, spans, stamped_break_intervals(events), fixed_break_window(model, day))
+        if owed:
+            auto_minutes = owed
+            work_minutes -= owed
+            pause_minutes += owed
+    elif auto_break and not still_open:
         # Gestempelte Minuten zählen auf das Fenster an. Ist die Stempelpause
         # länger, bleibt sie stehen und es wird nichts zusätzlich abgezogen.
         required = window_break_minutes(

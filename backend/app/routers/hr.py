@@ -89,6 +89,7 @@ from app.workmodels import (
     load_timelines,
     model_for,
     normalize_break_rules,
+    normalize_fixed_breaks,
     normalize_corridor,
     normalize_shifts,
     stored_break_rules,
@@ -551,10 +552,15 @@ def patch_user_account(user_id: int, payload: UserAccountIn, request: Request, d
         user.auth_source = "local"
     if privileged:
         bump_session_rev(user)
+    flex_flag_changed = (
+        "skip_flex_on_close" in payload.model_fields_set
+        and bool(payload.skip_flex_on_close) != bool(user.skip_flex_on_close)
+    )
     opening_changed = (
         ("opening_balance_hours" in payload.model_fields_set and payload.opening_balance_hours != user.opening_balance_hours)
         or ("opening_balance_on" in payload.model_fields_set and payload.opening_balance_on != user.opening_balance_on)
         or ("hired_on" in payload.model_fields_set and payload.hired_on != user.hired_on)
+        or flex_flag_changed
     )
     recalc: list[tuple[int, int, int]] = []
     if opening_changed:
@@ -573,6 +579,8 @@ def patch_user_account(user_id: int, payload: UserAccountIn, request: Request, d
         user.opening_balance_on = payload.opening_balance_on
     if "flex_cap_hours" in payload.model_fields_set:
         user.flex_cap_hours = None if payload.flex_cap_hours is None else float(payload.flex_cap_hours)
+    if "skip_flex_on_close" in payload.model_fields_set and payload.skip_flex_on_close is not None:
+        user.skip_flex_on_close = bool(payload.skip_flex_on_close)
     if "left_on" in payload.model_fields_set:
         user.left_on = payload.left_on
     if "birthday" in payload.model_fields_set:
@@ -599,6 +607,7 @@ def patch_user_account(user_id: int, payload: UserAccountIn, request: Request, d
                     "opening_balance_hours": user.opening_balance_hours,
                     "opening_balance_on": user.opening_balance_on.isoformat() if user.opening_balance_on else None,
                     "flex_cap_hours": user.flex_cap_hours,
+                    "skip_flex_on_close": user.skip_flex_on_close,
                 }
             ),
         )
@@ -696,6 +705,10 @@ def _model_out(db: Session, model: WorkModel, notice: str | None = None) -> Work
     except (json.JSONDecodeError, ValueError):
         shifts = []
     rules = stored_break_rules(model.break_rules)
+    try:
+        fixed = normalize_fixed_breaks(json.loads(model.fixed_breaks or "{}"))
+    except (json.JSONDecodeError, ValueError):
+        fixed = {}
     closed = closed_month_count(db, model.id)
     return WorkModelOut(
         id=model.id,
@@ -719,6 +732,8 @@ def _model_out(db: Session, model: WorkModel, notice: str | None = None) -> Work
         booking_corridor=corridor,
         shifts=shifts,
         break_rules=rules,
+        break_mode="fixed" if model.break_mode == "fixed" else "threshold",
+        fixed_breaks=fixed,
         closed_months=closed,
         notice=notice,
     )
@@ -729,14 +744,18 @@ def _apply_model(model: WorkModel, payload: WorkModelIn) -> None:
         corridor = normalize_corridor(payload.booking_corridor)
         shifts = normalize_shifts(payload.shifts)
         rules = normalize_break_rules(payload.break_rules)
+        fixed = normalize_fixed_breaks(payload.fixed_breaks)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    data = payload.model_dump(exclude={"booking_corridor", "shifts", "break_rules"})
+    if payload.break_mode not in {"threshold", "fixed"}:
+        raise HTTPException(400, "Unbekannte Pausenregel")
+    data = payload.model_dump(exclude={"booking_corridor", "shifts", "break_rules", "fixed_breaks"})
     for key, value in data.items():
         setattr(model, key, value)
     model.booking_corridor = json.dumps(corridor)
     model.shifts = json.dumps(shifts)
     model.break_rules = json.dumps(rules)
+    model.fixed_breaks = json.dumps(fixed)
 
 
 @router.get("/work-models", response_model=list[WorkModelOut])

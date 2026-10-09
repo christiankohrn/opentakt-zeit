@@ -267,10 +267,20 @@ def earliest_per_user(db: Session) -> list[tuple[int, int, int]]:
     return [(user_id, year, month) for user_id, (year, month) in first.items()]
 
 
-def _store(db: Session, user: User, snapshots: dict[tuple[int, int], float], actor_id: int | None, start: tuple[int, int], create: bool) -> int:
+def _store(
+    db: Session,
+    user: User,
+    snapshots: dict[tuple[int, int], float],
+    actor_id: int | None,
+    start: tuple[int, int],
+    create: bool,
+    zero_flex: bool = False,
+) -> int:
     written = 0
     now = now_utc()
     for (year, month), flex in snapshots.items():
+        if zero_flex:
+            flex = 0.0
         if (year, month) < start:
             continue
         row = db.scalar(
@@ -377,10 +387,11 @@ def close_one(db: Session, user: User, year: int, month: int, actor_id: int | No
         if begin < first:
             begin = first
     _total, snapshots = _walk(db, user, month_end(year, month))
-    cap = flex_cap(user)
+    skip = bool(user.skip_flex_on_close)
+    cap = None if skip else flex_cap(user)
     if cap is not None and _apply_cap(db, user, snapshots, begin, cap, actor_id):
         _total, snapshots = _walk(db, user, month_end(year, month))
-    return _store(db, user, snapshots, actor_id, begin, create=True)
+    return _store(db, user, snapshots, actor_id, begin, create=True, zero_flex=skip)
 
 
 def close_through(
@@ -414,7 +425,15 @@ def recalculate_user_from(db: Session, user: User, year: int, month: int, actor_
     if (latest.year, latest.month) < (year, month):
         return
     _total, snapshots = _walk(db, user, month_end(latest.year, latest.month))
-    _store(db, user, snapshots, actor_id, (year, month), create=False)
+    _store(
+        db,
+        user,
+        snapshots,
+        actor_id,
+        (year, month),
+        create=False,
+        zero_flex=bool(user.skip_flex_on_close),
+    )
 
 
 def recalculate_pairs(

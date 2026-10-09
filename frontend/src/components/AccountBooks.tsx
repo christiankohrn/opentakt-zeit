@@ -26,12 +26,14 @@ export default function AccountBooks({
   userId,
   year,
   flexCap,
+  skipFlexOnClose,
   attempt,
   onChanged,
 }: {
   userId: number;
   year: number;
   flexCap: number | null;
+  skipFlexOnClose: boolean;
   attempt: Attempt;
   onChanged: () => Promise<void>;
 }) {
@@ -45,11 +47,13 @@ export default function AccountBooks({
   const [vacAmount, setVacAmount] = useState("");
   const [vacReason, setVacReason] = useState("");
   const [capInput, setCapInput] = useState("");
+  const [skipFlex, setSkipFlex] = useState(false);
   const [msg, setMsg] = useState("");
 
   useEffect(() => {
     setCapInput(flexCap != null ? formatHours(flexCap) : "");
-  }, [userId, flexCap]);
+    setSkipFlex(skipFlexOnClose);
+  }, [userId, flexCap, skipFlexOnClose]);
 
   async function load() {
     setLedger(await api.userLedger(userId, year));
@@ -194,6 +198,30 @@ export default function AccountBooks({
             Leer lassen für keine Kappung. Ist ein Wert gesetzt und steht das Konto am Monatsende höher,
             bucht der Monatsabschluss automatisch eine Korrektur auf diesen Wert und trägt die abgezogenen
             Stunden am Monatsersten als Vortrag wieder ein, sodass nichts verloren geht.
+          </p>
+          <label className="mt-3 flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={skipFlex}
+              onChange={(e) => {
+                const next = e.target.checked;
+                setSkipFlex(next);
+                setMsg("");
+                void attempt(async (confirmClosed) => {
+                  await api.patchUserAccount(userId, { skip_flex_on_close: next, confirm_closed: confirmClosed });
+                  await onChanged();
+                }, (message) => {
+                  setSkipFlex(!next);
+                  setMsg(message);
+                });
+              }}
+            />
+            <span>Zeitkonto wird beim Monatsabschluss nicht berechnet</span>
+          </label>
+          <p className="mt-1 text-xs text-muted">
+            Der Abschluss speichert dann 0. Der nächste Monat beginnt bei 0, ohne Korrekturbuchung auf dem Zeitkonto.
+            Die Stunden des Monats bleiben in der Tagesrechnung.
           </p>
         </div>
       </section>
