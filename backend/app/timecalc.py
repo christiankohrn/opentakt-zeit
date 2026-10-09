@@ -92,21 +92,63 @@ def break_steps(model: object | None) -> list[tuple[int, int]]:
     return steps
 
 
-def required_break_minutes(gross_minutes: int, steps: list[tuple[int, int]] | None = None) -> int:
-    """Mindestpause aus der Anwesenheit. Gestempelte Minuten zählen darauf an.
+def stamped_break_intervals(events: list[Punch]) -> list[tuple[datetime, datetime]]:
+    """Paare Pause Beginn/Ende, auch zwischen Gehen und Kommen."""
+    intervals: list[tuple[datetime, datetime]] = []
+    open_break: datetime | None = None
+    for punch in events:
+        t = _as_minute(punch.server_time)
+        if punch.kind == "break_start":
+            open_break = t
+        elif punch.kind == "break_end" and open_break is not None:
+            if t > open_break:
+                intervals.append((open_break, t))
+            open_break = None
+    return intervals
 
-    Über einer Schwelle wächst die Pause minutenweise bis zu ihrem vollen Wert,
-    danach bleibt sie stehen. Die höhere Schwelle ersetzt die niedrigere erst,
-    wenn sie mehr verlangt.
+
+def _covered_minutes(blocks: list[tuple[datetime, datetime]], start: datetime, end: datetime) -> int:
+    """Minuten von start bis end, die irgendein Block trifft. Überlappungen zählen einmal."""
+    clipped: list[tuple[datetime, datetime]] = []
+    for lo, hi in blocks:
+        begin = max(lo, start)
+        finish = min(hi, end)
+        if finish > begin:
+            clipped.append((begin, finish))
+    clipped.sort()
+    total = 0
+    cursor: datetime | None = None
+    for begin, finish in clipped:
+        if cursor is None or begin >= cursor:
+            total += int((finish - begin).total_seconds() // 60)
+            cursor = finish
+        elif finish > cursor:
+            total += int((finish - cursor).total_seconds() // 60)
+            cursor = finish
+    return total
+
+
+def window_break_minutes(
+    anchor: datetime | None,
+    spans: list[tuple[datetime, datetime]],
+    breaks: list[tuple[datetime, datetime]],
+    steps: list[tuple[int, int]] | None = None,
+) -> int:
+    """Mindestpause als Uhrzeitfenster: Beginn plus Schwelle, Dauer der hinterlegten Pause.
+
+    Anwesenheit im Fenster zählt, eine gestempelte Pause darin auch. Wer vor dem
+    Fensterende geht, verliert nur diese Minuten. Die höhere Schwelle ersetzt die
+    niedrigere erst, wenn ihr Fenster mehr Minuten trifft.
     """
+    if anchor is None:
+        return 0
     rules = default_break_steps() if steps is None else steps
-    required = 0
+    blocks = [*spans, *breaks]
+    owed = 0
     for after, need in rules:
-        if gross_minutes > after + need:
-            required = max(required, need)
-        elif gross_minutes > after:
-            required = max(required, gross_minutes - after)
-    return required
+        window_start = anchor + timedelta(minutes=after)
+        owed = max(owed, _covered_minutes(blocks, window_start, window_start + timedelta(minutes=need)))
+    return owed
 
 
 def break_warning_codes(work_minutes: int, pause_minutes: int, steps: list[tuple[int, int]]) -> list[str]:
@@ -499,12 +541,18 @@ def summarize_day(
     open_break: datetime | None = None
     first_in: datetime | None = None
     last_out: datetime | None = None
+    # Kommen bis Gehen, die Pause dazwischen bleibt im Fenster. Eine Lücke
+    # zwischen Gehen und dem nächsten Kommen ist nicht anwesend.
+    spans: list[tuple[datetime, datetime]] = []
+    span_open: datetime | None = None
     still_open = False
     if prev_state == "in":
         open_in = start_utc
         first_in = start_utc
+        span_open = start_utc
     elif prev_state == "break":
         open_break = start_utc
+        span_open = start_utc
 
     first_in_punch = next((p for p in events if p.kind == "in"), None)
     last_out_punch = next((p for p in reversed(events) if p.kind == "out"), None)
@@ -545,6 +593,8 @@ def summarize_day(
                 open_in = t
                 if first_in is None:
                     first_in = t
+                if span_open is None:
+                    span_open = t
         elif p.kind == "break_start" and open_in:
             work += t - open_in
             open_in = None
@@ -561,6 +611,10 @@ def summarize_day(
                 if t > open_in:
                     work += t - open_in
                 open_in = None
+            if span_open is not None:
+                if t > span_open:
+                    spans.append((span_open, t))
+                span_open = None
             last_out = t
 
     day_end = _as_minute(min(now, end_utc))
@@ -570,6 +624,7 @@ def summarize_day(
         open_in = None
         open_break = None
         first_in = None
+        span_open = None
     elif open_break or open_in:
         still_open = True
         credit_tail = now < end_utc or _closed_later(punches, end_utc)
@@ -584,7 +639,9 @@ def summarize_day(
     steps = break_steps(model)
     auto_minutes = 0
     if auto_break and not still_open:
-        required = required_break_minutes(work_minutes + pause_minutes, steps)
+        # Gestempelte Minuten zählen auf das Fenster an. Ist die Stempelpause
+        # länger, bleibt sie stehen und es wird nichts zusätzlich abgezogen.
+        required = window_break_minutes(first_in, spans, stamped_break_intervals(events), steps)
         if pause_minutes < required:
             auto_minutes = required - pause_minutes
             work_minutes -= auto_minutes

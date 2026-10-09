@@ -929,6 +929,69 @@ def test_auto_break_tops_up_only_the_overhang_above_six_hours():
     assert "break_short" not in topped["warnings"]
 
 
+def test_break_window_sits_on_the_rounded_start():
+    """16.09.: Beginn 06:15, Fenster 12:15–12:45, 21 Minuten Stempel, Rest 9."""
+    from app.balance import format_hm
+
+    day = date(2026, 9, 16)
+    result = summarize_day(
+        [
+            _p_on(day, "in", 6, 10),
+            _p_on(day, "out", 8, 29),
+            _p_on(day, "in", 8, 36),
+            _p_on(day, "out", 10, 39),
+            _p_on(day, "break_start", 10, 39),
+            _p_on(day, "break_end", 11, 0),
+            _p_on(day, "in", 11, 0),
+            _p_on(day, "out", 12, 45),
+        ],
+        day,
+        _rounded_model(),
+        now=datetime(2026, 9, 17, tzinfo=ZoneInfo("UTC")),
+        auto_break=True,
+    )
+    assert result["first_in"] == "06:15"
+    assert result["auto_break_minutes"] == 9
+    assert format_hm(result["break_hours"]) == "0:30"
+    assert format_hm(result["work_hours"]) == "5:53"
+    assert format_hm(result["delta_hours"], signed=True) == "-1:43"
+
+
+def test_break_window_in_a_gap_is_not_deducted():
+    from app.balance import format_hm
+
+    day = date(2026, 9, 17)
+    missed = summarize_day(
+        [
+            _p_on(day, "in", 8, 0),
+            _p_on(day, "out", 13, 50),
+            _p_on(day, "in", 14, 40),
+            _p_on(day, "out", 17, 0),
+        ],
+        day,
+        _full_week(),
+        now=datetime(2026, 9, 18, tzinfo=ZoneInfo("UTC")),
+        auto_break=True,
+    )
+    assert missed["auto_break_minutes"] == 0
+    assert format_hm(missed["work_hours"]) == "8:10"
+
+    partial = summarize_day(
+        [
+            _p_on(day, "in", 8, 0),
+            _p_on(day, "out", 13, 50),
+            _p_on(day, "in", 14, 10),
+            _p_on(day, "out", 17, 0),
+        ],
+        day,
+        _full_week(),
+        now=datetime(2026, 9, 18, tzinfo=ZoneInfo("UTC")),
+        auto_break=True,
+    )
+    assert partial["auto_break_minutes"] == 20
+    assert format_hm(partial["work_hours"]) == "8:20"
+
+
 def _break_model(rules: list[dict]):
     model = _full_week()
     model.break_rules = json.dumps(rules)
