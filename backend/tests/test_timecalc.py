@@ -362,8 +362,8 @@ def test_auto_break_follows_the_six_and_nine_hour_steps():
         now=datetime(2026, 9, 18, tzinfo=ZoneInfo("UTC")),
         auto_break=True,
     )
-    assert split["auto_break_minutes"] == 13
-    assert format_hm(split["work_hours"]) == "6:00"
+    assert split["auto_break_minutes"] == 30
+    assert format_hm(split["work_hours"]) == "5:43"
 
     nine = span(date(2026, 9, 7), (7, 20), (16, 38))
     assert nine["auto_break_minutes"] == 30
@@ -1016,8 +1016,43 @@ def test_break_window_in_a_gap_is_not_deducted():
         now=datetime(2026, 9, 18, tzinfo=ZoneInfo("UTC")),
         auto_break=True,
     )
-    assert partial["auto_break_minutes"] == 20
-    assert format_hm(partial["work_hours"]) == "8:20"
+    assert partial["auto_break_minutes"] == 30
+    assert format_hm(partial["work_hours"]) == "8:10"
+
+
+def test_pause_window_stays_full_when_work_continues_after_a_short_gap():
+    """03.08.: Korridor bis 14:00, Fenster 10:35–11:05, fünf Minuten davon in der Lücke."""
+    from app.balance import format_hm
+
+    day = date(2026, 8, 3)
+    shifts = json.dumps([{"name": "Früh", "days": {"mon": {"start": "06:00", "end": "14:00"}}}])
+    model = _rounded_model(
+        round_first_step=0,
+        round_first_threshold=0,
+        shifts=shifts,
+        break_rules=json.dumps([{"after_hours": 4, "minutes": 30}]),
+    )
+    result = summarize_day(
+        [
+            _p_on(day, "in", 6, 35),
+            _p_on(day, "out", 10, 34),
+            _p_on(day, "in", 10, 40),
+            _p_on(day, "out", 13, 0),
+            _p_on(day, "in", 13, 4),
+            _p_on(day, "out", 14, 10),
+        ],
+        day,
+        model,
+        now=datetime(2026, 8, 4, tzinfo=ZoneInfo("UTC")),
+        auto_break=True,
+    )
+    assert result["shift"] == "Früh"
+    assert result["first_in"] == "06:35"
+    assert result["last_out"] == "14:00"
+    assert result["auto_break_minutes"] == 30
+    assert format_hm(result["work_hours"]) == "6:45"
+    assert format_hm(result["delta_hours"], signed=True) == "-0:51"
+    assert "break_short:30:4" not in result["warnings"]
 
 
 def _break_model(rules: list[dict]):

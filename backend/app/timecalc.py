@@ -133,15 +133,16 @@ def window_break_minutes(
     spans: list[tuple[datetime, datetime]],
     breaks: list[tuple[datetime, datetime]],
     work_minutes: int,
+    last_out: datetime | None,
     steps: list[tuple[int, int]] | None = None,
 ) -> int:
     """Mindestpause als Uhrzeitfenster: Beginn plus Schwelle, Dauer der hinterlegten Pause.
 
-    Eine Schwelle gilt erst, wenn die Arbeitszeit sie überschreitet. Lücken und
-    gestempelte Pausen schieben das hinaus, auch wenn die Uhr schon weiter ist.
-    Anwesenheit im Fenster zählt, eine gestempelte Pause darin auch. Wer vor dem
-    Fensterende geht, verliert nur diese Minuten. Die höhere Schwelle ersetzt die
-    niedrigere erst, wenn ihr Fenster mehr Minuten trifft.
+    Eine Schwelle gilt erst, wenn die Arbeitszeit sie überschreitet. Wer im Fenster
+    noch anwesend ist und danach weiterarbeitet, verliert die volle Pause. Eine
+    Lücke am Anfang des Fensters kürzt sie nicht. Wer im Fenster Feierabend macht,
+    verliert nur die Zeit bis zum Gehen. Die höhere Schwelle ersetzt die niedrigere
+    erst, wenn ihr Fenster mehr Minuten trifft.
     """
     if anchor is None:
         return 0
@@ -152,7 +153,14 @@ def window_break_minutes(
         if work_minutes <= after:
             continue
         window_start = anchor + timedelta(minutes=after)
-        owed = max(owed, _covered_minutes(blocks, window_start, window_start + timedelta(minutes=need)))
+        window_end = window_start + timedelta(minutes=need)
+        covered = _covered_minutes(blocks, window_start, window_end)
+        if covered <= 0:
+            continue
+        if last_out is not None and last_out >= window_end:
+            owed = max(owed, need)
+        else:
+            owed = max(owed, covered)
     return owed
 
 
@@ -647,7 +655,7 @@ def summarize_day(
         # Gestempelte Minuten zählen auf das Fenster an. Ist die Stempelpause
         # länger, bleibt sie stehen und es wird nichts zusätzlich abgezogen.
         required = window_break_minutes(
-            first_in, spans, stamped_break_intervals(events), work_minutes, steps
+            first_in, spans, stamped_break_intervals(events), work_minutes, last_out, steps
         )
         if pause_minutes < required:
             auto_minutes = required - pause_minutes
