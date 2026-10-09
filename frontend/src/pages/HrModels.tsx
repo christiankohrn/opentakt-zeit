@@ -551,7 +551,7 @@ export default function HrModels() {
             <fieldset className="space-y-2">
               <legend className="text-sm font-medium">Schichten</legend>
               <p className="text-xs text-muted">
-                Je Schicht und Wochentag. Die erste Kommen-Zeit wählt unter den Schichten dieses Tages die mit dem nächsten Beginn. Kommen vor diesem Beginn und Gehen nach diesem Ende zählen nicht. Tage ohne Angabe zählen alle Buchungen. Liegt das Ende vor dem Beginn, läuft die Schicht über Mitternacht.
+                Je Schicht und Wochentag. Die erste Kommen-Zeit wählt unter den Schichten dieses Tages die mit dem nächsten Beginn. Kommen vor diesem Beginn und Gehen nach diesem Ende zählen nicht. Ohne Beginn gilt die Schicht, deren Pause in der Anwesenheit liegt, und die Buchungen bleiben unbeschnitten. Liegt das Ende vor dem Beginn, läuft die Schicht über Mitternacht.
               </p>
               <label className="block max-w-xs text-sm">
                 Anzahl
@@ -779,7 +779,7 @@ function CorridorDayRow({
       ) : null}
       <button
         type="button"
-        className="h-9 rounded-lg border border-line px-2 text-xs"
+        className="h-9 w-36 shrink-0 rounded-lg border border-line px-2 text-center text-xs"
         title={showPause ? `Arbeitszeit und Pause von ${previousLabel} übernehmen` : `Beginn und Ende von ${previousLabel} übernehmen`}
         onClick={onCopy}
       >

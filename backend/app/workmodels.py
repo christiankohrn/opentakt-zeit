@@ -190,7 +190,16 @@ def normalize_shifts(raw: list | None) -> list[dict]:
             if key not in WEEKDAY_KEYS or value is None:
                 continue
             start, end = _pair(value)
+            pause_start, pause_end = _pause_pair(value)
             if not start and not end:
+                if pause_start or pause_end:
+                    if not pause_start or not pause_end:
+                        raise ValueError("Jede hinterlegte Pause braucht Beginn und Ende")
+                    if not _CLOCK.match(pause_start) or not _CLOCK.match(pause_end):
+                        raise ValueError("Hinterlegte Pause braucht eine Uhrzeit HH:MM")
+                    if pause_start >= pause_end:
+                        raise ValueError("Das Ende der hinterlegten Pause muss nach dem Beginn liegen")
+                    days[key] = {"pause_start": pause_start, "pause_end": pause_end}
                 continue
             if not start or not end:
                 raise ValueError("Jeder angegebene Korridor braucht Beginn und Ende")
@@ -199,7 +208,6 @@ def normalize_shifts(raw: list | None) -> list[dict]:
             if start == end:
                 raise ValueError("Beginn und Ende einer Schicht dürfen nicht gleich sein")
             cell = {"start": start, "end": end}
-            pause_start, pause_end = _pause_pair(value)
             if pause_start or pause_end:
                 if not pause_start or not pause_end:
                     raise ValueError("Jede hinterlegte Pause braucht Beginn und Ende")

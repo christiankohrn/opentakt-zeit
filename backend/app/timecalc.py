@@ -125,6 +125,42 @@ def fixed_break_for_day(model: object | None, day: date, shift_name: str | None)
     return fixed_break_window(model, day)
 
 
+def pause_shift_name(
+    model: object | None,
+    day: date,
+    first_in: datetime | None,
+    last_out: datetime | None,
+) -> str | None:
+    """Schicht, deren Pause in der Anwesenheit liegt. Nur wenn kein Schichtbeginn zum Zuordnen da ist."""
+    if first_in is None or last_out is None or last_out <= first_in:
+        return None
+    key = _WEEKDAYS[day.weekday()]
+    middle = first_in + (last_out - first_in) / 2
+    best: tuple[tuple[int, int], str] | None = None
+    for slot in _shift_data(model):
+        if not isinstance(slot, dict):
+            continue
+        days = slot.get("days") if isinstance(slot.get("days"), dict) else {}
+        cell = days.get(key) if isinstance(days, dict) else None
+        if not isinstance(cell, dict):
+            continue
+        window = _pause_clock(cell)
+        if window is None:
+            continue
+        start = _at_clock(day, window[0])
+        end = _at_clock(day, window[1])
+        overlap = min(end, last_out) - max(start, first_in)
+        minutes = int(overlap.total_seconds() // 60)
+        if minutes <= 0:
+            continue
+        distance = abs(int((start - middle).total_seconds()))
+        rank = (minutes, -distance)
+        name = str(slot.get("name") or "")
+        if best is None or rank > best[0]:
+            best = (rank, name)
+    return None if best is None else best[1]
+
+
 def _pause_clock(cell: dict) -> tuple[str, str] | None:
     start = str(cell.get("pause_start") or "").strip()
     end = str(cell.get("pause_end") or "").strip()
@@ -744,6 +780,11 @@ def summarize_day(
 
     work_minutes = int(work.total_seconds() // 60)
     pause_minutes = max(int(pause.total_seconds() // 60), stamped_break_minutes(events))
+    # Ohne Schichtbeginn bleibt der Tag unbeschnitten. Die Pause wählt die Schicht.
+    if has_shifts and not day_rows and not shift_names and not still_open:
+        found = pause_shift_name(model, day, first_in, last_out)
+        if found:
+            shift_names.append(found)
     use_fixed = break_mode_of(model) == "fixed"
     steps = [] if use_fixed else break_steps(model)
     auto_minutes = 0

@@ -1253,6 +1253,113 @@ def test_each_shift_uses_its_own_fixed_pause():
     assert format_hm(late["work_hours"]) == "7:30"
 
 
+def _pause_only_model(days: dict):
+    shifts = [
+        {"name": "Früh", "days": days["Früh"]},
+        {"name": "Spät", "days": days["Spät"]},
+    ]
+    return SimpleNamespace(
+        hours_mon=7.6,
+        hours_tue=7.6,
+        hours_wed=7.6,
+        hours_thu=7.6,
+        hours_fri=7.6,
+        hours_sat=0,
+        hours_sun=0,
+        round_start_before=0,
+        round_start_after=0,
+        round_end_before=0,
+        round_end_after=0,
+        round_first_threshold=0,
+        round_first_step=0,
+        round_last_threshold=0,
+        round_last_step=0,
+        booking_corridor="",
+        break_mode="fixed",
+        fixed_breaks="",
+        shifts=json.dumps(shifts),
+    )
+
+
+def test_shift_pause_without_a_corridor_is_stored():
+    from app.workmodels import normalize_shifts
+
+    stored = normalize_shifts(
+        [{"name": "Früh", "days": {"mon": {"pause_start": "12:00", "pause_end": "12:30"}}}]
+    )
+    assert stored[0]["days"]["mon"] == {"pause_start": "12:00", "pause_end": "12:30"}
+
+
+def test_pause_inside_the_day_picks_the_shift_when_no_start_is_set():
+    """21.09.: kein Korridor, Pause 12:00–12:30 liegt in 06:49–15:01, 19:30 nicht."""
+    from app.balance import format_hm
+
+    day = date(2026, 9, 21)
+    model = _pause_only_model(
+        {
+            "Früh": {"mon": {"pause_start": "12:00", "pause_end": "12:30"}},
+            "Spät": {"mon": {"pause_start": "19:30", "pause_end": "20:00"}},
+        }
+    )
+    result = summarize_day(
+        [_p_on(day, "in", 6, 49), _p_on(day, "out", 15, 1)],
+        day,
+        model,
+        now=datetime(2026, 9, 22, tzinfo=ZoneInfo("UTC")),
+        auto_break=True,
+    )
+    assert result["shift"] == "Früh"
+    assert result["last_out"] == "15:01"
+    assert result["auto_break_minutes"] == 30
+    assert format_hm(result["work_hours"]) == "7:42"
+    assert "over_10h" not in result["warnings"]
+
+
+def test_a_later_pause_wins_when_only_that_one_lies_in_the_day():
+    from app.balance import format_hm
+
+    day = date(2026, 9, 21)
+    model = _pause_only_model(
+        {
+            "Früh": {"mon": {"pause_start": "12:00", "pause_end": "12:30"}},
+            "Spät": {"mon": {"pause_start": "19:30", "pause_end": "20:00"}},
+        }
+    )
+    result = summarize_day(
+        [_p_on(day, "in", 16, 0), _p_on(day, "out", 22, 0)],
+        day,
+        model,
+        now=datetime(2026, 9, 22, tzinfo=ZoneInfo("UTC")),
+        auto_break=True,
+    )
+    assert result["shift"] == "Spät"
+    assert result["last_out"] == "22:00"
+    assert result["auto_break_minutes"] == 30
+    assert format_hm(result["work_hours"]) == "5:30"
+
+
+def test_two_pauses_inside_one_day_count_only_the_closer_shift():
+    from app.balance import format_hm
+
+    day = date(2026, 9, 21)
+    model = _pause_only_model(
+        {
+            "Früh": {"mon": {"pause_start": "12:00", "pause_end": "12:30"}},
+            "Spät": {"mon": {"pause_start": "19:30", "pause_end": "20:00"}},
+        }
+    )
+    result = summarize_day(
+        [_p_on(day, "in", 6, 0), _p_on(day, "out", 22, 0)],
+        day,
+        model,
+        now=datetime(2026, 9, 22, tzinfo=ZoneInfo("UTC")),
+        auto_break=True,
+    )
+    assert result["shift"] == "Früh"
+    assert result["auto_break_minutes"] == 30
+    assert format_hm(result["work_hours"]) == "15:30"
+
+
 def test_break_rules_on_the_model_can_start_at_four_hours():
     from app.balance import format_hm
 
