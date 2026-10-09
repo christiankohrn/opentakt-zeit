@@ -1085,6 +1085,34 @@ def test_pause_stops_at_the_threshold_when_only_minutes_follow_the_window():
     assert result["warnings"] == []
 
 
+def test_stamped_pause_still_tops_up_when_work_is_only_just_over_six_hours():
+    """31.08.: Beginn 07:13 wird 07:15, 27 Minuten Stempel, drei Minuten fehlen."""
+    from app.balance import format_hm
+
+    day = date(2026, 8, 31)
+    result = summarize_day(
+        [
+            _p_on(day, "in", 7, 13),
+            _p_on(day, "out", 11, 59),
+            _p_on(day, "break_start", 11, 59),
+            _p_on(day, "break_end", 12, 26),
+            _p_on(day, "in", 12, 26),
+            _p_on(day, "out", 13, 51),
+        ],
+        day,
+        _rounded_model(),
+        now=datetime(2026, 9, 1, tzinfo=ZoneInfo("UTC")),
+        auto_break=True,
+    )
+    assert result["first_in"] == "07:15"
+    assert result["last_out"] == "13:51"
+    assert result["auto_break_minutes"] == 3
+    assert format_hm(result["break_hours"]) == "0:30"
+    assert format_hm(result["work_hours"]) == "6:06"
+    assert format_hm(result["delta_hours"], signed=True) == "-1:30"
+    assert "break_short" not in result["warnings"]
+
+
 def _break_model(rules: list[dict]):
     model = _full_week()
     model.break_rules = json.dumps(rules)

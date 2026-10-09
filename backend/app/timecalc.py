@@ -135,16 +135,17 @@ def window_break_minutes(
     work_minutes: int,
     last_out: datetime | None,
     steps: list[tuple[int, int]] | None = None,
+    credited_pause: int = 0,
 ) -> int:
     """Mindestpause als Uhrzeitfenster: Beginn plus Schwelle, Dauer der hinterlegten Pause.
 
     Eine Schwelle gilt erst, wenn die Arbeitszeit sie überschreitet. Wer im Fenster
     noch anwesend ist und danach weiterarbeitet, verliert die volle Pause. Eine
-    Lücke am Anfang des Fensters kürzt sie nicht. Die Minuten nach dem Fenster
-    bleiben Arbeit: reicht die Zeit nicht für die volle Pause, bleibt die Ist-Zeit
-    auf der Schwelle. Wer im Fenster Feierabend macht, verliert nur die Zeit bis
-    zum Gehen. Die höhere Schwelle ersetzt die niedrigere erst, wenn ihr Fenster
-    mehr Minuten trifft.
+    Lücke am Anfang des Fensters kürzt sie nicht. Eine gestempelte Pause zählt auf
+    die Zeit über der Schwelle an. Reicht der Rest nicht für die volle Pause,
+    bleibt die Ist-Zeit auf der Schwelle. Wer im Fenster Feierabend macht, verliert
+    nur die Zeit bis zum Gehen. Die höhere Schwelle ersetzt die niedrigere erst,
+    wenn ihr Fenster mehr Minuten trifft.
     """
     if anchor is None:
         return 0
@@ -163,10 +164,10 @@ def window_break_minutes(
             step_owed = need
         else:
             step_owed = covered
-        # Nach dem Fenster geleistete Minuten bleiben erhalten. Sonst fiele die
-        # Ist-Zeit unter die Schwelle, die die Pause überhaupt geöffnet hat.
+        # Nach dem Fenster geleistete Minuten bleiben erhalten. Die gestempelte
+        # Pause zählt dabei mit, sonst würde sie die fehlenden Minuten verschlucken.
         if last_out is not None and last_out > window_end:
-            step_owed = min(step_owed, work_minutes - after)
+            step_owed = min(step_owed, work_minutes + credited_pause - after)
         owed = max(owed, step_owed)
     return owed
 
@@ -662,7 +663,13 @@ def summarize_day(
         # Gestempelte Minuten zählen auf das Fenster an. Ist die Stempelpause
         # länger, bleibt sie stehen und es wird nichts zusätzlich abgezogen.
         required = window_break_minutes(
-            first_in, spans, stamped_break_intervals(events), work_minutes, last_out, steps
+            first_in,
+            spans,
+            stamped_break_intervals(events),
+            work_minutes,
+            last_out,
+            steps,
+            pause_minutes,
         )
         if pause_minutes < required:
             auto_minutes = required - pause_minutes
