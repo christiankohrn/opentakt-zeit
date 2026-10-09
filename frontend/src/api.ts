@@ -109,7 +109,12 @@ export type WorkModelAssignment = {
   created_at: string;
 };
 
-export type CorridorDay = { start?: string | null; end?: string | null };
+export type CorridorDay = {
+  start?: string | null;
+  end?: string | null;
+  pause_start?: string | null;
+  pause_end?: string | null;
+};
 
 export type ShiftCorridor = {
   name: string;

@@ -21,7 +21,9 @@ const CLOSED_HINT =
 
 type Corridor = Record<string, { start: string; end: string }>;
 
-type ShiftDraft = { name: string; days: Corridor };
+type ShiftDay = { start: string; end: string; pauseStart: string; pauseEnd: string };
+
+type ShiftDraft = { name: string; days: Record<string, ShiftDay> };
 
 type BreakDraft = { after: string; minutes: string };
 
@@ -95,19 +97,33 @@ function parseAfter(value: string) {
   return Number(text.replace(",", "."));
 }
 
+function emptyShiftDays(): Record<string, ShiftDay> {
+  return Object.fromEntries(WEEKDAYS.map(([key]) => [key, { start: "", end: "", pauseStart: "", pauseEnd: "" }]));
+}
+
 function resizeShifts(existing: ShiftDraft[], count: number): ShiftDraft[] {
   return Array.from(
     { length: count },
-    (_, index) => existing[index] ?? { name: SHIFT_NAMES[index] ?? `Schicht ${index + 1}`, days: emptyCorridor() },
+    (_, index) => existing[index] ?? { name: SHIFT_NAMES[index] ?? `Schicht ${index + 1}`, days: emptyShiftDays() },
   );
 }
 
-function shiftDays(slot: ShiftCorridor): Corridor {
-  const days = emptyCorridor();
+function shiftDays(slot: ShiftCorridor, fixed?: WorkModel["fixed_breaks"]): Record<string, ShiftDay> {
+  const days = emptyShiftDays();
   for (const [key] of WEEKDAYS) {
     const cell = slot.days?.[key];
-    if (cell?.start || cell?.end) days[key] = { start: cell.start || "", end: cell.end || "" };
-    else if (!slot.days && (slot.start || slot.end)) days[key] = { start: slot.start || "", end: slot.end || "" };
+    const legacy = !slot.days && (slot.start || slot.end);
+    if (cell?.start || cell?.end || legacy) {
+      days[key].start = cell?.start || (legacy ? slot.start || "" : "");
+      days[key].end = cell?.end || (legacy ? slot.end || "" : "");
+    }
+    if (cell?.pause_start || cell?.pause_end) {
+      days[key].pauseStart = cell.pause_start || "";
+      days[key].pauseEnd = cell.pause_end || "";
+    } else if (fixed?.[key]?.start || fixed?.[key]?.end) {
+      days[key].pauseStart = fixed[key].start || "";
+      days[key].pauseEnd = fixed[key].end || "";
+    }
   }
   return days;
 }
@@ -133,7 +149,7 @@ function draftFrom(model: WorkModel): Draft {
     corridor,
     shifts: (model.shifts ?? []).map((slot: ShiftCorridor, index) => ({
       name: slot.name || SHIFT_NAMES[index] || `Schicht ${index + 1}`,
-      days: shiftDays(slot),
+      days: shiftDays(slot, model.fixed_breaks),
     })),
     breaks: (model.break_rules ?? []).map((rule) => ({
       after: formatAfter(rule.after_hours),
@@ -151,6 +167,13 @@ function draftFrom(model: WorkModel): Draft {
 
 function pauseSummary(model: WorkModel) {
   if (model.break_mode === "fixed") {
+    const perShift = (model.shifts ?? []).flatMap((slot) =>
+      WEEKDAYS.flatMap(([key, label]) => {
+        const cell = slot.days?.[key];
+        return cell?.pause_start && cell.pause_end ? [`${slot.name} ${label.slice(0, 2)} ${cell.pause_start}–${cell.pause_end}`] : [];
+      }),
+    );
+    if (perShift.length) return `fest ${perShift.join(", ")}`;
     const slots = WEEKDAYS.flatMap(([key, label]) => {
       const slot = model.fixed_breaks?.[key];
       return slot?.start && slot.end ? [`${label.slice(0, 2)} ${slot.start}–${slot.end}`] : [];
@@ -226,10 +249,15 @@ export default function HrModels() {
       shifts:
         draft.kind === "shift"
           ? draft.shifts.map((slot, index) => {
-              const days: Record<string, { start: string; end: string }> = {};
+              const days: Record<string, { start: string; end: string; pause_start?: string; pause_end?: string }> = {};
               for (const [key] of WEEKDAYS) {
                 const cell = slot.days[key];
-                if (cell.start || cell.end) days[key] = { start: cell.start, end: cell.end };
+                if (!cell.start && !cell.end && !cell.pauseStart && !cell.pauseEnd) continue;
+                days[key] = { start: cell.start, end: cell.end };
+                if (cell.pauseStart || cell.pauseEnd) {
+                  days[key].pause_start = cell.pauseStart;
+                  days[key].pause_end = cell.pauseEnd;
+                }
               }
               return {
                 name: slot.name.trim() || SHIFT_NAMES[index] || `Schicht ${index + 1}`,
@@ -242,12 +270,15 @@ export default function HrModels() {
         minutes: minutes(row.minutes),
       })),
       break_mode: draft.breakMode,
-      fixed_breaks: Object.fromEntries(
-        WEEKDAYS.flatMap(([key]) => {
-          const slot = draft.fixedBreaks[key];
-          return slot.start || slot.end ? [[key, { start: slot.start, end: slot.end }]] : [];
-        }),
-      ),
+      fixed_breaks:
+        draft.kind === "shift" && draft.shifts.length
+          ? {}
+          : Object.fromEntries(
+              WEEKDAYS.flatMap(([key]) => {
+                const slot = draft.fixedBreaks[key];
+                return slot.start || slot.end ? [[key, { start: slot.start, end: slot.end }]] : [];
+              }),
+            ),
     };
   }
 
@@ -256,6 +287,7 @@ export default function HrModels() {
     setDraft((current) => ({
       ...current,
       corridor: { ...current.corridor, [key]: { ...current.corridor[previous] } },
+      fixedBreaks: { ...current.fixedBreaks, [key]: { ...current.fixedBreaks[previous] } },
     }));
   }
 
@@ -293,7 +325,18 @@ export default function HrModels() {
     }
     if (
       draft.breakMode === "fixed" &&
+      draft.kind !== "shift" &&
       WEEKDAYS.some(([key]) => Boolean(draft.fixedBreaks[key].start) !== Boolean(draft.fixedBreaks[key].end))
+    ) {
+      setError("Jede hinterlegte Pause braucht Beginn und Ende.");
+      return;
+    }
+    if (
+      draft.breakMode === "fixed" &&
+      draft.kind === "shift" &&
+      draft.shifts.some((slot) =>
+        WEEKDAYS.some(([key]) => Boolean(slot.days[key].pauseStart) !== Boolean(slot.days[key].pauseEnd)),
+      )
     ) {
       setError("Jede hinterlegte Pause braucht Beginn und Ende.");
       return;
@@ -315,6 +358,7 @@ export default function HrModels() {
   }
 
   const field = "w-full rounded-lg border border-line bg-bg px-3 py-2";
+  const compact = "w-full max-w-xs rounded-lg border border-line bg-bg px-3 py-2";
   const hint = editing && editing.closed_months > 0 ? notice || CLOSED_HINT : notice;
 
   return (
@@ -374,13 +418,15 @@ export default function HrModels() {
           <p className="font-medium">{editing ? `${editing.name} anpassen` : "Modell anlegen"}</p>
           {hint ? <p className="text-sm text-muted">{hint}</p> : null}
           <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="Name" className={field} required />
-          <select className={field} value={draft.kind} onChange={(e) => setDraft({ ...draft, kind: e.target.value })}>
-            <option value="flextime">Gleitzeit</option>
-            <option value="shift">Schicht</option>
-          </select>
-          <label className="block text-sm">
+          <div className="max-w-xs">
+            <select className={field} value={draft.kind} onChange={(e) => setDraft({ ...draft, kind: e.target.value })}>
+              <option value="flextime">Gleitzeit</option>
+              <option value="shift">Schicht</option>
+            </select>
+          </div>
+          <label className="block max-w-xs text-sm">
             Stunden Mo–So
-            <input value={draft.hours} onChange={(e) => setDraft({ ...draft, hours: e.target.value })} placeholder="8,8,8,8,8,0,0" className={`${field} mt-1`} />
+            <input value={draft.hours} onChange={(e) => setDraft({ ...draft, hours: e.target.value })} placeholder="8,8,8,8,8,0,0" className={`${compact} mt-1`} />
           </label>
           <fieldset className="space-y-3">
             <legend className="text-sm font-medium">Rundung</legend>
@@ -388,49 +434,51 @@ export default function HrModels() {
               0 lässt die jeweilige Rundung aus. Die Stempel bleiben sichtbar, nur die angerechnete Zeit ändert sich.
               Die eingetragene Minute rundet noch ab, einschließlich der Sekunden. Erst die nächste volle Minute rundet auf.
             </p>
-            <RoundRow
-              label="Für Buchungen, die"
-              mid="Min. vor oder"
-              tail="Min. nach Arbeitsbeginn getätigt werden, gilt der Arbeitsbeginn"
-              before={draft.round_start_before}
-              after={draft.round_start_after}
-              onBefore={(value) => setDraft({ ...draft, round_start_before: value })}
-              onAfter={(value) => setDraft({ ...draft, round_start_after: value })}
-            />
-            <RoundRow
-              label="Für Buchungen, die"
-              mid="Min. vor oder"
-              tail="Min. nach Arbeitsende getätigt werden, gilt das Arbeitsende"
-              before={draft.round_end_before}
-              after={draft.round_end_after}
-              onBefore={(value) => setDraft({ ...draft, round_end_before: value })}
-              onAfter={(value) => setDraft({ ...draft, round_end_after: value })}
-            />
-            <RoundRow
-              label="Erste Buchung wird ab"
-              mid="Min. auf"
-              tail="Min. auf-, sonst abgerundet"
-              before={draft.round_first_threshold}
-              after={draft.round_first_step}
-              onBefore={(value) => setDraft({ ...draft, round_first_threshold: value })}
-              onAfter={(value) => setDraft({ ...draft, round_first_step: value })}
-            />
-            <RoundRow
-              label="Letzte Buchung wird ab"
-              mid="Min. auf"
-              tail="Min. auf-, sonst abgerundet"
-              before={draft.round_last_threshold}
-              after={draft.round_last_step}
-              onBefore={(value) => setDraft({ ...draft, round_last_threshold: value })}
-              onAfter={(value) => setDraft({ ...draft, round_last_step: value })}
-            />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <RoundRow
+                title="Arbeitsbeginn"
+                beforeLabel="Min. davor"
+                afterLabel="Min. danach"
+                before={draft.round_start_before}
+                after={draft.round_start_after}
+                onBefore={(value) => setDraft({ ...draft, round_start_before: value })}
+                onAfter={(value) => setDraft({ ...draft, round_start_after: value })}
+              />
+              <RoundRow
+                title="Arbeitsende"
+                beforeLabel="Min. davor"
+                afterLabel="Min. danach"
+                before={draft.round_end_before}
+                after={draft.round_end_after}
+                onBefore={(value) => setDraft({ ...draft, round_end_before: value })}
+                onAfter={(value) => setDraft({ ...draft, round_end_after: value })}
+              />
+              <RoundRow
+                title="Erste Buchung"
+                beforeLabel="Min. Schwelle"
+                afterLabel="Min. Raster"
+                before={draft.round_first_threshold}
+                after={draft.round_first_step}
+                onBefore={(value) => setDraft({ ...draft, round_first_threshold: value })}
+                onAfter={(value) => setDraft({ ...draft, round_first_step: value })}
+              />
+              <RoundRow
+                title="Letzte Buchung"
+                beforeLabel="Min. Schwelle"
+                afterLabel="Min. Raster"
+                before={draft.round_last_threshold}
+                after={draft.round_last_step}
+                onBefore={(value) => setDraft({ ...draft, round_last_threshold: value })}
+                onAfter={(value) => setDraft({ ...draft, round_last_step: value })}
+              />
+            </div>
           </fieldset>
           <fieldset className="space-y-2">
             <legend className="text-sm font-medium">Pausen</legend>
-            <label className="block text-sm">
+            <label className="block max-w-xs text-sm">
               Regel
               <select
-                className={`${field} mt-1`}
+                className={`${compact} mt-1`}
                 value={draft.breakMode}
                 onChange={(e) => setDraft({ ...draft, breakMode: e.target.value === "fixed" ? "fixed" : "threshold" })}
               >
@@ -444,43 +492,9 @@ export default function HrModels() {
               </p>
             ) : (
               <p className="text-xs text-muted">
-                Es gilt die hier hinterlegte Uhrzeit. Wer in diesem Fenster arbeitet, verliert diese Minuten. Eine gestempelte Pause daneben bleibt zusätzlich stehen.
+                Die Pause steht neben der Arbeitszeit. Bei Schichten hat jede Schicht ihre eigene Pause. Wer in diesem Fenster arbeitet, verliert diese Minuten. Eine gestempelte Pause daneben bleibt zusätzlich stehen.
               </p>
             )}
-            {draft.breakMode === "fixed"
-              ? WEEKDAYS.map(([key, label]) => (
-                  <div key={key} className="flex flex-wrap items-center gap-2 text-sm">
-                    <span className="w-24">{label}</span>
-                    <input
-                      type="time"
-                      aria-label={`${label} Pause von`}
-                      value={draft.fixedBreaks[key].start}
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        setDraft((current) => ({
-                          ...current,
-                          fixedBreaks: { ...current.fixedBreaks, [key]: { ...current.fixedBreaks[key], start: value } },
-                        }));
-                      }}
-                      className="rounded-lg border border-line bg-bg px-2 py-1"
-                    />
-                    <span>bis</span>
-                    <input
-                      type="time"
-                      aria-label={`${label} Pause bis`}
-                      value={draft.fixedBreaks[key].end}
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        setDraft((current) => ({
-                          ...current,
-                          fixedBreaks: { ...current.fixedBreaks, [key]: { ...current.fixedBreaks[key], end: value } },
-                        }));
-                      }}
-                      className="rounded-lg border border-line bg-bg px-2 py-1"
-                    />
-                  </div>
-                ))
-              : null}
             {draft.breakMode === "threshold" ? draft.breaks.map((row, index) => (
               <div key={index} className="flex flex-wrap items-center gap-2 text-sm">
                 <span>ab</span>
@@ -539,7 +553,7 @@ export default function HrModels() {
               <p className="text-xs text-muted">
                 Je Schicht und Wochentag. Die erste Kommen-Zeit wählt unter den Schichten dieses Tages die mit dem nächsten Beginn. Kommen vor diesem Beginn und Gehen nach diesem Ende zählen nicht. Tage ohne Angabe zählen alle Buchungen. Liegt das Ende vor dem Beginn, läuft die Schicht über Mitternacht.
               </p>
-              <label className="block text-sm">
+              <label className="block max-w-xs text-sm">
                 Anzahl
                 <select
                   className={`${field} mt-1`}
@@ -577,6 +591,34 @@ export default function HrModels() {
                         end={slot.days[key].end}
                         startLabel={`${slot.name || "Schicht"} ${label} von`}
                         endLabel={`${slot.name || "Schicht"} ${label} bis`}
+                        pauseStart={draft.breakMode === "fixed" ? slot.days[key].pauseStart : undefined}
+                        pauseEnd={draft.breakMode === "fixed" ? slot.days[key].pauseEnd : undefined}
+                        onPauseStart={
+                          draft.breakMode === "fixed"
+                            ? (value) =>
+                                setDraft((current) => ({
+                                  ...current,
+                                  shifts: current.shifts.map((item, itemIndex) =>
+                                    itemIndex === index
+                                      ? { ...item, days: { ...item.days, [key]: { ...item.days[key], pauseStart: value } } }
+                                      : item,
+                                  ),
+                                }))
+                            : undefined
+                        }
+                        onPauseEnd={
+                          draft.breakMode === "fixed"
+                            ? (value) =>
+                                setDraft((current) => ({
+                                  ...current,
+                                  shifts: current.shifts.map((item, itemIndex) =>
+                                    itemIndex === index
+                                      ? { ...item, days: { ...item.days, [key]: { ...item.days[key], pauseEnd: value } } }
+                                      : item,
+                                  ),
+                                }))
+                            : undefined
+                        }
                         onStart={(value) =>
                           setDraft((current) => ({
                             ...current,
@@ -620,6 +662,26 @@ export default function HrModels() {
                   end={draft.corridor[key].end}
                   startLabel={`${label} von`}
                   endLabel={`${label} bis`}
+                  pauseStart={draft.breakMode === "fixed" ? draft.fixedBreaks[key].start : undefined}
+                  pauseEnd={draft.breakMode === "fixed" ? draft.fixedBreaks[key].end : undefined}
+                  onPauseStart={
+                    draft.breakMode === "fixed"
+                      ? (value) =>
+                          setDraft((current) => ({
+                            ...current,
+                            fixedBreaks: { ...current.fixedBreaks, [key]: { ...current.fixedBreaks[key], start: value } },
+                          }))
+                      : undefined
+                  }
+                  onPauseEnd={
+                    draft.breakMode === "fixed"
+                      ? (value) =>
+                          setDraft((current) => ({
+                            ...current,
+                            fixedBreaks: { ...current.fixedBreaks, [key]: { ...current.fixedBreaks[key], end: value } },
+                          }))
+                      : undefined
+                  }
                   onStart={(value) =>
                     setDraft({ ...draft, corridor: { ...draft.corridor, [key]: { ...draft.corridor[key], start: value } } })
                   }
@@ -667,8 +729,12 @@ function CorridorDayRow({
   end,
   startLabel,
   endLabel,
+  pauseStart,
+  pauseEnd,
   onStart,
   onEnd,
+  onPauseStart,
+  onPauseEnd,
   onCopy,
 }: {
   label: string;
@@ -677,20 +743,44 @@ function CorridorDayRow({
   end: string;
   startLabel: string;
   endLabel: string;
+  pauseStart?: string;
+  pauseEnd?: string;
   onStart: (value: string) => void;
   onEnd: (value: string) => void;
+  onPauseStart?: (value: string) => void;
+  onPauseEnd?: (value: string) => void;
   onCopy: () => void;
 }) {
-  const time = "w-full min-w-0 rounded-lg border border-line bg-bg px-2 py-1.5";
+  const time = "w-[9.25rem] rounded-lg border border-line bg-bg px-2 py-1.5";
+  const showPause = onPauseStart != null && onPauseEnd != null;
   return (
-    <div className="grid grid-cols-[5.5rem_minmax(0,1fr)_minmax(0,1fr)] items-center gap-2 text-sm sm:grid-cols-[7rem_9.5rem_9.5rem_8.75rem] sm:justify-start">
-      <span>{label}</span>
+    <div className="flex flex-wrap items-center gap-2 text-sm">
+      <span className="w-24 shrink-0">{label}</span>
       <input type="time" aria-label={startLabel} value={start} onChange={(e) => onStart(e.target.value)} className={time} />
       <input type="time" aria-label={endLabel} value={end} onChange={(e) => onEnd(e.target.value)} className={time} />
+      {showPause ? (
+        <>
+          <span className="text-xs text-muted">Pause</span>
+          <input
+            type="time"
+            aria-label={`${label} Pause von`}
+            value={pauseStart || ""}
+            onChange={(e) => onPauseStart(e.target.value)}
+            className={time}
+          />
+          <input
+            type="time"
+            aria-label={`${label} Pause bis`}
+            value={pauseEnd || ""}
+            onChange={(e) => onPauseEnd(e.target.value)}
+            className={time}
+          />
+        </>
+      ) : null}
       <button
         type="button"
-        className="col-span-3 h-9 rounded-lg border border-line px-2 text-xs sm:col-span-1"
-        title={`Beginn und Ende von ${previousLabel} übernehmen`}
+        className="h-9 rounded-lg border border-line px-2 text-xs"
+        title={showPause ? `Arbeitszeit und Pause von ${previousLabel} übernehmen` : `Beginn und Ende von ${previousLabel} übernehmen`}
         onClick={onCopy}
       >
         wie {previousLabel}
@@ -700,30 +790,32 @@ function CorridorDayRow({
 }
 
 function RoundRow({
-  label,
-  mid,
-  tail,
+  title,
+  beforeLabel,
+  afterLabel,
   before,
   after,
   onBefore,
   onAfter,
 }: {
-  label: string;
-  mid: string;
-  tail: string;
+  title: string;
+  beforeLabel: string;
+  afterLabel: string;
   before: string;
   after: string;
   onBefore: (value: string) => void;
   onAfter: (value: string) => void;
 }) {
-  const box = "w-20 rounded-lg border border-line bg-bg px-2 py-1";
+  const box = "w-16 rounded-lg border border-line bg-bg px-2 py-1 text-center tabular-nums";
   return (
-    <label className="flex flex-wrap items-center gap-2 text-sm">
-      <span>{label}</span>
-      <input value={before} onChange={(e) => onBefore(e.target.value)} inputMode="numeric" className={box} />
-      <span>{mid}</span>
-      <input value={after} onChange={(e) => onAfter(e.target.value)} inputMode="numeric" className={box} />
-      <span>{tail}</span>
-    </label>
+    <div className="text-sm">
+      <p>{title}</p>
+      <div className="mt-1 flex flex-wrap items-center gap-2">
+        <input value={before} onChange={(e) => onBefore(e.target.value)} inputMode="numeric" aria-label={`${title} ${beforeLabel}`} className={box} />
+        <span className="text-muted">{beforeLabel}</span>
+        <input value={after} onChange={(e) => onAfter(e.target.value)} inputMode="numeric" aria-label={`${title} ${afterLabel}`} className={box} />
+        <span className="text-muted">{afterLabel}</span>
+      </div>
+    </div>
   );
 }

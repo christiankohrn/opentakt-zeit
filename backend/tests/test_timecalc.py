@@ -1193,6 +1193,66 @@ def test_fixed_pause_window_is_deducted_besides_a_later_stamp():
     assert result["warnings"] == []
 
 
+def test_each_shift_uses_its_own_fixed_pause():
+    from app.balance import format_hm
+
+    day = date(2026, 9, 23)
+    shifts = [
+        {
+            "name": "Früh",
+            "days": {"wed": {"start": "06:00", "end": "17:00", "pause_start": "12:00", "pause_end": "12:30"}},
+        },
+        {
+            "name": "Spät",
+            "days": {"wed": {"start": "14:00", "end": "22:00", "pause_start": "18:00", "pause_end": "18:30"}},
+        },
+    ]
+    model = SimpleNamespace(
+        hours_mon=0,
+        hours_tue=0,
+        hours_wed=0,
+        hours_thu=0,
+        hours_fri=0,
+        hours_sat=0,
+        hours_sun=0,
+        round_start_before=0,
+        round_start_after=0,
+        round_end_before=0,
+        round_end_after=0,
+        round_first_threshold=0,
+        round_first_step=0,
+        round_last_threshold=0,
+        round_last_step=0,
+        booking_corridor="",
+        break_mode="fixed",
+        fixed_breaks=json.dumps({"wed": {"start": "10:00", "end": "10:15"}}),
+        shifts=json.dumps(shifts),
+    )
+    early = summarize_day(
+        [
+            _p_on(day, "in", 6, 45),
+            _p_on(day, "out", 12, 30),
+            _p_on(day, "in", 12, 32),
+            _p_on(day, "out", 16, 17),
+        ],
+        day,
+        model,
+        now=datetime(2026, 9, 24, tzinfo=ZoneInfo("UTC")),
+        auto_break=True,
+    )
+    assert early["auto_break_minutes"] == 30
+    assert format_hm(early["work_hours"]) == "9:00"
+    late = summarize_day(
+        [_p_on(day, "in", 14, 0), _p_on(day, "out", 22, 0)],
+        day,
+        model,
+        now=datetime(2026, 9, 24, tzinfo=ZoneInfo("UTC")),
+        auto_break=True,
+    )
+    assert late["auto_break_minutes"] == 30
+    assert format_hm(late["work_hours"]) == "7:30"
+
+
 def test_break_rules_on_the_model_can_start_at_four_hours():
     from app.balance import format_hm
 

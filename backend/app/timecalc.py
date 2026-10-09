@@ -96,6 +96,43 @@ def _at_clock(day: date, value: str) -> datetime:
     return _as_minute(local)
 
 
+def fixed_break_for_day(model: object | None, day: date, shift_name: str | None) -> tuple[str, str] | None:
+    """Pause der erkannten Schicht. Ohne eigene Pause gilt die Pause des Modells."""
+    key = _WEEKDAYS[day.weekday()]
+    specified = False
+    chosen: tuple[str, str] | None = None
+    chosen_explicit = False
+    matched = False
+    for slot in _shift_data(model):
+        if not isinstance(slot, dict):
+            continue
+        days = slot.get("days") if isinstance(slot.get("days"), dict) else {}
+        cell = days.get(key) if isinstance(days, dict) else None
+        if not isinstance(cell, dict):
+            cell = {}
+        explicit = "pause_start" in cell or "pause_end" in cell
+        window = _pause_clock(cell) if explicit else None
+        if explicit:
+            specified = True
+        if shift_name is not None and str(slot.get("name") or "") == shift_name:
+            matched = True
+            chosen_explicit = explicit
+            chosen = window
+    if shift_name and matched and chosen_explicit:
+        return chosen
+    if specified:
+        return None
+    return fixed_break_window(model, day)
+
+
+def _pause_clock(cell: dict) -> tuple[str, str] | None:
+    start = str(cell.get("pause_start") or "").strip()
+    end = str(cell.get("pause_end") or "").strip()
+    if not start or not end or start >= end:
+        return None
+    return start, end
+
+
 def fixed_break_minutes(
     day: date,
     spans: list[tuple[datetime, datetime]],
@@ -713,7 +750,11 @@ def summarize_day(
     if auto_break and not still_open and use_fixed:
         # Hinterlegte Uhrzeit. Gearbeitet darin wird abgezogen, eine Stempelpause
         # außerhalb bleibt zusätzlich stehen.
-        owed = fixed_break_minutes(day, spans, stamped_break_intervals(events), fixed_break_window(model, day))
+        if has_shifts:
+            window = fixed_break_for_day(model, day, shift_names[0] if shift_names else "") if shift_names else None
+        else:
+            window = fixed_break_window(model, day)
+        owed = fixed_break_minutes(day, spans, stamped_break_intervals(events), window)
         if owed:
             auto_minutes = owed
             work_minutes -= owed

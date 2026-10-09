@@ -91,6 +91,8 @@ class StatusOut(BaseModel):
 class CorridorDay(BaseModel):
     start: Optional[str] = None
     end: Optional[str] = None
+    pause_start: Optional[str] = None
+    pause_end: Optional[str] = None
 
 
 class ShiftCorridor(BaseModel):

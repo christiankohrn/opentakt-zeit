@@ -151,6 +151,14 @@ def normalize_corridor(raw: dict | None) -> dict[str, dict[str, str]]:
     return out
 
 
+def _pause_pair(slot: object) -> tuple[str, str]:
+    if isinstance(slot, dict):
+        start, end = slot.get("pause_start"), slot.get("pause_end")
+    else:
+        start, end = getattr(slot, "pause_start", None), getattr(slot, "pause_end", None)
+    return (start or "").strip(), (end or "").strip()
+
+
 def _pair(slot: object) -> tuple[str, str]:
     if isinstance(slot, dict):
         start, end = slot.get("start"), slot.get("end")
@@ -190,7 +198,18 @@ def normalize_shifts(raw: list | None) -> list[dict]:
                 raise ValueError("Schicht braucht eine Uhrzeit HH:MM")
             if start == end:
                 raise ValueError("Beginn und Ende einer Schicht dürfen nicht gleich sein")
-            days[key] = {"start": start, "end": end}
+            cell = {"start": start, "end": end}
+            pause_start, pause_end = _pause_pair(value)
+            if pause_start or pause_end:
+                if not pause_start or not pause_end:
+                    raise ValueError("Jede hinterlegte Pause braucht Beginn und Ende")
+                if not _CLOCK.match(pause_start) or not _CLOCK.match(pause_end):
+                    raise ValueError("Hinterlegte Pause braucht eine Uhrzeit HH:MM")
+                if pause_start >= pause_end:
+                    raise ValueError("Das Ende der hinterlegten Pause muss nach dem Beginn liegen")
+                cell["pause_start"] = pause_start
+                cell["pause_end"] = pause_end
+            days[key] = cell
         name = (name or "").strip()
         if not name and not days:
             continue
