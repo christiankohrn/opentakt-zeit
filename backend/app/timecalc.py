@@ -726,10 +726,15 @@ def summarize_day(
                     shift_names.append(name)
             if active_bounds is not None:
                 t = credit_start(t, model, day, active_bounds, comp_time=comp_time and p is first_in_punch)
+            elif p is first_in_punch:
+                # Kein Korridor: die erste Buchung wird trotzdem gerastert, nichts abgeschnitten.
+                t = credit_start(t, model, day, (None, None), comp_time=comp_time)
         elif model is not None and p is first_in_punch and not has_shifts:
             t = credit_start(t, model, day, comp_time=comp_time)
         elif p.kind == "out" and has_shifts and active_bounds is not None:
             t = credit_end(t, model, day, active_bounds)
+        elif p.kind == "out" and has_shifts and active_bounds is None and p is last_out_punch:
+            t = credit_end(t, model, day, (None, None))
         elif model is not None and p is last_out_punch and not has_shifts:
             t = credit_end(t, model, day)
         if p.kind == "in":

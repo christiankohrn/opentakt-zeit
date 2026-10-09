@@ -1360,6 +1360,49 @@ def test_two_pauses_inside_one_day_count_only_the_closer_shift():
     assert format_hm(result["work_hours"]) == "15:30"
 
 
+def test_first_booking_still_rounds_when_the_shift_has_only_a_pause():
+    """01.09. und 04.09.: 06:56 → 07:00, 06:35 → 06:45, Ende bleibt, Pause 30."""
+    from app.balance import format_hm
+
+    model = _pause_only_model(
+        {
+            "Früh": {
+                "tue": {"pause_start": "12:00", "pause_end": "12:30"},
+                "fri": {"pause_start": "12:00", "pause_end": "12:30"},
+            },
+            "Spät": {
+                "tue": {"pause_start": "19:30", "pause_end": "20:00"},
+                "fri": {"pause_start": "19:30", "pause_end": "20:00"},
+            },
+        }
+    )
+    model.round_first_threshold = 2
+    model.round_first_step = 15
+    tuesday = summarize_day(
+        [_p_on(date(2026, 9, 1), "in", 6, 56), _p_on(date(2026, 9, 1), "out", 15, 0)],
+        date(2026, 9, 1),
+        model,
+        now=datetime(2026, 9, 2, tzinfo=ZoneInfo("UTC")),
+        auto_break=True,
+    )
+    assert tuesday["first_in"] == "07:00"
+    assert tuesday["last_out"] == "15:00"
+    assert tuesday["shift"] == "Früh"
+    assert format_hm(tuesday["work_hours"]) == "7:30"
+    assert format_hm(tuesday["delta_hours"], signed=True) == "-0:06"
+    friday = summarize_day(
+        [_p_on(date(2026, 9, 4), "in", 6, 35), _p_on(date(2026, 9, 4), "out", 14, 37)],
+        date(2026, 9, 4),
+        model,
+        now=datetime(2026, 9, 5, tzinfo=ZoneInfo("UTC")),
+        auto_break=True,
+    )
+    assert friday["first_in"] == "06:45"
+    assert friday["last_out"] == "14:37"
+    assert format_hm(friday["work_hours"]) == "7:22"
+    assert format_hm(friday["delta_hours"], signed=True) == "-0:14"
+
+
 def test_break_rules_on_the_model_can_start_at_four_hours():
     from app.balance import format_hm
 
