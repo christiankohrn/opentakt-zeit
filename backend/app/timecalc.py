@@ -140,9 +140,11 @@ def window_break_minutes(
 
     Eine Schwelle gilt erst, wenn die Arbeitszeit sie überschreitet. Wer im Fenster
     noch anwesend ist und danach weiterarbeitet, verliert die volle Pause. Eine
-    Lücke am Anfang des Fensters kürzt sie nicht. Wer im Fenster Feierabend macht,
-    verliert nur die Zeit bis zum Gehen. Die höhere Schwelle ersetzt die niedrigere
-    erst, wenn ihr Fenster mehr Minuten trifft.
+    Lücke am Anfang des Fensters kürzt sie nicht. Die Minuten nach dem Fenster
+    bleiben Arbeit: reicht die Zeit nicht für die volle Pause, bleibt die Ist-Zeit
+    auf der Schwelle. Wer im Fenster Feierabend macht, verliert nur die Zeit bis
+    zum Gehen. Die höhere Schwelle ersetzt die niedrigere erst, wenn ihr Fenster
+    mehr Minuten trifft.
     """
     if anchor is None:
         return 0
@@ -158,9 +160,14 @@ def window_break_minutes(
         if covered <= 0:
             continue
         if last_out is not None and last_out >= window_end:
-            owed = max(owed, need)
+            step_owed = need
         else:
-            owed = max(owed, covered)
+            step_owed = covered
+        # Nach dem Fenster geleistete Minuten bleiben erhalten. Sonst fiele die
+        # Ist-Zeit unter die Schwelle, die die Pause überhaupt geöffnet hat.
+        if last_out is not None and last_out > window_end:
+            step_owed = min(step_owed, work_minutes - after)
+        owed = max(owed, step_owed)
     return owed
 
 

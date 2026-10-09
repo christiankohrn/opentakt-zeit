@@ -362,8 +362,8 @@ def test_auto_break_follows_the_six_and_nine_hour_steps():
         now=datetime(2026, 9, 18, tzinfo=ZoneInfo("UTC")),
         auto_break=True,
     )
-    assert split["auto_break_minutes"] == 30
-    assert format_hm(split["work_hours"]) == "5:43"
+    assert split["auto_break_minutes"] == 13
+    assert format_hm(split["work_hours"]) == "6:00"
 
     nine = span(date(2026, 9, 7), (7, 20), (16, 38))
     assert nine["auto_break_minutes"] == 30
@@ -1053,6 +1053,36 @@ def test_pause_window_stays_full_when_work_continues_after_a_short_gap():
     assert format_hm(result["work_hours"]) == "6:45"
     assert format_hm(result["delta_hours"], signed=True) == "-0:51"
     assert "break_short:30:4" not in result["warnings"]
+
+
+def test_pause_stops_at_the_threshold_when_only_minutes_follow_the_window():
+    """15.08.: 4:28 Arbeit, Fenster voll, zwei Minuten danach. Ist bleibt 4:00."""
+    from app.balance import format_hm
+
+    day = date(2026, 8, 15)
+    model = _rounded_model(
+        round_first_step=0,
+        round_first_threshold=0,
+        break_rules=json.dumps([{"after_hours": 4, "minutes": 30}]),
+    )
+    result = summarize_day(
+        [
+            _p_on(day, "in", 7, 2),
+            _p_on(day, "out", 10, 2),
+            _p_on(day, "in", 10, 6),
+            _p_on(day, "out", 11, 34),
+        ],
+        day,
+        model,
+        now=datetime(2026, 8, 16, tzinfo=ZoneInfo("UTC")),
+        auto_break=True,
+    )
+    assert result["first_in"] == "07:02"
+    assert result["last_out"] == "11:34"
+    assert result["auto_break_minutes"] == 28
+    assert format_hm(result["work_hours"]) == "4:00"
+    assert format_hm(result["delta_hours"], signed=True) == "+4:00"
+    assert result["warnings"] == []
 
 
 def _break_model(rules: list[dict]):
