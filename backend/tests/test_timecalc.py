@@ -957,6 +957,34 @@ def test_break_window_sits_on_the_rounded_start():
     assert format_hm(result["delta_hours"], signed=True) == "-1:43"
 
 
+def test_nine_hour_window_stays_closed_until_work_reaches_it():
+    """31.08.: 8:55 Arbeit, Uhr schon bei Beginn plus 9 Stunden. Pause bleibt 30."""
+    from app.balance import format_hm
+
+    day = date(2026, 8, 31)
+    result = summarize_day(
+        [
+            _p_on(day, "in", 6, 4),
+            _p_on(day, "out", 8, 6),
+            _p_on(day, "in", 8, 14),
+            _p_on(day, "out", 10, 41),
+            _p_on(day, "break_start", 10, 41),
+            _p_on(day, "break_end", 11, 9),
+            _p_on(day, "in", 11, 9),
+            _p_on(day, "out", 15, 46),
+        ],
+        day,
+        _rounded_model(),
+        now=datetime(2026, 9, 1, tzinfo=ZoneInfo("UTC")),
+        auto_break=True,
+    )
+    assert result["first_in"] == "06:15"
+    assert result["auto_break_minutes"] == 2
+    assert format_hm(result["break_hours"]) == "0:30"
+    assert format_hm(result["work_hours"]) == "8:53"
+    assert format_hm(result["delta_hours"], signed=True) == "+1:17"
+
+
 def test_break_window_in_a_gap_is_not_deducted():
     from app.balance import format_hm
 

@@ -132,10 +132,13 @@ def window_break_minutes(
     anchor: datetime | None,
     spans: list[tuple[datetime, datetime]],
     breaks: list[tuple[datetime, datetime]],
+    work_minutes: int,
     steps: list[tuple[int, int]] | None = None,
 ) -> int:
     """Mindestpause als Uhrzeitfenster: Beginn plus Schwelle, Dauer der hinterlegten Pause.
 
+    Eine Schwelle gilt erst, wenn die Arbeitszeit sie überschreitet. Lücken und
+    gestempelte Pausen schieben das hinaus, auch wenn die Uhr schon weiter ist.
     Anwesenheit im Fenster zählt, eine gestempelte Pause darin auch. Wer vor dem
     Fensterende geht, verliert nur diese Minuten. Die höhere Schwelle ersetzt die
     niedrigere erst, wenn ihr Fenster mehr Minuten trifft.
@@ -146,6 +149,8 @@ def window_break_minutes(
     blocks = [*spans, *breaks]
     owed = 0
     for after, need in rules:
+        if work_minutes <= after:
+            continue
         window_start = anchor + timedelta(minutes=after)
         owed = max(owed, _covered_minutes(blocks, window_start, window_start + timedelta(minutes=need)))
     return owed
@@ -641,7 +646,9 @@ def summarize_day(
     if auto_break and not still_open:
         # Gestempelte Minuten zählen auf das Fenster an. Ist die Stempelpause
         # länger, bleibt sie stehen und es wird nichts zusätzlich abgezogen.
-        required = window_break_minutes(first_in, spans, stamped_break_intervals(events), steps)
+        required = window_break_minutes(
+            first_in, spans, stamped_break_intervals(events), work_minutes, steps
+        )
         if pause_minutes < required:
             auto_minutes = required - pause_minutes
             work_minutes -= auto_minutes
