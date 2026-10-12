@@ -53,11 +53,24 @@ def test_planner_days_all_kinds_and_quota(client):
     assert body["as_of"] == "2026-06-30"
     (row,) = body["people"]
     assert row["display_name"] == "Plan, Eva"
-    assert row["vacation_allowance"] == 30
+    # Anspruch = 30 Jahresurlaub − 2 Korrektur.
+    assert row["vacation_allowance"] == 28
     # Genommen: 2 (Feb) + 0 (März-Wochenende) = 2; geplant: 1 (Nov).
     assert row["vacation_taken"] == 2
     assert row["vacation_planned"] == 1
-    assert row["vacation_remaining"] == 25  # 30 - 2 - 1 - 2
+    assert row["vacation_remaining"] == 25  # 28 - 2 - 1
+    carry = client.post(
+        f"/api/hr/users/{person['id']}/ledger",
+        json={"kind": "vacation", "day": "2026-01-01", "amount": 3, "reason": "Resturlaub aus 2025"},
+    )
+    assert carry.status_code == 200, carry.text
+    with_carry = _planner(
+        client,
+        f"from=2026-02-01&to=2026-02-28&as_of=2026-06-30&user_ids={person['id']}",
+    )
+    carried = with_carry["people"][0]
+    assert carried["vacation_allowance"] == 31  # 30 - 2 + 3
+    assert carried["vacation_remaining"] == 28
     kinds = {(day["day"], day["kind"]) for day in row["days"]}
     assert ("2026-02-02", "vacation") in kinds
     assert ("2026-02-03", "vacation") in kinds

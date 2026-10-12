@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { User } from "../api";
 import { IconChevron } from "./Icons";
-import SearchField from "./SearchField";
+import SearchField, { searchHitClass, searchHitId, useSearchCursor } from "./SearchField";
 
 export default function PersonSwitcher({
   users,
@@ -22,6 +22,10 @@ export default function PersonSwitcher({
   const box = useRef<HTMLDivElement>(null);
   const index = users.findIndex((u) => u.id === currentId);
   const current = index >= 0 ? users[index] : null;
+  const listId = "person-switcher";
+  const [activeIndex, setActiveIndex] = useSearchCursor(
+    `${open}|${query}|${users.map((user) => user.id).join(",")}`,
+  );
 
   useEffect(() => {
     function close(event: MouseEvent) {
@@ -75,25 +79,32 @@ export default function PersonSwitcher({
             <SearchField
               fill
               autoFocus
-              selectOnFocus
               className="mb-2"
               value={query}
               onChange={onQueryChange}
               onClear={onClear}
               placeholder="Name suchen"
+              listId={listId}
+              resultCount={users.length}
+              activeIndex={activeIndex}
+              onActiveIndexChange={setActiveIndex}
+              onPickResult={(hit) => users[hit] && pick(users[hit].id)}
             />
             {users.length === 0 ? (
               <p className="px-1 py-2 text-sm text-muted">Keine Personen in dieser Auswahl.</p>
             ) : null}
-            <ul role="listbox">
-              {users.map((u) => (
+            <ul id={listId} role="listbox">
+              {users.map((u, hit) => (
                 <li key={u.id}>
                   <button
                     type="button"
+                    id={searchHitId(listId, hit)}
+                    data-search-hit={searchHitId(listId, hit)}
                     role="option"
-                    aria-selected={u.id === currentId}
+                    aria-selected={hit === activeIndex}
+                    onMouseEnter={() => setActiveIndex(hit)}
                     onClick={() => pick(u.id)}
-                    className={`w-full truncate rounded-lg px-2 py-1.5 text-left text-sm hover:bg-bg ${
+                    className={`w-full truncate rounded-lg px-2 py-1.5 text-left text-sm hover:bg-bg ${searchHitClass(hit === activeIndex)} ${
                       u.id === currentId ? "font-medium text-present" : ""
                     }`}
                   >

@@ -294,8 +294,10 @@ def vacation_planner_report(
         allowance = user.vacation_days_year
         remaining = None
         if allowance is not None:
+            # Resturlaub und Korrekturen gehören zum Anspruch, nicht nur in den Rest.
             booked = vacation_days(db, user.id, year_start, year_end)
-            remaining = float(allowance) - taken - planned + booked
+            allowance = float(allowance) + booked
+            remaining = allowance - taken - planned
         out.append(
             {
                 "user_id": user.id,

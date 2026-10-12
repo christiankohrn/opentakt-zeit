@@ -1,12 +1,12 @@
 import { FormEvent, useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, type Department, type FlexBalance, type User, type WorkModel } from "../api";
 import { useAuth } from "../auth";
 import FieldError from "../components/FieldError";
 import LoadingNote from "../components/LoadingNote";
 import InactiveToggle from "../components/InactiveToggle";
 import MonthStepper from "../components/MonthStepper";
-import SearchField, { matchesQuery } from "../components/SearchField";
+import SearchField, { matchesQuery, searchHitClass, searchHitId, useSearchCursor } from "../components/SearchField";
 import PasswordField from "../components/PasswordField";
 import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
 import { hoursTone, isoDate, signedHours } from "../labels";
@@ -77,6 +77,7 @@ export default function HrUsers() {
   const { user: me } = useAuth();
   const isAdmin = me?.role === "admin";
   const canManage = me?.role === "hr" || me?.role === "admin";
+  const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const month = params.get("month") || sessionMonth();
   const deptFilter = params.get("dept") || "";
@@ -139,6 +140,15 @@ export default function HrUsers() {
       u.transponder_id,
     ]);
   });
+  const listId = "people-list";
+  const [activeIndex, setActiveIndex] = useSearchCursor(
+    `${query}|${deptFilter}|${showInactive ? "1" : "0"}|${visible.map((user) => user.id).join(",")}`,
+  );
+
+  function openPerson(index: number) {
+    const person = visible[index];
+    if (person) navigate(personLink(person.id));
+  }
 
   async function load() {
     setLoading(true);
@@ -291,7 +301,17 @@ export default function HrUsers() {
       <div className="sticky top-[env(safe-area-inset-top)] z-10 flex flex-wrap items-center justify-between gap-3 border-b border-line bg-bg py-2 print:static">
         <h1 className="text-xl font-medium">Personal</h1>
         <div className="flex flex-wrap items-center gap-2">
-          <SearchField value={query} onChange={setQuery} onClear={() => setQuery("")} placeholder="Name, Transponder" />
+          <SearchField
+            value={query}
+            onChange={setQuery}
+            onClear={() => setQuery("")}
+            placeholder="Name, Transponder"
+            listId={listId}
+            resultCount={loading ? 0 : visible.length}
+            activeIndex={activeIndex}
+            onActiveIndexChange={setActiveIndex}
+            onPickResult={openPerson}
+          />
           {departments.length > 0 || deptFilter ? (
             <select
               className="filter-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
@@ -582,11 +602,11 @@ export default function HrUsers() {
       {!loading ? (
         <>
       <ul className="mt-4 space-y-2 md:hidden">
-        {visible.map((u) => {
+        {visible.map((u, hit) => {
           const flex = balances[u.id];
           return (
-            <li key={u.id}>
-              <Link to={personLink(u.id)} className="block rounded-2xl border border-line bg-card px-4 py-3">
+            <li key={u.id} id={searchHitId(listId, hit)} data-search-hit={searchHitId(listId, hit)}>
+              <Link to={personLink(u.id)} className={`block rounded-2xl border border-line bg-card px-4 py-3 ${searchHitClass(hit === activeIndex)}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="font-medium">{u.display_name}</p>
@@ -639,10 +659,14 @@ export default function HrUsers() {
             </tr>
           </thead>
           <tbody>
-            {visible.map((u) => {
+            {visible.map((u, hit) => {
               const flex = balances[u.id];
               return (
-                <tr key={u.id} className="border-t border-line bg-card">
+                <tr
+                  key={u.id}
+                  data-search-hit={searchHitId(listId, hit)}
+                  className={`border-t border-line ${hit === activeIndex ? "bg-present/10" : "bg-card"}`}
+                >
                   <td className="px-4 py-2.5">
                     <Link to={personLink(u.id)} className="font-medium text-present">
                       {u.display_name}

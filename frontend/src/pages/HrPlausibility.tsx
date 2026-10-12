@@ -1,13 +1,14 @@
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { api, type Department } from "../api";
 import InactiveToggle from "../components/InactiveToggle";
 import LoadingNote from "../components/LoadingNote";
-import SearchField, { matchesQuery } from "../components/SearchField";
+import SearchField, { matchesQuery, searchHitClass, searchHitId, useSearchCursor } from "../components/SearchField";
 import { formatDayLabel, warnLabel } from "../labels";
 import { rememberMonth, sessionMonth } from "../reportPeriod";
 
 export default function HrPlausibility() {
+  const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const month = params.get("month") || sessionMonth();
   const userFilter = params.get("user");
@@ -66,14 +67,34 @@ export default function HrPlausibility() {
     if (deptFilter && deptFilter !== "none" && String(p.user.department_id) !== deptFilter) return false;
     return matchesQuery(query, [p.user.display_name, p.user.username, p.user.department_name, p.model_name]);
   });
+  const listId = "plausibility-list";
+  const [activeIndex, setActiveIndex] = useSearchCursor(
+    `${query}|${deptFilter}|${showInactive ? "1" : "0"}|${month}|${visible.map((person) => person.user.id).join(",")}`,
+  );
   const filteredName = visible[0]?.user.display_name;
+
+  function openPerson(index: number) {
+    const person = visible[index];
+    if (!person) return;
+    navigate(`/personal/${person.user.id}?from=pruefung&month=${month}`);
+  }
 
   return (
     <div className="pt-2">
       <div className="sticky top-[env(safe-area-inset-top)] z-10 flex flex-wrap items-center justify-between gap-3 border-b border-line bg-bg py-2 print:static">
         <h1 className="text-xl font-medium">Prüfung</h1>
         <div className="flex flex-wrap items-center gap-2">
-          <SearchField value={query} onChange={setQuery} onClear={() => setQuery("")} placeholder="Person suchen" />
+          <SearchField
+            value={query}
+            onChange={setQuery}
+            onClear={() => setQuery("")}
+            placeholder="Person suchen"
+            listId={listId}
+            resultCount={loading ? 0 : visible.length}
+            activeIndex={activeIndex}
+            onActiveIndexChange={setActiveIndex}
+            onPickResult={openPerson}
+          />
           {departments.length > 0 || deptFilter ? (
             <select
               className="filter-compact shrink-0 rounded-lg border border-line bg-card px-2 py-1 text-sm"
@@ -126,9 +147,14 @@ export default function HrPlausibility() {
               : "Keine Auffälligkeiten in diesem Monat."}
         </p>
       ) : (
-        <ul className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {visible.map((p) => (
-            <li key={p.user.id} className="overflow-hidden rounded-2xl border border-danger/25 bg-card">
+        <ul id={listId} className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {visible.map((p, hit) => (
+            <li
+              key={p.user.id}
+              id={searchHitId(listId, hit)}
+              data-search-hit={searchHitId(listId, hit)}
+              className={`overflow-hidden rounded-2xl border border-danger/25 bg-card ${searchHitClass(hit === activeIndex)}`}
+            >
               <div className="flex items-start justify-between gap-3 border-b border-line px-4 py-3">
                 <div className="min-w-0">
                   <Link

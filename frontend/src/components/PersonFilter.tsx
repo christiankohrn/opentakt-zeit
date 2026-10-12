@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { User } from "../api";
-import SearchField, { matchesQuery } from "./SearchField";
+import SearchField, { matchesQuery, searchHitClass, searchHitId, useSearchCursor } from "./SearchField";
 
 type Group = { key: string; name: string; users: User[] };
 
@@ -43,6 +43,17 @@ export default function PersonFilter({
   const groups = groupUsers(shown);
   const allGroups = groupUsers(users);
   const showGroups = allGroups.some((g) => g.key !== "none") || allGroups.length > 1;
+  const ordered = showGroups ? groups.flatMap((group) => group.users) : shown;
+  const listId = "person-filter";
+  const [activeIndex, setActiveIndex] = useSearchCursor(
+    `${open}|${query}|${ordered.map((user) => user.id).join(",")}`,
+  );
+
+  function pickListed(index: number) {
+    const user = ordered[index];
+    if (!user) return;
+    onChange([user.id]);
+  }
 
   useEffect(() => {
     function close(event: MouseEvent) {
@@ -110,14 +121,21 @@ export default function PersonFilter({
           </div>
           <SearchField
             fill
+            autoFocus
             className="mb-2"
             value={query}
             onChange={setQuery}
             placeholder="Name suchen"
+            listId={listId}
+            resultCount={ordered.length}
+            activeIndex={activeIndex}
+            onActiveIndexChange={setActiveIndex}
+            onPickResult={pickListed}
           />
           {shown.length === 0 ? (
             <p className="px-1 py-2 text-sm text-muted">Keine Personen in dieser Auswahl.</p>
           ) : null}
+          <div id={listId} role="listbox">
           {showGroups
             ? groups.map((group) => {
                 const ids = group.users.map((u) => u.id);
@@ -137,21 +155,37 @@ export default function PersonFilter({
                       <span>{group.name}</span>
                       <span className="ml-auto text-xs font-normal text-muted">{ids.length}</span>
                     </label>
-                    {group.users.map((user) => (
-                      <label key={user.id} className="flex items-center gap-2 rounded-lg py-1 pl-6 pr-1 text-sm hover:bg-bg">
-                        <input type="checkbox" checked={selectedSet.has(user.id)} onChange={() => toggle(user.id)} />
-                        <span>{user.display_name}</span>
-                      </label>
-                    ))}
+                    {group.users.map((user) => {
+                      const hit = ordered.findIndex((entry) => entry.id === user.id);
+                      return (
+                        <label
+                          key={user.id}
+                          id={searchHitId(listId, hit)}
+                          data-search-hit={searchHitId(listId, hit)}
+                          onMouseEnter={() => setActiveIndex(hit)}
+                          className={`flex items-center gap-2 rounded-lg py-1 pl-6 pr-1 text-sm hover:bg-bg ${searchHitClass(hit === activeIndex)}`}
+                        >
+                          <input type="checkbox" checked={selectedSet.has(user.id)} onChange={() => toggle(user.id)} />
+                          <span>{user.display_name}</span>
+                        </label>
+                      );
+                    })}
                   </div>
                 );
               })
-            : shown.map((user) => (
-                <label key={user.id} className="flex items-center gap-2 rounded-lg px-1 py-1.5 text-sm hover:bg-bg">
+            : shown.map((user, hit) => (
+                <label
+                  key={user.id}
+                  id={searchHitId(listId, hit)}
+                  data-search-hit={searchHitId(listId, hit)}
+                  onMouseEnter={() => setActiveIndex(hit)}
+                  className={`flex items-center gap-2 rounded-lg px-1 py-1.5 text-sm hover:bg-bg ${searchHitClass(hit === activeIndex)}`}
+                >
                   <input type="checkbox" checked={selectedSet.has(user.id)} onChange={() => toggle(user.id)} />
                   <span>{user.display_name}</span>
                 </label>
               ))}
+          </div>
         </div>
       ) : null}
     </div>
