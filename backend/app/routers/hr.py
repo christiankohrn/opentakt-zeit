@@ -78,7 +78,7 @@ from app.security_policy import POLICY_ROLES, POLICY_VALUES, get_policies, passk
 from app.holidays import STATES, bundesland_of, calendar_map
 from app.mail import MailError, apply_smtp, has_open_invite, normalize_email, send_access_mail, send_test_mail, smtp_ready, smtp_status, valid_email
 from app.reports import safe_csv_cell
-from app.timecalc import punches_window_for_month
+from app.timecalc import PunchIndex, punches_window_for_month
 from app.workmodels import (
     CLOSED_NOTICE,
     closed_month_count,
@@ -1411,7 +1411,7 @@ def accept_day(
     if not user:
         raise HTTPException(404, "Nicht gefunden")
     q_start, q_end = punches_window_for_month(day, day)
-    punches = list(
+    punches = PunchIndex(
         db.scalars(
             select(Punch)
             .where(Punch.user_id == user_id, Punch.server_time >= q_start, Punch.server_time < q_end)
@@ -1871,7 +1871,7 @@ def balances(
     today = as_local(now_utc()).date()
     people = []
     for user in users:
-        punches = list(
+        punches = PunchIndex(
             db.scalars(
                 select(Punch)
                 .where(Punch.user_id == user.id, Punch.server_time >= q_start, Punch.server_time < q_end)
@@ -1938,7 +1938,7 @@ def plausibility(
     cal = calendar_map(db, start, last)
     rows = []
     for user in users:
-        punches = list(
+        punches = PunchIndex(
             db.scalars(
                 select(Punch)
                 .where(Punch.user_id == user.id, Punch.server_time >= q_start, Punch.server_time < q_end)
@@ -2039,7 +2039,7 @@ def export_csv(
     writer = csv.writer(buf, delimiter=";")
     writer.writerow(["Name", "Datum", "Kommen", "Gehen", "Ist", "Pause", "Soll", "Konto", "Abwesenheit", "Hinweise"])
     for user in users:
-        punches = list(
+        punches = PunchIndex(
             db.scalars(
                 select(Punch)
                 .where(Punch.user_id == user.id, Punch.server_time >= q_start, Punch.server_time < q_end)

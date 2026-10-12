@@ -7,12 +7,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.auth import as_local, now_utc
-from app.balance import days_in_range, hired_on, is_employed, load_day_model_map, month_days
+from app.balance import hired_on, is_employed, load_day_model_map, load_day_models, month_days, resolve_model
 from app.holidays import calendar_map
 from app.models import Absence, AccountEntry, Punch, User
 from app.names import name_sort_key
-from app.timecalc import punches_window_for_month, soll_hours, work_intervals
-from app.workmodels import load_frozen_map, load_timelines, model_for, overlay_model
+from app.timecalc import PunchIndex, punches_window_for_month, soll_hours, work_intervals
+from app.workmodels import load_frozen_map, load_timeline, load_timelines, model_for, overlay_model
 
 JUBILEE_YEARS = (10, 25, 40)
 NIGHT_WINDOWS = (
@@ -325,6 +325,52 @@ def vacation_planner_report(
     }
 
 
+def absence_counts(
+    db: Session,
+    user: User,
+    year_start: date,
+    year_end: date,
+    prev_last: date,
+    as_of: date,
+) -> tuple[int, int, int, int, int]:
+    """Urlaub/Krankheit direkt aus den Abwesenheiten statt über Tagessummen.
+
+    Zählt exakt wie die bisherige Jahresschleife: nur in der Anstellung, nur im
+    Jahr, Urlaub nur mit Sollzeit (Wochenenden und Feiertage zehren nicht).
+    """
+    timeline = load_timeline(db, user.id)
+    cal = calendar_map(db, year_start, year_end)
+    frozen = load_frozen_map(db, [user.id])
+    day_models = load_day_models(db, user.id, year_start, year_end)
+    rows = db.scalars(
+        select(Absence).where(Absence.user_id == user.id, Absence.day >= year_start, Absence.day <= year_end)
+    )
+    vac_prev = vac_ytd = vac_year = 0
+    sick_prev = sick_ytd = 0
+    for row in rows:
+        day = row.day
+        if not is_employed(user, day):
+            continue
+        if row.kind == "vacation":
+            model = resolve_model(user, day, timeline, frozen.get((user.id, day.year, day.month)), day_models.get(day))
+            if soll_hours(model, day) <= 0:
+                continue
+            entry = cal.get(day)
+            if entry is not None and entry.kind in {"holiday", "company_off"}:
+                continue
+            vac_year += 1
+            if day <= prev_last:
+                vac_prev += 1
+            if day <= as_of:
+                vac_ytd += 1
+        elif row.kind == "sick":
+            if day <= prev_last:
+                sick_prev += 1
+            if day <= as_of:
+                sick_ytd += 1
+    return vac_prev, vac_ytd, vac_year, sick_prev, sick_ytd
+
+
 def person_month_snapshot(
     db: Session,
     user: User,
@@ -350,29 +396,7 @@ def person_month_snapshot(
 
     flex_prev = flex_as_of(db, user, min(prev_last, hours_until))
     flex_month = month_delta(db, user, start.year, start.month, hours_until)
-    days = days_in_range(db, user, year_start, hist_last)
-    vac_prev = vac_ytd = vac_year = 0
-    sick_prev = sick_ytd = 0
-    for summary in days:
-        day = date.fromisoformat(str(summary["date"]))
-        kind = ((summary.get("absence") or {}) or {}).get("kind") or ""
-        if not is_employed(user, day) or day < year_start or day > year_end:
-            continue
-        if kind == "vacation" and float(summary.get("soll_hours") or 0) <= 0:
-            # Weekends and public holidays carry no target hours: booked rows
-            # stay visible on the day, but consume no vacation quota.
-            continue
-        if kind == "vacation":
-            vac_year += 1
-            if day <= prev_last:
-                vac_prev += 1
-            if day <= as_of:
-                vac_ytd += 1
-        elif kind == "sick":
-            if day <= prev_last:
-                sick_prev += 1
-            if day <= as_of:
-                sick_ytd += 1
+    vac_prev, vac_ytd, vac_year, sick_prev, sick_ytd = absence_counts(db, user, year_start, year_end, prev_last, as_of)
     vac_month = vac_ytd - vac_prev
     vac_planned = vac_year - vac_ytd
     allowance = user.vacation_days_year
@@ -500,7 +524,7 @@ def night_hours_report(db: Session, month: str, now: datetime | None = None, use
     q_start, q_end = punches_window_for_month(start, last)
     rows = []
     for user in people:
-        punches = list(
+        punches = PunchIndex(
             db.scalars(
                 select(Punch)
                 .where(Punch.user_id == user.id, Punch.server_time >= q_start, Punch.server_time < q_end)

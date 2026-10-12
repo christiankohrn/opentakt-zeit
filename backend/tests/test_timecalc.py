@@ -1577,3 +1577,28 @@ def test_outside_employment_zeroes_account():
     assert day["soll_hours"] == 0
     assert day["delta_hours"] == 0
     assert "missing_day" not in day["warnings"]
+
+
+def test_punch_index_matches_plain_list():
+    from app.timecalc import PunchIndex
+
+    days = [date(2026, 8, 6), date(2026, 8, 7), date(2026, 8, 8), date(2026, 8, 9)]
+    punches = [
+        _p_on(days[0], "in", 8, 0),
+        _p_on(days[0], "break_start", 12, 0),
+        _p_on(days[0], "break_end", 12, 30),
+        _p_on(days[0], "out", 16, 30),
+        _p_on(days[1], "in", 22, 0),
+        _p_on(days[2], "out", 6, 10),
+    ]
+    voided = _p_on(days[0], "in", 9, 0)
+    voided.voided_at = datetime(2026, 8, 6, 12, tzinfo=ZoneInfo("UTC"))
+    punches.append(voided)
+    punches.append(_p_on(days[0], "out", 16, 30))
+    now = datetime(2026, 8, 9, 12, tzinfo=ZoneInfo("UTC"))
+    models = [None, _rounded_model(shifts=_three_shifts(), round_first_step=0, round_first_threshold=0)]
+    index = PunchIndex(punches)
+    for model in models:
+        for day in days:
+            assert summarize_day(index, day, model, now=now) == summarize_day(list(punches), day, model, now=now)
+            assert work_intervals(index, day, now=now) == work_intervals(list(punches), day, now=now)

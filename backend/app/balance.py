@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.auth import as_local, now_utc
 from app.holidays import calendar_map
 from app.models import Absence, DayModel, Punch, User, WorkModel
-from app.timecalc import punches_window_for_month, summarize_day
+from app.timecalc import PunchIndex, punches_window_for_month, summarize_day
 from app.workmodels import load_frozen_map, load_timeline, model_for, overlay_model
 
 
@@ -34,6 +34,18 @@ def employment_end(user: User, today: date) -> date:
     return today
 
 
+def resolve_model(user: User, day: date, timeline, frozen: dict | None = None, model_override=None):
+    """Arbeitsmodell für den Tag: Tagesmodell, Verlauf, Standard, eingefrorene Regeln."""
+    if not is_employed(user, day):
+        return None
+    model = model_override if model_override is not None else model_for(timeline, day, user.work_model)
+    if model is not None and frozen:
+        fields = frozen.get(str(model.id))
+        if isinstance(fields, dict):
+            model = overlay_model(model, fields)
+    return model
+
+
 def summarize_user_day(
     user: User,
     punches,
@@ -45,13 +57,7 @@ def summarize_user_day(
     model_override: WorkModel | None = None,
 ) -> dict:
     employed = is_employed(user, day)
-    model = None
-    if employed:
-        model = model_override if model_override is not None else model_for(timeline, day, user.work_model)
-    if model is not None and frozen:
-        fields = frozen.get(str(model.id))
-        if isinstance(fields, dict):
-            model = overlay_model(model, fields)
+    model = resolve_model(user, day, timeline, frozen, model_override)
     summary = summarize_day(
         punches,
         day,
@@ -104,7 +110,7 @@ def days_in_range(db: Session, user: User, start: date, last: date) -> list[dict
         return []
     end = last + timedelta(days=1)
     q_start, q_end = punches_window_for_month(start, last)
-    punches = list(
+    punches = PunchIndex(
         db.scalars(
             select(Punch)
             .where(Punch.user_id == user.id, Punch.server_time >= q_start, Punch.server_time < q_end)
