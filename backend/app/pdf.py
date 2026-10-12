@@ -103,6 +103,8 @@ class ReportPDF(FPDF):
         self.cell(self.epw, 6, f"{PRODUCT_NAME}  ·  Seite {self.page_no()}/{{nb}}", align="C")
 
     def _fit(self, text: str, width: float) -> str:
+        if self.font_name != "Report":
+            text = text.replace("\u2014", "-").replace("\u2013", "-")
         ellipsis = "..."
         if self.get_string_width(text) <= width - 1.4:
             return text

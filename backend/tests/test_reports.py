@@ -543,3 +543,32 @@ def test_work_intervals_split_overnight():
     morning_hours = sum((b - a).total_seconds() for a, b in morning) / 3600
     assert abs(night_hours - 2.0) < 0.05
     assert abs(morning_hours - 6.0) < 0.05
+
+
+def test_school_and_future_comp_time_can_be_booked(client):
+    login(client)
+    person = users_by_name(client)["mitarbeiter"]
+    comp_day = "2027-01-13"
+    school_day = "2027-01-14"
+    try:
+        comp = client.post(
+            f"/api/hr/users/{person['id']}/absences",
+            json={"kind": "comp_time", "start": comp_day, "end": comp_day},
+        )
+        assert comp.status_code == 200, comp.text
+        school = client.post(
+            f"/api/hr/users/{person['id']}/absences",
+            json={"kind": "school", "start": school_day, "end": school_day},
+        )
+        assert school.status_code == 200, school.text
+        days = client.get(f"/api/hr/users/{person['id']}/days?month=2027-01").json()["days"]
+        comp_row = next(row for row in days if row["date"] == comp_day)
+        school_row = next(row for row in days if row["date"] == school_day)
+        assert comp_row["absence"]["kind"] == "comp_time"
+        assert comp_row["delta_hours"] < 0
+        assert comp_row["warnings"] == []
+        assert school_row["absence"]["kind"] == "school"
+        assert school_row["delta_hours"] == 0
+    finally:
+        client.delete(f"/api/hr/users/{person['id']}/absences/{comp_day}")
+        client.delete(f"/api/hr/users/{person['id']}/absences/{school_day}")

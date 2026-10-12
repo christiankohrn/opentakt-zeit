@@ -1,3 +1,4 @@
+import type { FocusEvent, MouseEvent } from "react";
 import { IconSearch } from "./Icons";
 
 export function matchesQuery(query: string, parts: Array<string | number | null | undefined>) {
@@ -17,6 +18,7 @@ export default function SearchField({
   className = "",
   fill = false,
   autoFocus = false,
+  selectOnFocus = false,
   onClear,
 }: {
   value: string;
@@ -25,8 +27,13 @@ export default function SearchField({
   className?: string;
   fill?: boolean;
   autoFocus?: boolean;
+  selectOnFocus?: boolean;
   onClear?: () => void;
 }) {
+  function selectAll(input: HTMLInputElement) {
+    input.select();
+    requestAnimationFrame(() => input.select());
+  }
   return (
     <div className={`relative ${fill ? "w-full" : "shrink-0"} ${className}`}>
       <label className="block">
@@ -38,6 +45,9 @@ export default function SearchField({
           placeholder={placeholder}
           aria-label={placeholder}
           autoFocus={autoFocus}
+          onFocus={selectOnFocus ? (event: FocusEvent<HTMLInputElement>) => selectAll(event.currentTarget) : undefined}
+          onClick={selectOnFocus ? (event: MouseEvent<HTMLInputElement>) => selectAll(event.currentTarget) : undefined}
+          onMouseUp={selectOnFocus ? (event: MouseEvent<HTMLInputElement>) => event.preventDefault() : undefined}
           className={`search-compact ${fill ? "search-fill" : ""} rounded-lg border border-line bg-card py-1 ${onClear && value ? "pr-7" : "pr-2"} pl-8 text-sm ${onClear ? "[&::-webkit-search-cancel-button]:hidden" : ""}`}
         />
       </label>

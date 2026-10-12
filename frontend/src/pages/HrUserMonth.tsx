@@ -14,7 +14,7 @@ import PersonSwitcher from "../components/PersonSwitcher";
 import MonthStepper from "../components/MonthStepper";
 import { matchesQuery } from "../components/SearchField";
 import UnsavedChangesDialog from "../components/UnsavedChangesDialog";
-import { bookingText, dayRowClass, daySurfaceClass, formatDayLabel, formatHours, hoursTone, parseHours, signedHours, warnLabel } from "../labels";
+import { bookingText, dayRowClass, daySurfaceClass, deltaTone, formatDayLabel, formatHours, hoursTone, parseHours, signedHours, warnLabel } from "../labels";
 import { generatePassword } from "../password";
 import { useUnsavedGuard } from "../unsaved";
 import { rememberMonth, sessionMonth } from "../reportPeriod";
@@ -80,6 +80,7 @@ export default function HrUserMonth() {
     birthday: "",
     vacation_days_year: "",
     department_id: "",
+    journal_by_mail: false,
   });
   const [accountMsg, setAccountMsg] = useState("");
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -127,6 +128,7 @@ export default function HrUserMonth() {
       birthday: r.user.birthday ?? "",
       vacation_days_year: r.user.vacation_days_year != null ? String(r.user.vacation_days_year) : "",
       department_id: r.user.department_id != null ? String(r.user.department_id) : "",
+      journal_by_mail: Boolean(r.user.journal_by_mail),
     }));
   }
 
@@ -178,6 +180,7 @@ export default function HrUserMonth() {
         account.birthday !== (user.birthday ?? "") ||
         account.vacation_days_year !== (user.vacation_days_year != null ? String(user.vacation_days_year) : "") ||
         account.department_id !== (user.department_id != null ? String(user.department_id) : "") ||
+        account.journal_by_mail !== Boolean(user.journal_by_mail) ||
         account.password.trim() !== ""),
   );
   const accessDirty = Boolean(
@@ -278,12 +281,14 @@ export default function HrUserMonth() {
               birthday: string | null;
               vacation_days_year: number | null;
               department_id: number | null;
+              journal_by_mail: boolean;
               confirm_closed?: boolean;
             } = {
               username: account.username,
               first_name: account.first_name,
               last_name: account.last_name,
               email: account.email.trim() || null,
+              journal_by_mail: account.journal_by_mail,
               hired_on: account.hired_on || null,
               left_on: account.left_on || null,
               birthday: account.birthday || null,
@@ -314,6 +319,7 @@ export default function HrUserMonth() {
                 birthday: next.birthday ?? "",
                 vacation_days_year: next.vacation_days_year != null ? String(next.vacation_days_year) : "",
                 department_id: next.department_id != null ? String(next.department_id) : "",
+                journal_by_mail: Boolean(next.journal_by_mail),
               });
               setAccountMsg("Benutzer gespeichert.");
               await reload();
@@ -369,6 +375,18 @@ export default function HrUserMonth() {
               aria-describedby={accountErrors.email ? "err-acc-email" : undefined}
             />
             <FieldError id="err-acc-email">{accountErrors.email}</FieldError>
+          </label>
+          <label className="flex items-start gap-3 text-sm">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={account.journal_by_mail}
+              onChange={(e) => patchAccount({ journal_by_mail: e.target.checked })}
+            />
+            <span>
+              Monatsjournal per E-Mail
+              <span className="mt-0.5 block text-xs text-muted">Nur mit hinterlegter Adresse. Der Versand startet in den Journalen.</span>
+            </span>
           </label>
           <label className="block text-xs text-muted">
             Rolle
@@ -695,7 +713,7 @@ export default function HrUserMonth() {
           setAbsConfirm(true);
         }}
       >
-        <p className="text-sm font-medium">Urlaub und Krankheit</p>
+        <p className="text-sm font-medium">Abwesenheit</p>
         <div className="grid grid-cols-2 gap-2">
           <select
             className="col-span-2 min-w-0 rounded-lg border border-line bg-bg px-3 py-2 text-sm"
@@ -704,6 +722,8 @@ export default function HrUserMonth() {
           >
             <option value="vacation">Urlaub</option>
             <option value="sick">Krankheit</option>
+            <option value="school">Schule</option>
+            <option value="comp_time">Zeitausgleich</option>
             <option value="holiday">Brückentag (nur diese Person)</option>
           </select>
           <label className="block min-w-0 overflow-hidden text-xs text-muted">
@@ -951,10 +971,7 @@ export default function HrUserMonth() {
                           </p>
                           {(d.calendar || d.absence ? d.delta_hours !== 0 : Boolean(d.work_hours || d.soll_hours)) ? (
                             <p
-                              className={`whitespace-nowrap text-xs ${hoursTone(
-                                d.delta_hours,
-                                Boolean((d.calendar || d.absence) && !d.delta_hours),
-                              )}`}
+                              className={`whitespace-nowrap text-xs ${deltaTone(d)}`}
                             >
                               {signedHours(d.delta_hours)}
                             </p>
@@ -1004,10 +1021,7 @@ export default function HrUserMonth() {
                         {formatHours(d.soll_hours)}
                       </td>
                       <td
-                        className={`whitespace-nowrap px-4 py-2.5 text-right tabular-nums ${hoursTone(
-                          d.delta_hours,
-                          Boolean((d.calendar || d.absence) && !d.delta_hours),
-                        )}`}
+                        className={`whitespace-nowrap px-4 py-2.5 text-right tabular-nums ${deltaTone(d)}`}
                       >
                         {(d.calendar || d.absence) && !d.delta_hours ? "—" : signedHours(d.delta_hours)}
                       </td>
@@ -1142,12 +1156,18 @@ export default function HrUserMonth() {
                 ? "Urlaub eintragen?"
                 : absKind === "sick"
                   ? "Krankheitstage eintragen?"
-                  : "Abwesenheit eintragen?"}
+                  : absKind === "school"
+                    ? "Schule eintragen?"
+                    : absKind === "comp_time"
+                      ? "Zeitausgleich eintragen?"
+                      : "Abwesenheit eintragen?"}
             </p>
             <p className="mt-1 text-sm text-muted">
-              {absStart === absEnd
-                ? `${new Date(absStart + "T12:00:00").toLocaleDateString("de-DE")} gilt dann als abwesend und fällt aus der Prüfung.`
-                : `${new Date(absStart + "T12:00:00").toLocaleDateString("de-DE")} bis ${new Date(absEnd + "T12:00:00").toLocaleDateString("de-DE")} gelten als abwesend und fallen aus der Prüfung.`}
+              {absKind === "comp_time"
+                ? "Die Sollzeit geht vom Zeitkonto ab. Der Tag bleibt ohne Fehlerhinweis."
+                : absStart === absEnd
+                  ? `${new Date(absStart + "T12:00:00").toLocaleDateString("de-DE")} gilt dann als abwesend und fällt aus der Prüfung.`
+                  : `${new Date(absStart + "T12:00:00").toLocaleDateString("de-DE")} bis ${new Date(absEnd + "T12:00:00").toLocaleDateString("de-DE")} gelten als abwesend und fallen aus der Prüfung.`}
             </p>
             <div className="mt-4 flex gap-2">
               <button type="button" className="flex-1 rounded-xl border border-line py-2" onClick={() => setAbsConfirm(false)}>

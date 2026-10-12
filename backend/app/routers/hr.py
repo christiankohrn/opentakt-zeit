@@ -581,6 +581,8 @@ def patch_user_account(user_id: int, payload: UserAccountIn, request: Request, d
         user.flex_cap_hours = None if payload.flex_cap_hours is None else float(payload.flex_cap_hours)
     if "skip_flex_on_close" in payload.model_fields_set and payload.skip_flex_on_close is not None:
         user.skip_flex_on_close = bool(payload.skip_flex_on_close)
+    if "journal_by_mail" in payload.model_fields_set and payload.journal_by_mail is not None:
+        user.journal_by_mail = bool(payload.journal_by_mail)
     if "left_on" in payload.model_fields_set:
         user.left_on = payload.left_on
     if "birthday" in payload.model_fields_set:
@@ -608,6 +610,7 @@ def patch_user_account(user_id: int, payload: UserAccountIn, request: Request, d
                     "opening_balance_on": user.opening_balance_on.isoformat() if user.opening_balance_on else None,
                     "flex_cap_hours": user.flex_cap_hours,
                     "skip_flex_on_close": user.skip_flex_on_close,
+                    "journal_by_mail": user.journal_by_mail,
                 }
             ),
         )

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from datetime import date
 
 from app.mail import hash_token, lookup_mail_token, valid_email
 
@@ -145,6 +146,62 @@ def test_smtp_test_mail(client, outbox):
     assert outbox[-1]["To"] == "chef@example.com"
     assert "Testmail" in outbox[-1]["Subject"]
     assert "Opentakt Zeit" in outbox[-1].get_content()
+
+
+def test_journal_mail_respects_flag_and_address(client, outbox):
+    enable_smtp(client)
+    users = client.get("/api/hr/users").json()
+    person = next(u for u in users if u["username"] == "mitarbeiter")
+    original = person.get("email")
+    month = date.today().strftime("%Y-%m")
+    try:
+        off = client.patch(
+            f"/api/hr/users/{person['id']}/account",
+            json={"email": "mitarbeiter@example.com", "journal_by_mail": False},
+        )
+        assert off.status_code == 200, off.text
+        skipped = client.post(
+            "/api/hr/reports/journal/mail",
+            json={"month": month, "user_ids": [person["id"]]},
+        )
+        assert skipped.status_code == 200, skipped.text
+        assert skipped.json()["sent"] == 0
+        assert skipped.json()["skipped_no_flag"] == 1
+        assert outbox == []
+
+        missing = client.patch(
+            f"/api/hr/users/{person['id']}/account",
+            json={"email": None, "journal_by_mail": True},
+        )
+        assert missing.status_code == 200, missing.text
+        no_mail = client.post(
+            "/api/hr/reports/journal/mail",
+            json={"month": month, "user_ids": [person["id"]]},
+        )
+        assert no_mail.status_code == 200, no_mail.text
+        assert no_mail.json()["sent"] == 0
+        assert no_mail.json()["skipped_no_email"] == 1
+
+        on = client.patch(
+            f"/api/hr/users/{person['id']}/account",
+            json={"email": "mitarbeiter@example.com", "journal_by_mail": True},
+        )
+        assert on.status_code == 200, on.text
+        sent = client.post(
+            "/api/hr/reports/journal/mail",
+            json={"month": month, "user_ids": [person["id"]]},
+        )
+        assert sent.status_code == 200, sent.text
+        assert sent.json()["sent"] == 1
+        attachments = list(outbox[-1].iter_attachments())
+        assert len(attachments) == 1
+        assert attachments[0].get_content_type() == "application/pdf"
+        assert attachments[0].get_filename() == f"journal-{month}.pdf"
+    finally:
+        client.patch(
+            f"/api/hr/users/{person['id']}/account",
+            json={"email": original, "journal_by_mail": False},
+        )
 
 
 def test_lookup_unknown_token(client):

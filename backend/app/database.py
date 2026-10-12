@@ -84,6 +84,8 @@ def ensure_schema() -> None:
         alters.append("ALTER TABLE users ADD COLUMN flex_cap_hours FLOAT")
     if "skip_flex_on_close" not in cols:
         alters.append("ALTER TABLE users ADD COLUMN skip_flex_on_close BOOLEAN NOT NULL DEFAULT 0")
+    if "journal_by_mail" not in cols:
+        alters.append("ALTER TABLE users ADD COLUMN journal_by_mail BOOLEAN NOT NULL DEFAULT 0")
     if "department_id" not in cols:
         alters.append("ALTER TABLE users ADD COLUMN department_id INTEGER")
     if "totp_secret" not in cols:

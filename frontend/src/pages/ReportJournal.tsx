@@ -63,6 +63,9 @@ export default function ReportJournal() {
   const [journals, setJournals] = useState<JournalReport[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [pdfChoice, setPdfChoice] = useState(false);
+  const [mailBusy, setMailBusy] = useState(false);
+  const [mailMsg, setMailMsg] = useState("");
 
   useEffect(() => {
     api.users().then(setUsers).catch((err: Error) => setError(err.message));
@@ -101,6 +104,44 @@ export default function ReportJournal() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [month, userIdsKey, showInactive, users]);
 
+  function idsWithoutEmail() {
+    const allowed = effectiveIds === null ? null : new Set(effectiveIds);
+    return shownUsers.filter((u) => (allowed === null || allowed.has(u.id)) && !(u.email ?? "").trim()).map((u) => u.id);
+  }
+
+  function downloadPdf(onlyWithoutEmail: boolean) {
+    setPdfChoice(false);
+    if (!onlyWithoutEmail) {
+      void api.downloadJournalPdf(month, effectiveIds);
+      return;
+    }
+    const ids = idsWithoutEmail();
+    if (ids.length === 0) {
+      setError("Keine Person ohne E-Mail in dieser Auswahl.");
+      return;
+    }
+    setError("");
+    void api.downloadJournalPdf(month, ids);
+  }
+
+  async function sendMails() {
+    setMailBusy(true);
+    setMailMsg("");
+    setError("");
+    try {
+      const result = await api.sendJournalMails(month, effectiveIds);
+      const parts = [`${result.sent} ${result.sent === 1 ? "Journal" : "Journale"} gesendet`];
+      if (result.skipped_no_flag) parts.push(`${result.skipped_no_flag} ohne Haken`);
+      if (result.skipped_no_email) parts.push(`${result.skipped_no_email} ohne E-Mail`);
+      if (result.failed.length) parts.push(`${result.failed.length} fehlgeschlagen`);
+      setMailMsg(parts.join(", ") + ".");
+    } catch (err) {
+      setMailMsg(err instanceof Error ? err.message : "Versand fehlgeschlagen");
+    } finally {
+      setMailBusy(false);
+    }
+  }
+
   function setFilter(nextMonth: string, ids: number[] | null, inactive = showInactive) {
     const query: Record<string, string> = { month: nextMonth };
     if (ids !== null) query.user_ids = ids.join(",");
@@ -117,10 +158,17 @@ export default function ReportJournal() {
         <ReportToolbar
           title="Journale"
           actions={
-            <ExportButtons
-              pdfDisabled={journals.length === 0}
-              onPdf={() => void api.downloadJournalPdf(month, effectiveIds)}
-            />
+            <div className="flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                disabled={journals.length === 0 || mailBusy}
+                className="rounded-lg border border-line bg-card px-3 py-1 text-sm disabled:opacity-40"
+                onClick={() => void sendMails()}
+              >
+                Per E-Mail
+              </button>
+              <ExportButtons pdfDisabled={journals.length === 0} onPdf={() => setPdfChoice(true)} />
+            </div>
           }
         >
           <input
@@ -136,7 +184,31 @@ export default function ReportJournal() {
       <p className="mt-2 text-sm text-muted print:hidden">
         {monthLabel(month)}. PDF für alle ausgewählten Personen auf einmal, je Person eine Seite zur Aushändigung.
       </p>
+      {mailMsg ? <p className="mt-3 text-sm text-muted">{mailMsg}</p> : null}
       {error ? <p className="mt-3 text-sm text-danger">{error}</p> : null}
+      {pdfChoice ? (
+        <div className="fixed inset-0 z-20 flex items-end justify-center bg-black/40 p-4 sm:items-center">
+          <div className="w-full max-w-lg rounded-2xl bg-card p-5 shadow-xl" role="dialog" aria-labelledby="journal-pdf-title">
+            <p id="journal-pdf-title" className="text-lg font-medium">
+              PDF herunterladen
+            </p>
+            <p className="mt-1 text-sm text-muted">
+              Alle Journale der aktuellen Auswahl, oder nur die Personen ohne E-Mail-Adresse? Ohne Adresse geht das Journal nicht per Mail raus und kann ausgedruckt werden.
+            </p>
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+              <button type="button" className="flex-1 rounded-xl border border-line py-2" onClick={() => setPdfChoice(false)}>
+                Abbrechen
+              </button>
+              <button type="button" className="flex-1 rounded-xl border border-line py-2" onClick={() => downloadPdf(true)}>
+                Nur ohne E-Mail
+              </button>
+              <button type="button" className="flex-1 rounded-xl bg-present py-2 text-white" onClick={() => downloadPdf(false)}>
+                Alle
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {loading ? (
         <LoadingNote />
       ) : journals.length === 0 && !error ? (

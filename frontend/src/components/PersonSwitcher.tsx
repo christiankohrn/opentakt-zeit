@@ -75,6 +75,7 @@ export default function PersonSwitcher({
             <SearchField
               fill
               autoFocus
+              selectOnFocus
               className="mb-2"
               value={query}
               onChange={onQueryChange}

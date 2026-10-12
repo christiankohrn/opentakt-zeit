@@ -36,6 +36,7 @@ class UserOut(BaseModel):
     opening_balance_on: Optional[date] = None
     flex_cap_hours: Optional[float] = None
     skip_flex_on_close: bool = False
+    journal_by_mail: bool = False
     totp_enabled: bool = False
     passkey_count: int = 0
     security_setup_required: Optional[str] = None
@@ -217,11 +218,16 @@ class AccountEntryIn(BaseModel):
 
 
 class AbsenceRangeIn(BaseModel):
-    kind: Literal["vacation", "sick", "holiday"]
+    kind: Literal["vacation", "sick", "holiday", "school", "comp_time"]
     start: date
     end: date
     note: Optional[str] = None
     confirm_closed: bool = False
+
+
+class JournalMailIn(BaseModel):
+    month: str = Field(pattern=r"^\d{4}-\d{2}$")
+    user_ids: Optional[list[int]] = None
 
 
 class UserSettingsIn(BaseModel):
@@ -248,6 +254,7 @@ class UserAccountIn(BaseModel):
     opening_balance_on: Optional[date] = None
     flex_cap_hours: Optional[float] = Field(default=None, ge=0, le=10000)
     skip_flex_on_close: Optional[bool] = None
+    journal_by_mail: Optional[bool] = None
     confirm_closed: bool = False
 
 

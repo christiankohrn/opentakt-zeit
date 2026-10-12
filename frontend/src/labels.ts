@@ -100,6 +100,15 @@ export function hoursTone(hours: number, off = false) {
   return hours < 0 ? "text-danger" : "text-present";
 }
 
+export function deltaTone(d: {
+  delta_hours: number;
+  absence?: { kind: string } | null;
+  calendar?: { kind: string } | null;
+}) {
+  const quiet = d.absence?.kind === "comp_time" || Boolean((d.calendar || d.absence) && !d.delta_hours);
+  return hoursTone(d.delta_hours, quiet);
+}
+
 export function absenceLabel(kind: string) {
   return ABSENCE_LABELS[kind] ?? kind;
 }

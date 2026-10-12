@@ -14,7 +14,7 @@ const KINDS: PunchKind[] = ["in", "out", "break_start", "break_end"];
 const ISSUE_KEYS = new Set(["missing_day", "checkout_missing", "break_short", "break_short_9h", "break_long", "over_10h"]);
 
 type Row = { kind: PunchKind; time: string; source?: string };
-type PendingAbsence = "vacation" | "sick" | "clear" | null;
+type PendingAbsence = "vacation" | "sick" | "school" | "comp_time" | "clear" | null;
 
 function rowsKey(rows: Row[]) {
   return JSON.stringify(rows.map((r) => ({ kind: r.kind, time: r.time })));
@@ -130,7 +130,12 @@ export default function HrDay() {
   async function applyPending(confirmClosed: boolean, acceptReason?: string) {
     if (pendingAbsence === "clear") {
       await api.deleteAbsence(userId, day, confirmClosed);
-    } else if (pendingAbsence === "vacation" || pendingAbsence === "sick") {
+    } else if (
+      pendingAbsence === "vacation" ||
+      pendingAbsence === "sick" ||
+      pendingAbsence === "school" ||
+      pendingAbsence === "comp_time"
+    ) {
       await api.createAbsences(userId, { kind: pendingAbsence, start: day, end: day, confirm_closed: confirmClosed });
     }
     if (pendingAccept && acceptReason) {
@@ -252,6 +257,8 @@ export default function HrDay() {
   const pendingNotes: string[] = [];
   if (pendingAbsence === "vacation") pendingNotes.push("Wird als Urlaub gespeichert.");
   if (pendingAbsence === "sick") pendingNotes.push("Wird als Krankheitstag gespeichert.");
+  if (pendingAbsence === "school") pendingNotes.push("Wird als Schule gespeichert.");
+  if (pendingAbsence === "comp_time") pendingNotes.push("Wird als Zeitausgleich gespeichert. Die Sollzeit geht vom Konto ab.");
   if (pendingAbsence === "clear") pendingNotes.push("Abwesenheit wird entfernt.");
   if (pendingAccept) pendingNotes.push("Wird in der Prüfung ignoriert.");
 
@@ -424,6 +431,12 @@ export default function HrDay() {
             </button>
             <button type="button" className="text-present" onClick={() => setPendingAbsence("sick")}>
               Als Krankheit
+            </button>
+            <button type="button" className="text-present" onClick={() => setPendingAbsence("school")}>
+              Als Schule
+            </button>
+            <button type="button" className="text-present" onClick={() => setPendingAbsence("comp_time")}>
+              Als Zeitausgleich
             </button>
           </>
         )}

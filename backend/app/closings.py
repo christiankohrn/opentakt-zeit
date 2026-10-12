@@ -53,8 +53,24 @@ def cap_reason(cap: float, year: int, month: int) -> str:
     return f"{CAP_REASON_PREFIX} auf {cap:g} Stunden ({month_label(year, month)})"
 
 
-def vortrag_reason(year: int, month: int) -> str:
-    return f"{VORTRAG_REASON_PREFIX} ({month_label(year, month)})"
+def drop_cap_carryovers(db: Session, user: User) -> date | None:
+    """Entfernt automatische Vorträge. Der früheste Tag, sonst None."""
+    rows = list(
+        db.scalars(
+            select(AccountEntry).where(
+                AccountEntry.user_id == user.id,
+                AccountEntry.kind == "time",
+                AccountEntry.reason.like(f"{VORTRAG_REASON_PREFIX}%"),
+            )
+        )
+    )
+    if not rows:
+        return None
+    earliest = min(row.day for row in rows)
+    for row in rows:
+        db.delete(row)
+    db.flush()
+    return earliest
 
 
 def flex_cap(user: User) -> float | None:
@@ -328,11 +344,9 @@ def _apply_cap(
 ) -> bool:
     """Bucht je neu abgeschlossenem Monat über der Grenze eine negative Korrektur.
 
-    Die abgezogenen Stunden werden am Monatsersten als Vortrag wieder
-    gutgeschrieben, sodass nichts verloren geht. Korrektur und Vortrag heben
-    sich auf, daher rechnet jeder Folgemonat mit dem ungekürzten Verlauf.
-    Gibt True zurück, wenn Buchungen entstanden sind und der Aufrufer neu
-    laufen muss, damit die gespeicherten Stände exakt zum Konto passen.
+    Der Folgemonat startet mit dem gekappten Stand. Zurückholen geht über eine
+    manuelle Buchung. Gibt True zurück, wenn Buchungen entstanden sind und der
+    Aufrufer neu laufen muss, damit die gespeicherten Stände zum Konto passen.
     """
     author = actor_id if actor_id is not None else user.id
     created = False
@@ -352,16 +366,6 @@ def _apply_cap(
                     created_by_id=author,
                 )
             )
-            db.add(
-                AccountEntry(
-                    user_id=user.id,
-                    kind="time",
-                    day=last_day + timedelta(days=1),
-                    amount=cut,
-                    reason=vortrag_reason(year, month),
-                    created_by_id=author,
-                )
-            )
             created = True
         year, month = next_month(year, month)
     if created:
@@ -370,6 +374,9 @@ def _apply_cap(
 
 
 def close_one(db: Session, user: User, year: int, month: int, actor_id: int | None) -> int:
+    carried = drop_cap_carryovers(db, user)
+    if carried is not None:
+        recalculate_user_from(db, user, carried.year, carried.month, actor_id)
     first = first_closable(db, user)
     if first > (year, month):
         return 0
@@ -415,6 +422,9 @@ def close_through(
 
 
 def recalculate_user_from(db: Session, user: User, year: int, month: int, actor_id: int | None) -> None:
+    carried = drop_cap_carryovers(db, user)
+    if carried is not None and (carried.year, carried.month) < (year, month):
+        year, month = carried.year, carried.month
     latest = db.scalar(
         select(MonthClosing)
         .where(MonthClosing.user_id == user.id)

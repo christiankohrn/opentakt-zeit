@@ -292,6 +292,16 @@ def test_future_workday_has_no_delta():
     assert future["work_hours"] == 0
     assert future["delta_hours"] == 0
     assert future["warnings"] == []
+    comp = summarize_day(
+        [],
+        date(2026, 8, 19),
+        _full_week(),
+        now=now,
+        absence=SimpleNamespace(kind="comp_time", note=None),
+    )
+    assert comp["work_hours"] == 0
+    assert comp["delta_hours"] == -8
+    assert comp["warnings"] == []
 
 
 def test_missing_workday_without_booking():

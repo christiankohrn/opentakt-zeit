@@ -3,7 +3,7 @@ import { api, type DaySummary } from "../api";
 import DayLegend from "../components/DayLegend";
 import LoadingNote from "../components/LoadingNote";
 import { useVisiblePoll } from "../live";
-import { bookingText, dayKindLabel, dayRowClass, daySurfaceClass, formatDayLabel, formatHours, formatPunchLine, hoursTone, isoDate, signedHours, warnLabel } from "../labels";
+import { bookingText, dayKindLabel, dayRowClass, daySurfaceClass, deltaTone, formatDayLabel, formatHours, formatPunchLine, hoursTone, isoDate, signedHours, warnLabel } from "../labels";
 
 function currentMonth() {
   const d = new Date();
@@ -89,7 +89,7 @@ export default function Times() {
                       {dayKindLabel(d)}
                       {d.work_hours ? <span className="ml-2">{formatHours(d.work_hours, 2)}</span> : null}
                       {d.delta_hours ? (
-                        <span className={`ml-2 ${hoursTone(d.delta_hours)}`}>{signedHours(d.delta_hours)}</span>
+                        <span className={`ml-2 ${deltaTone(d)}`}>{signedHours(d.delta_hours)}</span>
                       ) : null}
                     </>
                   ) : (
@@ -134,10 +134,7 @@ export default function Times() {
                 <td className="px-4 py-2.5 text-right tabular-nums">{hoursCell(d)}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-muted">{formatHours(d.soll_hours)}</td>
                 <td
-                  className={`px-4 py-2.5 text-right tabular-nums ${hoursTone(
-                    d.delta_hours,
-                    Boolean((d.calendar || d.absence) && !d.delta_hours),
-                  )}`}
+                  className={`px-4 py-2.5 text-right tabular-nums ${deltaTone(d)}`}
                 >
                   {(d.calendar || d.absence) && !d.delta_hours ? "—" : signedHours(d.delta_hours)}
                 </td>

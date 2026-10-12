@@ -4,9 +4,11 @@ Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Ve
 
 ## [Unreleased]
 
+- Die Überstundenkappung bucht nur noch die Korrektur auf die Grenze. Ein automatischer Vortrag in den Folgemonat entfällt; zurückholen geht über eine manuelle Buchung.
+- Zeitausgleich und Schule lassen sich wie Urlaub und Krankheit eintragen. Zeitausgleich zieht die Sollzeit vom Zeitkonto ab, auch an einem zukünftigen Tag, und der Tag bleibt ohne Fehlerfarbe.
+- Monatsjournale lassen sich aus den Journalen per E-Mail schicken, wenn die Person eine Adresse und den Haken „Monatsjournal per E-Mail“ hat. Der PDF-Knopf fragt, ob alle Journale oder nur die ohne E-Mail-Adresse geladen werden.
 - Pausenschwellen lassen sich auf die Minute setzen, zum Beispiel 45 Minuten ab 9:45. Ein Arbeitszeitmodell kann stattdessen feste Pausenzeiten neben der Arbeitszeit verwenden, bei Schichten je Schicht. Ohne Schichtbeginn wählt die Pause, die in die Anwesenheit fällt, die Schicht, ohne Kommen und Gehen zu beschneiden. Die Voreinstellung bleibt die automatische Schwelle.
 - Pro Person lässt sich das Zeitkonto vom Monatsabschluss ausnehmen. Der Abschluss speichert dann 0, der Folgemonat beginnt bei 0, und es entsteht keine Korrekturbuchung. Die Stunden des Monats bleiben in der Tagesrechnung.
-- Überstunden lassen sich pro Person kappen (Einstellung im Zeitkonto der Monatsansicht, zum Beispiel 30 Stunden). Liegt das Konto am Monatsende höher, bucht der Monatsabschluss automatisch eine Korrektur auf die Grenze und trägt die abgezogenen Stunden am Monatsersten als Vortrag wieder ein, sodass nichts verloren geht.
 - Neuer Urlaubsplaner für Personal und Admin: Gesamtansicht aller Abwesenheiten als Personen×Tage-Matrix mit Monats- und Jahresansicht, Filter wie in den Auswertungen, Urlaubskennzahlen pro Person und CSV-/PDF-Export.
 - Im Urlaubsplaner lässt sich Urlaub per Klick eintragen und entfernen (Bearbeitungsmodus mit Knopf). Die Kontoprüfung läuft live; geht ein Konto ins Minus, warnt der Planner deutlich und bietet beim Speichern den Ausgleich im Urlaubskonto an.
 - Automatische Pause ist bei neuen Personen eingeschaltet (30 Minuten ab 6:30 Stunden, 45 Minuten ab 9:45 Stunden).

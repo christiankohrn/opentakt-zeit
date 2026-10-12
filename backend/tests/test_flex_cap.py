@@ -118,15 +118,12 @@ def test_close_books_cap_correction(client):
         assert len(entries) == 1
         assert entries[0]["day"] == last_day.isoformat()
         assert entries[0]["amount"] == pytest.approx(-9.5)
-        carried = _vortrag_entries(client, person["id"], first_next.year)
-        assert len(carried) == 1
-        assert carried[0]["day"] == first_next.isoformat()
-        assert carried[0]["amount"] == pytest.approx(9.5)
+        assert _vortrag_entries(client, person["id"], first_next.year) == []
 
         # Erneuter Abschluss legt keine zweite Korrektur an.
         assert _close_month(day.year, day.month, person["id"]) == 0
         assert len(_cap_entries(client, person["id"], day.year)) == 1
-        assert len(_vortrag_entries(client, person["id"], first_next.year)) == 1
+        assert _vortrag_entries(client, person["id"], first_next.year) == []
     finally:
         _reset_user(person["id"], [day])
 
@@ -220,10 +217,9 @@ def test_cap_applies_to_each_closed_month(client):
 
         _close_month(day_m.year, day_m.month, person["id"])
         assert flex_of(client, last_p.year, last_p.month, person["id"]) == pytest.approx(30.0)
-        # Startsaldo plus gearbeitete Tage (je -0,5) und je -8 für die übrigen
-        # Wochentage ohne Stempel. Korrektur und Vortrag des Vormonats heben
-        # sich hier auf, der Folgemonat rechnet mit dem ungekürzten Verlauf.
-        expected_m = 50.0 - 1.0 - 8.0 * (_count_weekdays(first_m, month_end(day_m.year, day_m.month)) - 1)
+        # Der Vormonat endet auf der Grenze. Der Folgemonat rechnet von dort:
+        # der gearbeitete Tag −0,5, jeder übrige Werktag −8.
+        expected_m = 30.0 - 0.5 - 8.0 * (_count_weekdays(first_m, month_end(day_m.year, day_m.month)) - 1)
         assert flex_of(client, day_m.year, day_m.month, person["id"]) == pytest.approx(expected_m)
 
         years = {day_p.year, day_m.year}
@@ -232,9 +228,7 @@ def test_cap_applies_to_each_closed_month(client):
         assert entries[0]["day"] == month_end(last_p.year, last_p.month).isoformat()
         assert entries[0]["amount"] == pytest.approx(-19.5)
         carried = [e for year in years for e in _vortrag_entries(client, person["id"], year)]
-        assert len(carried) == 1
-        assert carried[0]["day"] == first_m.isoformat()
-        assert carried[0]["amount"] == pytest.approx(19.5)
+        assert carried == []
     finally:
         _reset_user(person["id"], [day_p, day_m])
 

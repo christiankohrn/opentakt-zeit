@@ -12,8 +12,10 @@ from sqlalchemy.orm import Session, selectinload
 from app.auth import as_local, current_user, now_utc, require_hr_full
 from app.config import get_config
 from app.database import get_db
+from app.mail import MailError, normalize_email, send_mail, smtp_ready, valid_email
 from app.models import User
 from app.pdf import NAVY, ReportPDF, de_date, de_days, de_hm, table_pdf
+from app.schemas import JournalMailIn
 from app.reports import (
     ABSENCE_LABELS,
     JOURNAL_ACCOUNT_NOTE,
@@ -149,6 +151,32 @@ def _absence_export(kind: str, start: date, end: date, people: list[dict], want_
         "year": start.year,
         "people": people,
     }
+
+
+def journal_pdf_bytes(reports: list[dict]) -> bytes:
+    first = reports[0]
+    pdf = ReportPDF(
+        title=f"Journal {first['display_name']}",
+        subtitle=first["month_label"],
+        org=_org(),
+    )
+    pdf.journal_person(
+        JOURNAL_COLUMNS,
+        _journal_table_rows(first),
+        _journal_account_rows(first),
+        note=JOURNAL_ACCOUNT_NOTE,
+    )
+    for report in reports[1:]:
+        pdf.report_title = f"Journal {report['display_name']}"
+        pdf.report_subtitle = report["month_label"]
+        pdf.add_page()
+        pdf.journal_person(
+            JOURNAL_COLUMNS,
+            _journal_table_rows(report),
+            _journal_account_rows(report),
+            note=JOURNAL_ACCOUNT_NOTE,
+        )
+    return pdf.bytes()
 
 
 def _journal_account_rows(report: dict) -> list[list[str]]:
@@ -570,28 +598,49 @@ def journal(
     if _want_pdf(request, None) or request.url.path.endswith(".pdf"):
         if not reports:
             raise HTTPException(400, "Keine Personen für das Journal")
-        first = reports[0]
-        pdf = ReportPDF(
-            title=f"Journal {first['display_name']}",
-            subtitle=first["month_label"],
-            org=_org(),
-        )
-        pdf.journal_person(
-            JOURNAL_COLUMNS,
-            _journal_table_rows(first),
-            _journal_account_rows(first),
-            note=JOURNAL_ACCOUNT_NOTE,
-        )
-        for report in reports[1:]:
-            pdf.report_title = f"Journal {report['display_name']}"
-            pdf.report_subtitle = report["month_label"]
-            pdf.add_page()
-            pdf.journal_person(
-                JOURNAL_COLUMNS,
-                _journal_table_rows(report),
-                _journal_account_rows(report),
-                note=JOURNAL_ACCOUNT_NOTE,
-            )
         filename = f"journale-{month}.pdf" if len(reports) != 1 else f"journal-{month}.pdf"
-        return _pdf_response(filename, pdf.bytes())
+        return _pdf_response(filename, journal_pdf_bytes(reports))
     return {"month": month, "people": reports}
+
+
+@router.post("/journal/mail")
+def send_journal_mail(payload: JournalMailIn, request: Request, db: Session = Depends(get_db)):
+    _actor(request, db)
+    if not smtp_ready(db):
+        raise HTTPException(400, "Mailserver ist nicht eingerichtet")
+    ids = set(payload.user_ids) if payload.user_ids is not None else None
+    people = journal_people(db, payload.month, ids)
+    sent = 0
+    skipped_no_flag = 0
+    skipped_no_email = 0
+    failed: list[dict[str, str]] = []
+    org = _org()
+    for user in people:
+        if not user.journal_by_mail:
+            skipped_no_flag += 1
+            continue
+        email = normalize_email(user.email) or ""
+        if not valid_email(email):
+            skipped_no_email += 1
+            continue
+        report = journal_report(db, user, payload.month)
+        try:
+            send_mail(
+                email,
+                f"{org}: Monatsjournal {report['month_label']}",
+                f"Hallo {user.display_name},\n\n"
+                f"im Anhang ist dein Monatsjournal für {report['month_label']}.\n",
+                db=db,
+                required=True,
+                attachment=(f"journal-{payload.month}.pdf", journal_pdf_bytes([report]), "application/pdf"),
+            )
+        except MailError as exc:
+            failed.append({"display_name": user.display_name, "error": str(exc)})
+            continue
+        sent += 1
+    return {
+        "sent": sent,
+        "skipped_no_flag": skipped_no_flag,
+        "skipped_no_email": skipped_no_email,
+        "failed": failed,
+    }

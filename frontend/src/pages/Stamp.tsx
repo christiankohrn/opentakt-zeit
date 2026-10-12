@@ -4,7 +4,7 @@ import { api, ApiError, type PunchKind, type Status } from "../api";
 import LoadingNote from "../components/LoadingNote";
 import { useVisiblePoll } from "../live";
 import { enqueue, newEventId, readQueue, writeQueue } from "../offline";
-import { bookingText, daySurfaceClass, formatDayLabel, hoursTone, isoDate, signedHours, warnLabel } from "../labels";
+import { bookingText, daySurfaceClass, deltaTone, formatDayLabel, hoursTone, isoDate, signedHours, warnLabel } from "../labels";
 
 const LABELS: Record<PunchKind, string> = {
   in: "Kommen",
@@ -204,7 +204,7 @@ export default function Stamp() {
                       className={`shrink-0 text-sm tabular-nums ${
                         (off && !d.delta_hours) || (!d.work_hours && !d.soll_hours)
                           ? "text-muted"
-                          : hoursTone(d.delta_hours)
+                          : deltaTone(d)
                       }`}
                     >
                       {(off && !d.delta_hours) || (!d.work_hours && !d.soll_hours)

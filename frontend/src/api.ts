@@ -34,6 +34,7 @@ export type User = {
   opening_balance_on?: string | null;
   flex_cap_hours?: number | null;
   skip_flex_on_close?: boolean;
+  journal_by_mail?: boolean;
   totp_enabled?: boolean;
   passkey_count?: number;
   security_setup_required?: string | null;
@@ -606,6 +607,7 @@ export const api = {
       opening_balance_on?: string | null;
       flex_cap_hours?: number | null;
       skip_flex_on_close?: boolean;
+      journal_by_mail?: boolean;
       confirm_closed?: boolean;
     },
   ) => request<User>(`/api/hr/users/${id}/account`, { method: "PATCH", body: JSON.stringify(body) }),
@@ -859,5 +861,10 @@ export const api = {
     downloadFile(
       `/api/hr/reports/journal.pdf?${reportQuery({ month, user_ids: userIdsQuery(userIds) })}`,
       `journale-${month}.pdf`,
+    ),
+  sendJournalMails: (month: string, userIds?: number[] | null) =>
+    request<{ sent: number; skipped_no_flag: number; skipped_no_email: number; failed: { display_name: string; error: string }[] }>(
+      "/api/hr/reports/journal/mail",
+      { method: "POST", body: JSON.stringify({ month, user_ids: userIds ?? null }) },
     ),
 };

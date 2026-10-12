@@ -171,7 +171,15 @@ def deliver_message(smtp: SmtpConfig, msg: EmailMessage) -> None:
         client.send_message(msg)
 
 
-def send_mail(to: str, subject: str, body: str, *, db: Session | None = None, required: bool = True) -> bool:
+def send_mail(
+    to: str,
+    subject: str,
+    body: str,
+    *,
+    db: Session | None = None,
+    required: bool = True,
+    attachment: tuple[str, bytes, str] | None = None,
+) -> bool:
     smtp = effective_smtp(db)
     if not smtp_ready_config(smtp):
         if required:
@@ -183,6 +191,10 @@ def send_mail(to: str, subject: str, body: str, *, db: Session | None = None, re
     msg["To"] = to
     msg["Subject"] = subject
     msg.set_content(body)
+    if attachment is not None:
+        filename, data, mime = attachment
+        maintype, subtype = mime.split("/", 1)
+        msg.add_attachment(data, maintype=maintype, subtype=subtype, filename=filename)
     try:
         deliver_message(smtp, msg)
     except (OSError, smtplib.SMTPException) as exc:
