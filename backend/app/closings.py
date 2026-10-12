@@ -5,13 +5,15 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 from fastapi import HTTPException
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.accounts import time_hours
 from app.auth import now_utc
-from app.balance import days_in_range, employment_end, hired_on
-from app.models import AccountEntry, MonthClosing, User
+from app.balance import days_in_range, employment_end, hired_on, load_day_model_map, summarize_user_day
+from app.holidays import calendar_map
+from app.models import Absence, AccountEntry, MonthClosing, Punch, User
+from app.timecalc import PunchIndex, punches_window_for_month
 
 MONTH_NAMES = (
     "Januar",
@@ -190,8 +192,16 @@ def month_delta(db: Session, user: User, year: int, month: int, today: date) -> 
     return worked + time_hours(db, user.id, start, end)
 
 
-def _latest_usable(db: Session, user_id: int, last: date, start: date) -> MonthClosing | None:
+def _pick_usable(rows, last: date, start: date) -> MonthClosing | None:
     floor = start - timedelta(days=1)
+    for row in rows:
+        end = month_end(row.year, row.month)
+        if floor <= end <= last:
+            return row
+    return None
+
+
+def _latest_usable(db: Session, user_id: int, last: date, start: date) -> MonthClosing | None:
     rows = list(
         db.scalars(
             select(MonthClosing)
@@ -199,11 +209,7 @@ def _latest_usable(db: Session, user_id: int, last: date, start: date) -> MonthC
             .order_by(MonthClosing.year.desc(), MonthClosing.month.desc())
         )
     )
-    for row in rows:
-        end = month_end(row.year, row.month)
-        if floor <= end <= last:
-            return row
-    return None
+    return _pick_usable(rows, last, start)
 
 
 def month_is_closed(db: Session, user_id: int, day: date) -> bool:
@@ -486,6 +492,114 @@ def listed_total(db: Session, user: User, today: date) -> float | None:
     if _latest_usable(db, user.id, last, start) is None and (last - start).days > 120:
         return None
     return flex_as_of(db, user, last)
+
+
+def listed_totals(
+    db: Session,
+    users: list[User],
+    today: date,
+    timelines: dict[int, list],
+    frozen_map: dict,
+) -> dict[int, float | None]:
+    """Gesamtsalden für viele Personen mit gebündelten Abfragen.
+
+    Entspricht listed_total je Person: gleiche Abschlussauswahl, gleiche
+    Grenzen, gleiche Tagesrechnung — nur laden alle Personen gemeinsam.
+    """
+    out: dict[int, float | None] = {}
+    if not users:
+        return out
+    ids = [u.id for u in users]
+    bounds = {u.id: (calc_start(db, u), employment_end(u, today)) for u in users}
+    grouped: dict[int, list[MonthClosing]] = {}
+    for row in db.scalars(
+        select(MonthClosing)
+        .where(MonthClosing.user_id.in_(ids))
+        .order_by(MonthClosing.user_id, MonthClosing.year.desc(), MonthClosing.month.desc())
+    ):
+        grouped.setdefault(row.user_id, []).append(row)
+    walkers: list[tuple[User, float, date, date]] = []
+    for user in users:
+        start, last = bounds[user.id]
+        chosen = _pick_usable(grouped.get(user.id, []), last, start)
+        if chosen is None and (last - start).days > 120:
+            out[user.id] = None
+            continue
+        if chosen is not None:
+            base = float(chosen.flex_hours)
+            calc_from = month_end(chosen.year, chosen.month) + timedelta(days=1)
+        else:
+            if last < start:
+                floor = start - timedelta(days=1)
+                out[user.id] = opening_hours(user) if last >= floor else 0.0
+                continue
+            base = opening_hours(user)
+            calc_from = start
+        if calc_from > last:
+            out[user.id] = base
+            continue
+        end = min(last, employment_end(user, last))
+        if end < calc_from:
+            out[user.id] = base
+            continue
+        walkers.append((user, base, calc_from, end))
+    if not walkers:
+        return out
+    lo = min(item[2] for item in walkers)
+    hi = max(item[3] for item in walkers)
+    return _walk_totals(db, walkers, lo, hi, timelines, frozen_map, out)
+
+
+def _walk_totals(db, walkers, lo, hi, timelines, frozen_map, out) -> dict[int, float | None]:
+    q_lo, q_hi = punches_window_for_month(lo, hi)
+    punch_groups: dict[int, list[Punch]] = {}
+    for punch in db.scalars(
+        select(Punch)
+        .where(Punch.user_id.in_([u.id for u, _b, _c, _e in walkers]), Punch.server_time >= q_lo, Punch.server_time < q_hi)
+        .order_by(Punch.server_time, Punch.id)
+    ):
+        punch_groups.setdefault(punch.user_id, []).append(punch)
+    absences: dict[tuple[int, date], Absence] = {}
+    for row in db.scalars(
+        select(Absence).where(
+            Absence.user_id.in_([u.id for u, _b, _c, _e in walkers]), Absence.day >= lo, Absence.day <= hi
+        )
+    ):
+        absences[(row.user_id, row.day)] = row
+    day_models = load_day_model_map(db, [u.id for u, _b, _c, _e in walkers], lo, hi)
+    cal = calendar_map(db, lo, hi)
+    entry_sums: dict[int, list[tuple[date, float]]] = {}
+    for uid, day, total in db.execute(
+        select(AccountEntry.user_id, AccountEntry.day, func.sum(AccountEntry.amount)).where(
+            AccountEntry.kind == "time",
+            AccountEntry.user_id.in_([u.id for u, _b, _c, _e in walkers]),
+            AccountEntry.day >= lo,
+            AccountEntry.day <= hi,
+        ).group_by(AccountEntry.user_id, AccountEntry.day)
+    ):
+        entry_sums.setdefault(uid, []).append((day, float(total or 0.0)))
+    for user, base, calc_from, end in walkers:
+        own = punches_window_for_month(calc_from, end)
+        index = PunchIndex(punch_groups.get(user.id, []), window=own)
+        timeline = timelines.get(user.id, [])
+        worked = 0.0
+        cur = calc_from
+        while cur <= end:
+            summary = summarize_user_day(
+                user,
+                index,
+                cur,
+                timeline,
+                absence=absences.get((user.id, cur)),
+                calendar=cal.get(cur),
+                frozen=frozen_map.get((user.id, cur.year, cur.month)),
+                model_override=day_models.get((user.id, cur)),
+            )
+            worked += float(summary.get("delta_hours") or 0)
+            cur += timedelta(days=1)
+        entries = sum(amount for day, amount in entry_sums.get(user.id, []) if calc_from <= day <= end)
+        out[user.id] = base + worked + entries
+    return out
 
 
 def refresh_closed_day(db: Session, user: User, day: date, actor_id: int | None) -> None:

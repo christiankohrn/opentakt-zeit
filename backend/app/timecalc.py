@@ -586,8 +586,13 @@ class PunchIndex:
 
     __slots__ = ("active", "active_stamps", "ordered", "stamps")
 
-    def __init__(self, punches) -> None:
+    def __init__(self, punches, window: tuple[datetime, datetime] | None = None) -> None:
         ordered = sorted(punches, key=lambda p: _as_utc(p.server_time))
+        if window is not None:
+            keep = [_as_utc(p.server_time) for p in ordered]
+            lo = bisect_left(keep, window[0])
+            hi = bisect_left(keep, window[1])
+            ordered = ordered[lo:hi]
         active = [p for p in ordered if p.voided_at is None]
         self.ordered = ordered
         self.stamps = [_as_utc(p.server_time) for p in ordered]

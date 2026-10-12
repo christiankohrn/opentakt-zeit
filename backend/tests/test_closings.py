@@ -214,3 +214,123 @@ def test_ledger_from_limits_close_and_import(client, monkeypatch):
     finally:
         _reset_person(person["id"], day)
         client.patch("/api/hr/settings", json={"bundesland": land, "ledger_from": None, "confirm_closed": True})
+
+
+def _make_bx_user(client, username: str, display: str, **extra):
+    models = client.get("/api/hr/work-models").json()
+    flextime = next(m for m in models if m["kind"] == "flextime")
+    res = client.post(
+        "/api/hr/users",
+        json={
+            "username": username,
+            "display_name": display,
+            "role": "employee",
+            "work_model_id": flextime["id"],
+            "web_login": False,
+            **extra,
+        },
+    )
+    assert res.status_code == 200, res.text
+    return res.json()
+
+
+def test_batched_balances_match_single_user_results(client):
+    import pytest
+    from sqlalchemy import delete, select
+
+    from app.balance import days_in_range
+    from app.closings import close_one, listed_total, listed_totals
+    from app.database import SessionLocal
+    from app.models import Absence, MonthClosing, Punch, User
+    from app.workmodels import load_frozen_map, load_timelines
+
+    login(client)
+    admin_id = users_by_name(client)["admin"]["id"]
+    today = date.today()
+    last_end = today.replace(day=1) - timedelta(days=1)
+    month = last_end.strftime("%Y-%m")
+    closed = _make_bx_user(client, "bx-closed", "Bx, Closed", hired_on="2025-01-01")
+    open_u = _make_bx_user(
+        client, "bx-open", "Bx, Open", hired_on=(today - timedelta(days=60)).isoformat()
+    )
+    left = _make_bx_user(
+        client,
+        "bx-left",
+        "Bx, Left",
+        hired_on="2024-01-01",
+        left_on=(today - timedelta(days=200)).isoformat(),
+    )
+    future = _make_bx_user(
+        client, "bx-future", "Bx, Future", hired_on=(today + timedelta(days=30)).isoformat()
+    )
+    ids = [closed["id"], open_u["id"], left["id"], future["id"]]
+    try:
+        workday = last_end
+        while workday.weekday() >= 5:
+            workday -= timedelta(days=1)
+        for uid in (closed["id"], open_u["id"]):
+            stored = put_day(client, uid, workday, "08:00", "16:00")
+            assert stored.status_code == 200, stored.text
+        db = SessionLocal()
+        try:
+            user = db.get(User, closed["id"])
+            assert user is not None
+            assert close_one(db, user, last_end.year, last_end.month, admin_id) >= 1
+            db.commit()
+        finally:
+            db.close()
+        for uid in (closed["id"], open_u["id"]):
+            stored = put_day(client, uid, today, "08:00", "12:00")
+            assert stored.status_code == 200, stored.text
+
+        db = SessionLocal()
+        try:
+            users = list(db.scalars(select(User).where(User.id.in_(ids)).order_by(User.id)))
+            assert len(users) == 4
+            timelines = load_timelines(db, ids)
+            frozen_map = load_frozen_map(db, ids)
+            batched = listed_totals(db, users, today, timelines, frozen_map)
+            for user in users:
+                single = listed_total(db, user, today)
+                both = (batched[user.id], single)
+                assert (both[0] is None) == (both[1] is None)
+                if both[1] is not None:
+                    assert both[0] == pytest.approx(both[1])
+            assert batched[left["id"]] is None
+            assert batched[future["id"]] == pytest.approx(0.0)
+            expected_month = {}
+            start = last_end.replace(day=1)
+            for user in users:
+                work = soll = delta = 0.0
+                for summary in days_in_range(db, user, start, last_end):
+                    if str(summary["date"]) > today.isoformat():
+                        continue
+                    work += float(summary["work_hours"] or 0)
+                    soll += float(summary["soll_hours"] or 0)
+                    delta += float(summary["delta_hours"] or 0)
+                expected_month[user.id] = (work, soll, delta)
+        finally:
+            db.close()
+
+        res = client.get(f"/api/hr/balances?month={month}")
+        assert res.status_code == 200, res.text
+        rows = {row["user_id"]: row for row in res.json()["people"]}
+        for uid in ids:
+            row = rows[uid]
+            work, soll, delta = expected_month[uid]
+            assert row["work_hours"] == pytest.approx(work)
+            assert row["soll_hours"] == pytest.approx(soll)
+            assert row["delta_hours"] == pytest.approx(delta)
+            total = batched[uid]
+            assert (row["total_delta_hours"] is None) == (total is None)
+            if total is not None:
+                assert row["total_delta_hours"] == pytest.approx(total)
+    finally:
+        db = SessionLocal()
+        try:
+            db.execute(delete(MonthClosing).where(MonthClosing.user_id.in_(ids)))
+            db.execute(delete(Punch).where(Punch.user_id.in_(ids)))
+            db.execute(delete(Absence).where(Absence.user_id.in_(ids)))
+            db.commit()
+        finally:
+            db.close()

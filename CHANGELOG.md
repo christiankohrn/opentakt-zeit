@@ -4,7 +4,7 @@ Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Ve
 
 ## [Unreleased]
 
-- Deutlich schnellere Personalübersicht, Prüfung und Monatssalden: Stempel werden pro Zeitraum nur einmal sortiert, Urlaub/Krankheit direkt gezählt statt über Jahressummen (Messung bei 40 Personen: Monatssalden von 26 s auf 0,5 s, Monatsabschluss von 37 s auf 10 s). Die berechneten Werte sind unverändert.
+- Deutlich schnellere Personalübersicht, Prüfung und Monatssalden: Stempel werden pro Zeitraum nur einmal sortiert, Urlaub/Krankheit direkt gezählt statt über Jahressummen, und die Personalübersicht lädt alle Personen mit gebündelten Abfragen (Messung bei 40 Personen: Monatssalden von 26 s auf 0,5 s, Personal von 0,8 s auf 0,4 s bei 59 statt 624 Abfragen, Monatsabschluss von 37 s auf 10 s). Die berechneten Werte sind unverändert.
 - Die Überstundenkappung bucht nur noch die Korrektur auf die Grenze. Ein automatischer Vortrag in den Folgemonat entfällt; zurückholen geht über eine manuelle Buchung.
 - Zeitausgleich und Schule lassen sich wie Urlaub und Krankheit eintragen. Zeitausgleich zieht die Sollzeit vom Zeitkonto ab, auch an einem zukünftigen Tag, und der Tag bleibt ohne Fehlerfarbe.
 - Monatsjournale lassen sich aus den Journalen per E-Mail schicken, wenn die Person eine Adresse und den Haken „Monatsjournal per E-Mail“ hat. Der PDF-Knopf fragt, ob alle Journale oder nur die ohne E-Mail-Adresse geladen werden.

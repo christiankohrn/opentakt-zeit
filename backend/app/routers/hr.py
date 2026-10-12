@@ -12,13 +12,13 @@ from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.auth import HR_ROLES, as_local, bump_session_rev, current_user, local_day_bounds, normalize_username, now_utc, require_admin, require_hr, require_hr_full, write_session
-from app.balance import account_hours, days_in_range, format_hm, load_day_models, summarize_user_day
+from app.balance import account_hours, days_in_range, format_hm, load_day_model_map, load_day_models, summarize_user_day
 from app.closing_job import job_status, start_close, start_recalculate
 from app.closings import (
     any_closing,
     drop_closings_before,
     earliest_per_user,
-    listed_total,
+    listed_totals,
     month_is_closed,
     recalculate_pairs,
     require_open,
@@ -1865,24 +1865,30 @@ def balances(
     last = end - timedelta(days=1)
     q_start, q_end = punches_window_for_month(start, last)
     users = sorted(db.scalars(_user_with_rels()), key=_by_name)
-    timelines = load_timelines(db, [u.id for u in users])
-    frozen_map = load_frozen_map(db, [u.id for u in users])
+    ids = [u.id for u in users]
+    timelines = load_timelines(db, ids)
+    frozen_map = load_frozen_map(db, ids)
     cal = calendar_map(db, start, last)
+    punch_groups: dict[int, list] = {}
+    if ids:
+        for punch in db.scalars(
+            select(Punch)
+            .where(Punch.user_id.in_(ids), Punch.server_time >= q_start, Punch.server_time < q_end)
+            .order_by(Punch.server_time, Punch.id)
+        ):
+            punch_groups.setdefault(punch.user_id, []).append(punch)
+    absences: dict[tuple[int, date], Absence] = {}
+    if ids:
+        for row in db.scalars(
+            select(Absence).where(Absence.user_id.in_(ids), Absence.day >= start, Absence.day <= last)
+        ):
+            absences[(row.user_id, row.day)] = row
+    day_models = load_day_model_map(db, ids, start, last)
     today = as_local(now_utc()).date()
+    totals = listed_totals(db, users, today, timelines, frozen_map)
     people = []
     for user in users:
-        punches = PunchIndex(
-            db.scalars(
-                select(Punch)
-                .where(Punch.user_id == user.id, Punch.server_time >= q_start, Punch.server_time < q_end)
-                .order_by(Punch.server_time)
-            )
-        )
-        absences = {
-            a.day: a
-            for a in db.scalars(select(Absence).where(Absence.user_id == user.id, Absence.day >= start, Absence.day <= last))
-        }
-        day_models = load_day_models(db, user.id, start, last)
+        punches = PunchIndex(punch_groups.get(user.id, []))
         work = soll = delta = 0.0
         cur = start
         while cur < end:
@@ -1891,24 +1897,23 @@ def balances(
                 punches,
                 cur,
                 timelines.get(user.id, []),
-                absence=absences.get(cur),
+                absence=absences.get((user.id, cur)),
                 calendar=cal.get(cur),
                 frozen=frozen_map.get((user.id, cur.year, cur.month)),
-                model_override=day_models.get(cur),
+                model_override=day_models.get((user.id, cur)),
             )
             if cur <= today:
                 work += float(summary["work_hours"] or 0)
                 soll += float(summary["soll_hours"] or 0)
                 delta += float(summary["delta_hours"] or 0)
             cur += timedelta(days=1)
-        total_flex = listed_total(db, user, today)
         people.append(
             {
                 "user_id": user.id,
                 "work_hours": work,
                 "soll_hours": soll,
                 "delta_hours": delta,
-                "total_delta_hours": total_flex,
+                "total_delta_hours": totals[user.id],
             }
         )
     return {"month": month, "people": people}
