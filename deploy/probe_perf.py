@@ -59,7 +59,16 @@ esp_terminal_secret = "probe"
     from sqlalchemy import event, func, select
 
     from app.database import SessionLocal, engine, ensure_schema
-    from app.models import Punch, User
+    from app.models import (
+        Absence,
+        AccountEntry,
+        DayModel,
+        MonthClosing,
+        Punch,
+        User,
+        WorkModel,
+        WorkModelAssignment,
+    )
     from app.routers import hr, reports
 
     stats = {"count": 0, "time": 0.0}
@@ -79,6 +88,35 @@ esp_terminal_secret = "probe"
         users = list(db.scalars(select(User).where(User.active)))
         punches = db.scalar(select(func.count(Punch.id))) or 0
         print(f"personen(aktiv)={len(users)} stempel={punches}")
+        kinds = dict(
+            db.execute(
+                select(WorkModel.kind, func.count(User.id))
+                .join(User, User.work_model_id == WorkModel.id)
+                .where(User.active)
+                .group_by(WorkModel.kind)
+            ).all()
+        )
+        no_model = sum(1 for u in users if u.work_model_id is None)
+        print(f"stammmodelle={kinds} ohne={no_model}")
+        print(
+            "verlaeufe={} tagesmodelle={} abschluesse={} davon_eingefroren={} abwesenheiten={} konten={}".format(
+                db.scalar(select(func.count(WorkModelAssignment.id))) or 0,
+                db.scalar(select(func.count(DayModel.id))) or 0,
+                db.scalar(select(func.count(MonthClosing.id))) or 0,
+                db.scalar(
+                    select(func.count(MonthClosing.id)).where(MonthClosing.rules_json.is_not(None))
+                )
+                or 0,
+                dict(
+                    db.execute(select(Absence.kind, func.count(Absence.id)).group_by(Absence.kind)).all()
+                ),
+                dict(
+                    db.execute(
+                        select(AccountEntry.kind, func.count(AccountEntry.id)).group_by(AccountEntry.kind)
+                    ).all()
+                ),
+            )
+        )
         admin = next(
             (u for u in users if u.role in {"admin", "hr"} and not u.must_change_password),
             None,
