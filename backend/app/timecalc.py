@@ -82,9 +82,8 @@ def fixed_break_window(model: object | None, day: date) -> tuple[str, str] | Non
     if raw is None or raw == "":
         return None
     if isinstance(raw, str):
-        try:
-            raw = json.loads(raw)
-        except json.JSONDecodeError:
+        raw = _loads_cached(raw)
+        if raw is _JSON_ERROR:
             return None
     if not isinstance(raw, dict):
         return None
@@ -212,9 +211,8 @@ def break_steps(model: object | None) -> list[tuple[int, int]]:
     if raw is None or raw == "":
         return default_break_steps()
     if isinstance(raw, str):
-        try:
-            raw = json.loads(raw)
-        except json.JSONDecodeError:
+        raw = _loads_cached(raw)
+        if raw is _JSON_ERROR:
             return default_break_steps()
     if not isinstance(raw, list):
         return default_break_steps()
@@ -355,9 +353,8 @@ def _shift_data(model) -> list:
     if isinstance(raw, list):
         data = raw
     elif isinstance(raw, str) and raw.strip():
-        try:
-            data = json.loads(raw)
-        except json.JSONDecodeError:
+        data = _loads_cached(raw)
+        if data is _JSON_ERROR:
             return []
     else:
         return []
@@ -433,9 +430,8 @@ def _corridor_bounds(model, day: date) -> tuple[int | None, int | None]:
     if isinstance(raw, dict):
         data = raw
     elif isinstance(raw, str) and raw.strip():
-        try:
-            data = json.loads(raw)
-        except json.JSONDecodeError:
+        data = _loads_cached(raw)
+        if data is _JSON_ERROR:
             return None, None
     else:
         return None, None
@@ -621,9 +617,22 @@ class PunchIndex:
         return lo < len(self.active) and self.active[lo].kind != "in"
 
 
+@lru_cache(maxsize=131072)
 def _as_minute(dt: datetime) -> datetime:
     """Clock minute used for durations. The display already hides seconds."""
     return _as_utc(dt).replace(second=0, microsecond=0)
+
+
+_JSON_ERROR = object()
+
+
+@lru_cache(maxsize=4096)
+def _loads_cached(raw: str):
+    """Gecachtes JSON für Modellregeln. Aufrufer lesen das Ergebnis nur."""
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return _JSON_ERROR
 
 
 def work_intervals(
