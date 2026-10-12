@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+from bisect import bisect_left
 from datetime import date, datetime, timedelta
+from functools import lru_cache
+from itertools import islice
 from zoneinfo import ZoneInfo
 
 from app.auth import as_local, local_day_bounds, local_tz
@@ -15,10 +18,8 @@ VALID_TRANSITIONS = {
 }
 
 
-def status_from_punches(punches: list[Punch]) -> str:
-    """Zustand nach den Buchungen. Eine Pause nach dem Gehen öffnet den Tag nicht wieder."""
-    active = [p for p in punches if p.voided_at is None]
-    active.sort(key=lambda p: _as_utc(p.server_time))
+def _status_from_ordered(active) -> str:
+    """Zustand nach zeitlich sortierten, gültigen Buchungen."""
     state = "away"
     for p in active:
         if p.kind not in VALID_TRANSITIONS.get(state, set()):
@@ -32,6 +33,13 @@ def status_from_punches(punches: list[Punch]) -> str:
         elif p.kind == "out":
             state = "away"
     return state
+
+
+def status_from_punches(punches: list[Punch]) -> str:
+    """Zustand nach den Buchungen. Eine Pause nach dem Gehen öffnet den Tag nicht wieder."""
+    active = [p for p in punches if p.voided_at is None]
+    active.sort(key=lambda p: _as_utc(p.server_time))
+    return _status_from_ordered(active)
 
 
 def allowed_kinds(state: str) -> list[str]:
@@ -74,9 +82,8 @@ def fixed_break_window(model: object | None, day: date) -> tuple[str, str] | Non
     if raw is None or raw == "":
         return None
     if isinstance(raw, str):
-        try:
-            raw = json.loads(raw)
-        except json.JSONDecodeError:
+        raw = _loads_cached(raw)
+        if raw is _JSON_ERROR:
             return None
     if not isinstance(raw, dict):
         return None
@@ -204,9 +211,8 @@ def break_steps(model: object | None) -> list[tuple[int, int]]:
     if raw is None or raw == "":
         return default_break_steps()
     if isinstance(raw, str):
-        try:
-            raw = json.loads(raw)
-        except json.JSONDecodeError:
+        raw = _loads_cached(raw)
+        if raw is _JSON_ERROR:
             return default_break_steps()
     if not isinstance(raw, list):
         return default_break_steps()
@@ -347,9 +353,8 @@ def _shift_data(model) -> list:
     if isinstance(raw, list):
         data = raw
     elif isinstance(raw, str) and raw.strip():
-        try:
-            data = json.loads(raw)
-        except json.JSONDecodeError:
+        data = _loads_cached(raw)
+        if data is _JSON_ERROR:
             return []
     else:
         return []
@@ -425,9 +430,8 @@ def _corridor_bounds(model, day: date) -> tuple[int | None, int | None]:
     if isinstance(raw, dict):
         data = raw
     elif isinstance(raw, str) and raw.strip():
-        try:
-            data = json.loads(raw)
-        except json.JSONDecodeError:
+        data = _loads_cached(raw)
+        if data is _JSON_ERROR:
             return None, None
     else:
         return None, None
@@ -562,33 +566,86 @@ def soll_hours(model: WorkModel | None, day: date) -> float:
     return float(mapping[day.weekday()])
 
 
+@lru_cache(maxsize=131072)
 def _as_utc(dt: datetime) -> datetime:
     if dt.tzinfo is None:
         return dt.replace(tzinfo=ZoneInfo("UTC"))
     return dt.astimezone(ZoneInfo("UTC"))
 
 
+class PunchIndex:
+    """Einmal sortierte Stempel eines Zeitraums; Tagesausschnitte per Bisektion.
+
+    Die Reihenfolge entspricht exakt der bisherigen Auswahl: stabile Sortierung
+    nach UTC, gleiche Zeitstempel bleiben in Eingabereihenfolge.
+    """
+
+    __slots__ = ("active", "active_stamps", "ordered", "stamps")
+
+    def __init__(self, punches, window: tuple[datetime, datetime] | None = None) -> None:
+        ordered = sorted(punches, key=lambda p: _as_utc(p.server_time))
+        if window is not None:
+            keep = [_as_utc(p.server_time) for p in ordered]
+            lo = bisect_left(keep, window[0])
+            hi = bisect_left(keep, window[1])
+            ordered = ordered[lo:hi]
+        active = [p for p in ordered if p.voided_at is None]
+        self.ordered = ordered
+        self.stamps = [_as_utc(p.server_time) for p in ordered]
+        self.active = active
+        self.active_stamps = [_as_utc(p.server_time) for p in active]
+
+    def in_day(self, start_utc: datetime, end_utc: datetime) -> list[Punch]:
+        lo = bisect_left(self.stamps, start_utc)
+        hi = bisect_left(self.stamps, end_utc)
+        return self.ordered[lo:hi]
+
+    def before(self, start_utc: datetime) -> list[Punch]:
+        hi = bisect_left(self.active_stamps, start_utc)
+        return self.active[:hi]
+
+    def state_before(self, start_utc: datetime) -> str:
+        hi = bisect_left(self.active_stamps, start_utc)
+        return _status_from_ordered(islice(self.active, hi))
+
+    def at_after(self, end_utc: datetime) -> list[Punch]:
+        lo = bisect_left(self.active_stamps, end_utc)
+        return self.active[lo:]
+
+    def continues_after(self, end_utc: datetime) -> bool:
+        lo = bisect_left(self.active_stamps, end_utc)
+        return lo < len(self.active) and self.active[lo].kind != "in"
+
+
+@lru_cache(maxsize=131072)
 def _as_minute(dt: datetime) -> datetime:
     """Clock minute used for durations. The display already hides seconds."""
     return _as_utc(dt).replace(second=0, microsecond=0)
 
 
+_JSON_ERROR = object()
+
+
+@lru_cache(maxsize=4096)
+def _loads_cached(raw: str):
+    """Gecachtes JSON für Modellregeln. Aufrufer lesen das Ergebnis nur."""
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return _JSON_ERROR
+
+
 def work_intervals(
-    punches: list[Punch],
+    punches: list[Punch] | PunchIndex,
     day: date,
     now: datetime | None = None,
 ) -> list[tuple[datetime, datetime]]:
     """UTC work intervals on this local day, excluding breaks. Open shifts run until min(now, day end)."""
+    prepared = punches if isinstance(punches, PunchIndex) else PunchIndex(punches)
     start_utc, end_utc = local_day_bounds(day)
     now = now or datetime.now(tz=ZoneInfo("UTC"))
-    events = [
-        p
-        for p in punches
-        if p.voided_at is None and start_utc <= _as_utc(p.server_time) < end_utc
-    ]
-    events.sort(key=lambda p: _as_utc(p.server_time))
-    prev = [p for p in punches if p.voided_at is None and _as_utc(p.server_time) < start_utc]
-    prev_state = status_from_punches(prev)
+    events = [p for p in prepared.in_day(start_utc, end_utc) if p.voided_at is None]
+    prev_state = prepared.state_before(start_utc)
     intervals: list[tuple[datetime, datetime]] = []
     open_in: datetime | None = start_utc if prev_state == "in" else None
     open_break: datetime | None = start_utc if prev_state == "break" else None
@@ -614,21 +671,13 @@ def work_intervals(
                 open_in = None
     day_end = _as_minute(min(now, end_utc))
     if open_in:
-        if now >= end_utc and not _closed_later(punches, end_utc):
+        if now >= end_utc and not prepared.continues_after(end_utc):
             # Forgotten checkout: the shift was never closed, so the tail
             # until midnight is unknown and must not be credited.
             return intervals
         if day_end > open_in:
             intervals.append((open_in, day_end))
     return intervals
-
-
-def _closed_later(punches: list[Punch], end_utc: datetime) -> bool:
-    """Whether a punch after this day continues the open shift (night shift)."""
-    later = [p for p in punches if p.voided_at is None and _as_utc(p.server_time) >= end_utc]
-    later.sort(key=lambda p: _as_utc(p.server_time))
-    next_kind = later[0].kind if later else None
-    return next_kind is not None and next_kind != "in"
 
 
 def _consume_open_shift(punches: list[Punch], state: str) -> tuple[list[Punch], list[Punch]]:
@@ -650,7 +699,7 @@ def _consume_open_shift(punches: list[Punch], state: str) -> tuple[list[Punch], 
 
 
 def summarize_day(
-    punches: list[Punch],
+    punches: list[Punch] | PunchIndex,
     day: date,
     model: WorkModel | None,
     now: datetime | None = None,
@@ -658,14 +707,13 @@ def summarize_day(
     auto_break: bool = False,
     calendar=None,
 ) -> dict:
+    prepared = punches if isinstance(punches, PunchIndex) else PunchIndex(punches)
     start_utc, end_utc = local_day_bounds(day)
     now = now or datetime.now(tz=ZoneInfo("UTC"))
-    all_in_day = [p for p in punches if start_utc <= _as_utc(p.server_time) < end_utc]
-    all_in_day.sort(key=lambda p: _as_utc(p.server_time))
+    all_in_day = prepared.in_day(start_utc, end_utc)
     events = [p for p in all_in_day if p.voided_at is None]
 
-    prev = [p for p in punches if p.voided_at is None and _as_utc(p.server_time) < start_utc]
-    prev_state = status_from_punches(prev)
+    prev_state = prepared.state_before(start_utc)
     has_shifts = bool(_shift_data(model)) if model is not None else False
     day_rows = _shift_rows(model, day) if has_shifts else []
     # Nachtschicht bleibt am Tag des Kommens. Das Gehen am Morgen gehört nicht
@@ -687,9 +735,7 @@ def summarize_day(
             elif punch.kind == "out":
                 state = "away"
         if state in {"in", "break"}:
-            later = [p for p in punches if p.voided_at is None and _as_utc(p.server_time) >= end_utc]
-            later.sort(key=lambda p: _as_utc(p.server_time))
-            taken, _rest = _consume_open_shift(later, state)
+            taken, _rest = _consume_open_shift(prepared.at_after(end_utc), state)
             if any(p.kind == "out" for p in taken):
                 continuation = taken
                 events = [*events, *continuation]
@@ -719,7 +765,7 @@ def summarize_day(
     active_bounds: tuple[int | None, int | None] | None = None
     shift_names: list[str] = []
     if has_shifts and prev_state in {"in", "break"}:
-        origin = _open_shift_in(prev)
+        origin = _open_shift_in(prepared.before(start_utc))
         if origin is not None:
             local = as_local(origin)
             origin_rows = _shift_rows(model, local.date())
@@ -797,7 +843,7 @@ def summarize_day(
         span_open = None
     elif open_break or open_in:
         still_open = True
-        credit_tail = now < end_utc or _closed_later(punches, end_utc)
+        credit_tail = now < end_utc or prepared.continues_after(end_utc)
         if credit_tail:
             if open_break and day_end > open_break:
                 pause += day_end - open_break
@@ -849,7 +895,7 @@ def summarize_day(
     soll = soll_hours(model, day)
     warnings: list[str] = []
     if still_open and now >= end_utc:
-        if _closed_later(punches, end_utc):
+        if prepared.continues_after(end_utc):
             warnings.append("overnight")
         else:
             warnings.append("checkout_missing")

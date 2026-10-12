@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 
 from app.database import SessionLocal
 from app.models import Punch
-from app.reports import jubilees_report, month_balances_report
+from app.reports import absence_counts, jubilees_report, month_balances_report
 from app.timecalc import work_intervals
 
 
@@ -572,3 +572,98 @@ def test_school_and_future_comp_time_can_be_booked(client):
     finally:
         client.delete(f"/api/hr/users/{person['id']}/absences/{comp_day}")
         client.delete(f"/api/hr/users/{person['id']}/absences/{school_day}")
+
+
+def _book(client, user_id: int, kind: str, day: str) -> None:
+    res = client.post(
+        f"/api/hr/users/{user_id}/absences",
+        json={"kind": kind, "start": day, "end": day},
+    )
+    assert res.status_code == 200, res.text
+
+
+def test_absence_counts_match_day_summaries(client):
+    from sqlalchemy import delete, select
+
+    from app.balance import days_in_range, is_employed
+    from app.models import DayModel, User, WorkModel
+
+    login(client)
+    person = create_person(
+        client, "ae-count", "Count Ab", hired_on="2025-06-01", left_on="2026-06-30", vacation_days_year=30
+    )
+    uid = person["id"]
+    zero_id: int | None = None
+    try:
+        _book(client, uid, "vacation", "2026-02-10")
+        _book(client, uid, "vacation", "2026-03-10")
+        _book(client, uid, "vacation", "2026-05-05")
+        _book(client, uid, "vacation", "2026-03-14")  # Samstag zählt nicht
+        _book(client, uid, "vacation", "2026-04-03")  # Karfreitag zählt nicht
+        _book(client, uid, "vacation", "2026-07-07")  # nach Austritt zählt nicht
+        _book(client, uid, "sick", "2026-02-11")
+        _book(client, uid, "sick", "2026-03-08")  # Sonntag zählt bei Krankheit mit
+        created = client.post(
+            "/api/hr/work-models",
+            json={
+                "name": "Nullmodell-Zähltest",
+                "hours_mon": 0,
+                "hours_tue": 0,
+                "hours_wed": 0,
+                "hours_thu": 0,
+                "hours_fri": 0,
+                "hours_sat": 0,
+                "hours_sun": 0,
+            },
+        )
+        assert created.status_code == 200, created.text
+        zero_id = created.json()["id"]
+        zero_model = client.put(f"/api/hr/users/{uid}/days/2026-03-11/model", json={"work_model_id": zero_id})
+        assert zero_model.status_code == 200, zero_model.text
+        _book(client, uid, "vacation", "2026-03-11")  # Tag ohne Soll zählt nicht
+
+        year_start, year_end = date(2026, 1, 1), date(2026, 12, 31)
+        prev_last, as_of = date(2026, 2, 28), date(2026, 3, 15)
+        db = SessionLocal()
+        try:
+            user = db.scalar(select(User).where(User.id == uid))
+            assert user is not None
+            # Alte Zähllogik über Tagessummen als Referenz.
+            vac_prev = vac_ytd = vac_year = 0
+            sick_prev = sick_ytd = 0
+            for summary in days_in_range(db, user, year_start, year_end):
+                day = date.fromisoformat(str(summary["date"]))
+                kind = ((summary.get("absence") or {}) or {}).get("kind") or ""
+                if not is_employed(user, day) or day < year_start or day > year_end:
+                    continue
+                if kind == "vacation" and float(summary.get("soll_hours") or 0) <= 0:
+                    continue
+                if kind == "vacation":
+                    vac_year += 1
+                    if day <= prev_last:
+                        vac_prev += 1
+                    if day <= as_of:
+                        vac_ytd += 1
+                elif kind == "sick":
+                    if day <= prev_last:
+                        sick_prev += 1
+                    if day <= as_of:
+                        sick_ytd += 1
+            expected = (vac_prev, vac_ytd, vac_year, sick_prev, sick_ytd)
+            assert expected == (1, 2, 3, 1, 2)
+            assert absence_counts(db, user, year_start, year_end, prev_last, as_of) == expected
+            rows = month_balances_report(db, "2026-03", as_of=as_of, today=as_of)
+        finally:
+            db.close()
+        clara = next(row for row in rows if row["user_id"] == uid)
+        assert (clara["vacation_prev"], clara["vacation_total"], clara["vacation_future"]) == (1, 2, 3)
+        assert (clara["sick_prev"], clara["sick_total"]) == (1, 2)
+    finally:
+        db = SessionLocal()
+        try:
+            db.execute(delete(DayModel).where(DayModel.user_id == uid))
+            if zero_id is not None:
+                db.execute(delete(WorkModel).where(WorkModel.id == zero_id))
+            db.commit()
+        finally:
+            db.close()
