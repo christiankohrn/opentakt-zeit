@@ -169,6 +169,21 @@ def _pause_clock(cell: dict) -> tuple[str, str] | None:
     return start, end
 
 
+def _weekday_has_shift_pause(model: object | None, day: date) -> bool:
+    """Feste Pause an diesem Wochentag. Nur dann wird ohne Korridor gerastert."""
+    if break_mode_of(model) != "fixed":
+        return False
+    key = _WEEKDAYS[day.weekday()]
+    for slot in _shift_data(model):
+        if not isinstance(slot, dict):
+            continue
+        days = slot.get("days") if isinstance(slot.get("days"), dict) else {}
+        cell = days.get(key) if isinstance(days, dict) else None
+        if isinstance(cell, dict) and _pause_clock(cell) is not None:
+            return True
+    return False
+
+
 def fixed_break_minutes(
     day: date,
     spans: list[tuple[datetime, datetime]],
@@ -726,14 +741,20 @@ def summarize_day(
                     shift_names.append(name)
             if active_bounds is not None:
                 t = credit_start(t, model, day, active_bounds, comp_time=comp_time and p is first_in_punch)
-            elif p is first_in_punch:
-                # Kein Korridor: die erste Buchung wird trotzdem gerastert, nichts abgeschnitten.
+            elif p is first_in_punch and _weekday_has_shift_pause(model, day):
+                # Pause wählt die Schicht: erste Buchung rastern, nichts abschneiden.
                 t = credit_start(t, model, day, (None, None), comp_time=comp_time)
         elif model is not None and p is first_in_punch and not has_shifts:
             t = credit_start(t, model, day, comp_time=comp_time)
         elif p.kind == "out" and has_shifts and active_bounds is not None:
             t = credit_end(t, model, day, active_bounds)
-        elif p.kind == "out" and has_shifts and active_bounds is None and p is last_out_punch:
+        elif (
+            p.kind == "out"
+            and has_shifts
+            and active_bounds is None
+            and p is last_out_punch
+            and _weekday_has_shift_pause(model, day)
+        ):
             t = credit_end(t, model, day, (None, None))
         elif model is not None and p is last_out_punch and not has_shifts:
             t = credit_end(t, model, day)
