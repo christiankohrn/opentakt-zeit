@@ -1,9 +1,9 @@
-import { useState } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import ConfirmDialog from "./ConfirmDialog";
-import { IconAlert, IconCalendar, IconChart, IconClock, IconGear, IconLock, IconLogout, IconMoon, IconSun, IconUsers } from "./Icons";
+import { IconAlert, IconCalendar, IconChart, IconChevron, IconClock, IconGear, IconLock, IconLogout, IconMoon, IconSun, IconUsers } from "./Icons";
 import { useTheme } from "../theme";
 
 function initials(name: string | undefined, fallback: string | undefined) {
@@ -35,6 +35,37 @@ export default function Layout() {
   const { dark, cycle, theme } = useTheme();
   const [logoutConfirm, setLogoutConfirm] = useState(false);
   const [logoutBusy, setLogoutBusy] = useState(false);
+  const location = useLocation();
+  const bottomNavRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  useEffect(() => {
+    const el = bottomNavRef.current;
+    if (!el) return;
+    const update = () => {
+      setCanScrollLeft(el.scrollLeft > 4);
+      setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+    };
+    update();
+    el.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    return () => {
+      el.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+    };
+  }, [hr, hrFull, admin]);
+
+  useEffect(() => {
+    bottomNavRef.current?.querySelector('[aria-current="page"]')?.scrollIntoView({ inline: "nearest", block: "nearest" });
+  }, [location.pathname]);
+
+  function scrollBottomNav(direction: 1 | -1) {
+    const el = bottomNavRef.current;
+    if (!el) return;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    el.scrollBy({ left: direction * el.clientWidth * 0.7, behavior: reduce ? "auto" : "smooth" });
+  }
 
   async function logout() {
     setLogoutBusy(true);
@@ -172,8 +203,37 @@ export default function Layout() {
           <Outlet />
         </main>
         <nav className="fixed inset-x-0 bottom-0 bg-nav text-white shadow-[0_-12px_28px_rgba(0,34,70,0.35)] print:hidden lg:hidden">
-          <div className="mx-auto flex w-full max-w-3xl gap-1 overflow-x-auto px-2 pb-[max(0.6rem,env(safe-area-inset-bottom))] pt-2">
-            {links("bottom")}
+          <div className="relative mx-auto w-full max-w-3xl">
+            <div
+              ref={bottomNavRef}
+              className="flex w-full gap-1 overflow-x-auto px-2 pb-[max(0.6rem,env(safe-area-inset-bottom))] pt-2"
+            >
+              {links("bottom")}
+            </div>
+            {canScrollLeft ? (
+              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center bg-gradient-to-r from-nav via-nav/80 to-transparent pl-1 pr-6">
+                <button
+                  type="button"
+                  onClick={() => scrollBottomNav(-1)}
+                  aria-label="Menü nach links scrollen"
+                  className="pointer-events-auto rounded-full bg-white/15 p-1 text-white"
+                >
+                  <IconChevron className="h-4 w-4 rotate-180" />
+                </button>
+              </div>
+            ) : null}
+            {canScrollRight ? (
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center bg-gradient-to-l from-nav via-nav/80 to-transparent pl-6 pr-1">
+                <button
+                  type="button"
+                  onClick={() => scrollBottomNav(1)}
+                  aria-label="Menü nach rechts scrollen"
+                  className="pointer-events-auto rounded-full bg-white/15 p-1 text-white"
+                >
+                  <IconChevron className="h-4 w-4" />
+                </button>
+              </div>
+            ) : null}
           </div>
         </nav>
       </div>
