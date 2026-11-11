@@ -55,6 +55,15 @@ def test_update_supported_with_server_layout(tmp_path, monkeypatch):
     assert "Server" in (reason or "")
 
 
+def test_status_write_creates_missing_directory(tmp_path, monkeypatch):
+    import app.update_service as svc
+
+    monkeypatch.setattr(svc, "data_dir", lambda cfg=None: tmp_path / "neu" / "daten")
+    written = svc.write_status_file({"last_check": "x"})
+    assert written["last_check"] == "x"
+    assert (tmp_path / "neu" / "daten" / "update-status.json").is_file()
+
+
 def test_update_check_stores_remote_state(client, monkeypatch):
     import app.update_service as svc
 
