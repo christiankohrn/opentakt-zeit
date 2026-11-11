@@ -23,7 +23,15 @@ if [ ! -w "$DATA" ]; then
   echo "Keine Schreibrechte auf $DATA — als root bzw. mit sudo starten." >&2
   exit 1
 fi
-if ! mkdir "$LOCK" 2>/dev/null; then
+# --from-web übergibt per exec an --continue-from-web. Die Sperre bleibt liegen,
+# der zweite Prozess übernimmt sie (kein zweites mkdir, sonst bricht er ab).
+if [ "$MODE" = "--continue-from-web" ]; then
+  if [ ! -d "$LOCK" ]; then
+    echo "Update-Sperre fehlt. Abbruch." >&2
+    update_state failed "Update-Sperre fehlt."
+    exit 1
+  fi
+elif ! mkdir "$LOCK" 2>/dev/null; then
   echo "Ein Update läuft bereits. Abbruch."
   exit 0
 fi
@@ -62,6 +70,7 @@ if [ "$MODE" = "--from-web" ]; then
     --exclude 'lib' \
     "$WORK"/ "$APP_ROOT"/
   rm -rf "$WORK"
+  chmod a+x "$APP_ROOT/deploy/"*.sh
   echo "==> Code synchron, starte neue Version"
   exec bash "$APP_ROOT/deploy/update.sh" --continue-from-web
 fi

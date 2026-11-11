@@ -5,4 +5,4 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/opt/zeiterfassung/deploy/update.sh --from-web
+ExecStart=/bin/bash /opt/zeiterfassung/deploy/update.sh --from-web
