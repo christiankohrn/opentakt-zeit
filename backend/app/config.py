@@ -65,6 +65,7 @@ class AppConfig(BaseModel):
     datafox_secret: str = ""
     esp_terminal_secret: str = ""
     import_token: str = ""
+    github_token: str = ""
 
     @property
     def is_dev(self) -> bool:

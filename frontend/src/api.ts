@@ -364,6 +364,45 @@ export type UserCreateResult = User & {
   mail_error?: string | null;
 };
 
+export type UpdateInstalled = {
+  version: string;
+  commit: string | null;
+  commit_short: string | null;
+  commit_date: string | null;
+  message: string;
+};
+
+export type UpdateRemote = {
+  commit: string;
+  commit_short: string;
+  date: string | null;
+  message: string;
+  url: string;
+};
+
+export type UpdateRun = {
+  state: "idle" | "running" | "done" | "failed";
+  requested_by?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  from_commit?: string | null;
+  to_commit?: string | null;
+  error?: string | null;
+  log_tail?: string[];
+};
+
+export type UpdateStatus = {
+  supported: boolean;
+  unsupported_reason: string | null;
+  installed: UpdateInstalled;
+  source: { repo: string; branch: string; url: string };
+  remote: UpdateRemote | null;
+  comparison: "unknown" | "current" | "behind" | "ahead" | "diverged";
+  behind_by: number | null;
+  last_check: string | null;
+  update: UpdateRun;
+};
+
 export class ApiError extends Error {
   status: number;
   detail: unknown;
@@ -867,4 +906,7 @@ export const api = {
       "/api/hr/reports/journal/mail",
       { method: "POST", body: JSON.stringify({ month, user_ids: userIds ?? null }) },
     ),
+  updateStatus: () => request<UpdateStatus>("/api/hr/update/status"),
+  checkUpdate: () => request<UpdateStatus>("/api/hr/update/check", { method: "POST" }),
+  applyUpdate: () => request<UpdateStatus>("/api/hr/update/apply", { method: "POST" }),
 };

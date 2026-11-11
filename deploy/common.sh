@@ -187,3 +187,112 @@ ensure_terminal_http() {
   python3 "$APP_ROOT/deploy/ensure_proxy_timeout.py" || true
   nginx -t && systemctl reload nginx
 }
+
+install_update_units() {
+  install -m 644 "$APP_ROOT/deploy/zeiterfassung-update.service" /etc/systemd/system/zeiterfassung-update.service
+  install -m 644 "$APP_ROOT/deploy/zeiterfassung-update.path" /etc/systemd/system/zeiterfassung-update.path
+  systemctl daemon-reload
+  systemctl enable --now zeiterfassung-update.path
+}
+
+# Git-Stand eines Verzeichnisses als JSON nach stdout (leer bei Fehler).
+git_meta_json() {
+  python3 - "$1" <<'PY'
+import json
+import subprocess
+import sys
+
+d = sys.argv[1]
+
+def run(*args):
+    try:
+        return subprocess.run(
+            ["git", "-C", d, *args], capture_output=True, text=True, timeout=10, check=True
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+print(json.dumps({
+    "commit": run("rev-parse", "HEAD"),
+    "commit_date": run("log", "-1", "--format=%cI"),
+    "message": run("log", "-1", "--format=%s")[:160],
+}))
+PY
+}
+
+# Schreibt $DATA/version.json aus dem Git-Stand eines Verzeichnisses (leise ohne .git).
+write_version_from_dir() {
+  eval "$(git_meta_json "$1" | python3 -c '
+import json
+import shlex
+import sys
+
+try:
+    d = json.load(sys.stdin)
+except ValueError:
+    d = {}
+print("META_COMMIT=" + shlex.quote(str(d.get("commit") or "")))
+print("META_DATE=" + shlex.quote(str(d.get("commit_date") or "")))
+print("META_MSG=" + shlex.quote(str(d.get("message") or "")))
+')"
+  if [ -n "${META_COMMIT:-}" ]; then
+    write_version_json "$META_COMMIT" "$META_DATE" "$META_MSG"
+  fi
+}
+
+# Schreibt $DATA/version.json. Argumente: commit datum nachricht.
+write_version_json() {
+  V_COMMIT="$1" V_DATE="$2" V_MSG="$3" python3 <<'PY'
+import json
+import os
+from datetime import datetime, timezone
+from pathlib import Path
+
+data = Path(os.environ.get("DATA", "/var/lib/zeiterfassung"))
+p = data / "version.json"
+doc = {
+    "commit": os.environ.get("V_COMMIT") or None,
+    "commit_date": os.environ.get("V_DATE") or None,
+    "message": (os.environ.get("V_MSG") or "")[:160],
+    "installed_at": datetime.now(timezone.utc).isoformat(),
+    "source": "github",
+    "branch": "main",
+}
+tmp = p.with_suffix(".tmp")
+tmp.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+tmp.replace(p)
+PY
+  chown zeiterfassung:zeiterfassung "$DATA/version.json" || true
+}
+
+# Pflegt den Update-Teil von $DATA/update-status.json. Argumente: zustand [fehler] [commit].
+update_state() {
+  STATE="$1" STATE_ERROR="${2:-}" STATE_TO="${3:-}" python3 <<'PY'
+import json
+import os
+from datetime import datetime, timezone
+from pathlib import Path
+
+data = Path(os.environ.get("DATA", "/var/lib/zeiterfassung"))
+p = data / "update-status.json"
+try:
+    cur = json.loads(p.read_text(encoding="utf-8")) if p.is_file() else {}
+except ValueError:
+    cur = {}
+if not isinstance(cur, dict):
+    cur = {}
+upd = cur.get("update") if isinstance(cur.get("update"), dict) else {}
+upd["state"] = os.environ["STATE"]
+if os.environ.get("STATE_TO"):
+    upd["to_commit"] = os.environ["STATE_TO"][:7]
+if os.environ.get("STATE_ERROR"):
+    upd["error"] = os.environ["STATE_ERROR"][:500]
+if os.environ["STATE"] in {"done", "failed"}:
+    upd["finished_at"] = datetime.now(timezone.utc).isoformat()
+cur["update"] = upd
+tmp = p.with_suffix(".tmp")
+tmp.write_text(json.dumps(cur, ensure_ascii=False), encoding="utf-8")
+tmp.replace(p)
+PY
+  chown zeiterfassung:zeiterfassung "$DATA/update-status.json" || true
+}

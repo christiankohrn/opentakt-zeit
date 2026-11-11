@@ -1,6 +1,6 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { api, ApiError, type DfcomSettings, type EspTerminalSettings, type ImportTokenSettings, type SecurityPolicyValue, type SmtpSettings } from "../api";
+import { api, ApiError, type DfcomSettings, type EspTerminalSettings, type ImportTokenSettings, type SecurityPolicyValue, type SmtpSettings, type UpdateStatus } from "../api";
 import ConfirmDialog from "../components/ConfirmDialog";
 import PasswordField from "../components/PasswordField";
 import LoadingNote from "../components/LoadingNote";
@@ -23,12 +23,13 @@ const TABS = [
   { id: "sicherheit", label: "Sicherheit" },
   { id: "mail", label: "Mail" },
   { id: "terminals", label: "Terminals" },
+  { id: "update", label: "Update" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
 
 function parseTab(value: string | null): TabId {
-  if (value === "mail" || value === "terminals" || value === "sicherheit") return value;
+  if (value === "mail" || value === "terminals" || value === "sicherheit" || value === "update") return value;
   return "sicherheit";
 }
 
@@ -1057,6 +1058,290 @@ function ImportCard() {
   );
 }
 
+function formatDateTime(value: string | null | undefined) {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" });
+}
+
+function comparisonText(s: UpdateStatus): string {
+  if (!s.remote) return "Noch nicht geprüft.";
+  switch (s.comparison) {
+    case "current":
+      return "Auf dem neuesten Stand.";
+    case "behind":
+      return s.behind_by ? `${s.behind_by} Commits dahinter.` : "Neuere Version verfügbar.";
+    case "ahead":
+      return "Installierter Stand ist neuer als GitHub.";
+    case "diverged":
+      return s.behind_by ? `Abgewichen, ${s.behind_by} Commits dahinter.` : "Abgewichen.";
+    default:
+      return "Vergleich unbekannt.";
+  }
+}
+
+function UpdateCard() {
+  const [status, setStatus] = useState<UpdateStatus | null>(null);
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [ready, setReady] = useState(false);
+  const [confirm, setConfirm] = useState(false);
+  const [phase, setPhase] = useState<"idle" | "updating" | "reconnect">("idle");
+  const timer = useRef<number | null>(null);
+
+  function stopPoll() {
+    if (timer.current !== null) {
+      window.clearInterval(timer.current);
+      timer.current = null;
+    }
+  }
+
+  useEffect(() => {
+    void api
+      .updateStatus()
+      .then(setStatus)
+      .catch(() => setErr("Update-Status konnte nicht geladen werden."))
+      .finally(() => setReady(true));
+    return () => {
+      if (timer.current !== null) window.clearInterval(timer.current);
+    };
+  }, []);
+
+  function pollHealth() {
+    stopPoll();
+    let tries = 0;
+    timer.current = window.setInterval(() => {
+      void (async () => {
+        tries += 1;
+        try {
+          await api.meta();
+          stopPoll();
+          try {
+            setStatus(await api.updateStatus());
+          } catch {
+            /* Status folgt beim nächsten Laden */
+          }
+          setPhase("idle");
+          setBusy(false);
+          setMsg("Dienst ist wieder da.");
+        } catch {
+          if (tries > 120) {
+            stopPoll();
+            setPhase("idle");
+            setBusy(false);
+            setErr("Der Dienst meldet sich nicht zurück. Server prüfen.");
+          }
+        }
+      })();
+    }, 3000);
+  }
+
+  function pollStatus() {
+    stopPoll();
+    let tries = 0;
+    timer.current = window.setInterval(() => {
+      void (async () => {
+        tries += 1;
+        try {
+          const next = await api.updateStatus();
+          setStatus(next);
+          if (next.update.state !== "running") {
+            stopPoll();
+            setPhase("idle");
+            setBusy(false);
+            if (next.update.state === "done") {
+              setMsg("Update fertig. Seite lädt neu …");
+              window.setTimeout(() => window.location.reload(), 2500);
+            } else if (next.update.state === "failed") {
+              setErr(next.update.error || "Update fehlgeschlagen.");
+            }
+          }
+        } catch {
+          stopPoll();
+          setPhase("reconnect");
+          pollHealth();
+          return;
+        }
+        if (tries > 120) {
+          stopPoll();
+          setPhase("idle");
+          setBusy(false);
+          setErr("Update dauert ungewöhnlich lange. Status später erneut laden.");
+        }
+      })();
+    }, 3000);
+  }
+
+  async function onCheck() {
+    setMsg("");
+    setErr("");
+    setBusy(true);
+    try {
+      setStatus(await api.checkUpdate());
+      setMsg("Stand abgefragt.");
+    } catch (ex) {
+      setErr(ex instanceof ApiError ? ex.message : "Fehler");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onApply() {
+    setConfirm(false);
+    setMsg("");
+    setErr("");
+    setBusy(true);
+    try {
+      const next = await api.applyUpdate();
+      setStatus(next);
+      setPhase("updating");
+      setMsg("Update läuft …");
+      pollStatus();
+    } catch (ex) {
+      setBusy(false);
+      setErr(ex instanceof ApiError ? ex.message : "Fehler");
+    }
+  }
+
+  if (!ready || !status) {
+    return (
+      <div className="space-y-3">
+        <p className="text-sm text-muted">Update-Check und One-Button-Update, Quelle ist GitHub.</p>
+        {err ? <p className="text-sm text-danger">{err}</p> : <LoadingNote className="mt-2" />}
+      </div>
+    );
+  }
+
+  const running = status.update.state === "running" || phase !== "idle";
+  const canInstall =
+    status.supported && !busy && !running && status.comparison !== "current" && status.remote !== null;
+  const log = status.update.log_tail ?? [];
+
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-muted">
+        Quelle ist GitHub ({status.source.repo}, Branch {status.source.branch}). Prüfen fragt den neuesten Stand
+        ab, Installieren sichert die Datenbank, holt den Code, baut neu und startet den Dienst.
+      </p>
+      {err ? <p className="text-sm text-danger">{err}</p> : null}
+      {msg ? <p className="text-sm text-present">{msg}</p> : null}
+      <div className="space-y-3 rounded-2xl border border-line bg-card p-4">
+        <p className="text-sm font-medium">Stand</p>
+        <dl className="space-y-1 text-sm">
+          <div className="flex justify-between gap-3">
+            <dt className="text-muted">Installiert</dt>
+            <dd className="text-right">
+              Version {status.installed.version}
+              {status.installed.commit_short ? ` (${status.installed.commit_short})` : " (unbekannt)"}
+            </dd>
+          </div>
+          {status.installed.commit_date ? (
+            <div className="flex justify-between gap-3">
+              <dt className="text-muted">Installierter Commit</dt>
+              <dd className="text-right">{formatDateTime(status.installed.commit_date)}</dd>
+            </div>
+          ) : null}
+          <div className="flex justify-between gap-3">
+            <dt className="text-muted">GitHub</dt>
+            <dd className="text-right">
+              {status.remote ? (
+                <a className="underline" href={status.remote.url} target="_blank" rel="noreferrer">
+                  {status.remote.commit_short}
+                </a>
+              ) : (
+                "—"
+              )}
+              {status.remote?.date ? ` · ${formatDateTime(status.remote.date)}` : ""}
+            </dd>
+          </div>
+          {status.remote?.message ? (
+            <div className="flex justify-between gap-3">
+              <dt className="text-muted">Neueste Änderung</dt>
+              <dd className="text-right">{status.remote.message}</dd>
+            </div>
+          ) : null}
+          <div className="flex justify-between gap-3">
+            <dt className="text-muted">Vergleich</dt>
+            <dd className="text-right">{comparisonText(status)}</dd>
+          </div>
+          <div className="flex justify-between gap-3">
+            <dt className="text-muted">Letzte Prüfung</dt>
+            <dd className="text-right">{formatDateTime(status.last_check)}</dd>
+          </div>
+          {status.update.state !== "idle" ? (
+            <div className="flex justify-between gap-3">
+              <dt className="text-muted">Letztes Update</dt>
+              <dd className="text-right">
+                {status.update.state === "running"
+                  ? "läuft …"
+                  : status.update.state === "done"
+                    ? `fertig${status.update.to_commit ? ` (${status.update.to_commit})` : ""}`
+                    : "fehlgeschlagen"}
+                {status.update.finished_at ? ` · ${formatDateTime(status.update.finished_at)}` : ""}
+              </dd>
+            </div>
+          ) : null}
+        </dl>
+        {!status.supported && status.unsupported_reason ? (
+          <p className="text-xs text-muted">{status.unsupported_reason}</p>
+        ) : null}
+        {phase === "reconnect" ? (
+          <p className="text-sm text-muted">Dienst startet neu … Verbindung wird wieder aufgebaut.</p>
+        ) : null}
+        {status.update.state === "failed" && status.update.error ? (
+          <p className="text-sm text-danger">{status.update.error}</p>
+        ) : null}
+        {status.update.state === "failed" && log.length > 0 ? (
+          <details className="text-xs">
+            <summary className="cursor-pointer text-muted">Protokoll der letzten Zeilen</summary>
+            <pre className="mt-2 max-h-48 overflow-auto rounded-lg bg-bg p-2">{log.join("\n")}</pre>
+          </details>
+        ) : null}
+        <button
+          type="button"
+          disabled={busy || running}
+          onClick={() => void onCheck()}
+          className="w-full rounded-xl border border-line py-2 text-sm disabled:opacity-60"
+        >
+          {busy && phase === "idle" ? "…" : "Jetzt prüfen"}
+        </button>
+        <button
+          type="button"
+          disabled={!canInstall}
+          onClick={() => setConfirm(true)}
+          className="w-full rounded-xl bg-navy py-2 text-sm text-white disabled:opacity-60"
+        >
+          Update installieren
+        </button>
+        {status.supported && !status.remote && !running ? (
+          <p className="text-xs text-muted">Erst prüfen, dann installieren.</p>
+        ) : null}
+      </div>
+      {confirm ? (
+        <ConfirmDialog
+          title="Update jetzt installieren?"
+          danger
+          busy={busy}
+          confirmLabel="Jetzt installieren"
+          cancelLabel="Abbrechen"
+          onCancel={() => setConfirm(false)}
+          onConfirm={() => void onApply()}
+          body={
+            <div className="space-y-2 text-ink">
+              <p>
+                Der Server holt den neuesten Stand von GitHub, sichert die Datenbank, baut neu und startet den
+                Dienst. Die Oberfläche ist kurz nicht erreichbar.
+              </p>
+            </div>
+          }
+        />
+      ) : null}
+    </div>
+  );
+}
+
 function LedgerCard() {
   const [day, setDay] = useState("");
   const [land, setLand] = useState("NW");
@@ -1202,6 +1487,9 @@ export default function Settings() {
           <div className="mt-3">
             <DfcomCard />
           </div>
+        </div>
+        <div hidden={tab !== "update"}>
+          <UpdateCard />
         </div>
       </div>
       <div className="mt-8 border-t border-line pt-6">

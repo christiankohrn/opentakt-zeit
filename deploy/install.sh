@@ -94,7 +94,9 @@ install -m 644 "$APP_ROOT/deploy/zeiterfassung-jobs.service" /etc/systemd/system
 install -m 644 "$APP_ROOT/deploy/zeiterfassung-jobs.timer" /etc/systemd/system/zeiterfassung-jobs.timer
 install -m 644 "$APP_ROOT/deploy/zeiterfassung-backup.service" /etc/systemd/system/zeiterfassung-backup.service
 install -m 644 "$APP_ROOT/deploy/zeiterfassung-backup.timer" /etc/systemd/system/zeiterfassung-backup.timer
+install_update_units
 render_nginx "$DOMAIN" "$APP_ROOT/deploy/nginx.conf"
+write_version_from_dir "$REPO"
 
 sudo -u deploy python3 -m venv "$APP_ROOT/venv"
 sudo -u deploy "$APP_ROOT/venv/bin/pip" install --upgrade pip
