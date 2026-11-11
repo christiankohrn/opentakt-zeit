@@ -1,0 +1,8 @@
+[Unit]
+Description=Opentakt Zeit Update (GitHub)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/zeiterfassung/deploy/update.sh --from-web

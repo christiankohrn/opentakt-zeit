@@ -82,9 +82,11 @@ Ausführlich: [DEPLOY.md](DEPLOY.md). Terminals: [docs/datafox-masteriv.md](docs
 
 ### Laufende Installation aktualisieren
 
-Unter `/opt/zeiterfassung` liegt kein Git-Repository. `git pull` dort geht nicht. Config (`/etc/zeiterfassung/config.toml`) und Datenbank (`/var/lib/zeiterfassung/app.db`) bleiben dabei unangetastet. `deploy/install.sh` nicht noch einmal ausführen: das schreibt die nginx-Vorlage neu und startet Certbot erneut.
+Quelle ist immer GitHub. In der Oberfläche unter **Einstellungen → Update** als Admin auf **Jetzt prüfen** und dann **Update installieren** klicken. Der Server sichert die Datenbank nach `/var/lib/zeiterfassung/backups/pre-update/`, holt den neuesten Stand, installiert die Python- und npm-Abhängigkeiten, baut die Oberfläche neu und startet den Dienst. Config, Datenbank, nginx und Zertifikat bleiben, wie sie sind. Die Seite lädt nach einem erfolgreichen Update neu.
 
-Per SSH als Benutzer `deploy`:
+Auf älteren Installationen fehlt der Update-Dienst noch: einmal per SSH wie unten manuell aktualisieren, danach geht es per Knopf.
+
+Manuell per SSH als Benutzer `deploy`:
 
 ```bash
 rm -rf /tmp/opentakt-zeit
@@ -100,12 +102,10 @@ rsync -a --delete \
   --exclude 'venv' \
   --exclude 'lib' \
   /tmp/opentakt-zeit/ /opt/zeiterfassung/
-bash /opt/zeiterfassung/deploy/update.sh
+sudo /opt/zeiterfassung/deploy/update.sh
 ```
 
-Als `deploy` statt root dasselbe, nur die letzte Zeile mit `sudo`. Fehlt das Ausführungsrecht, meldet `sudo` sonst „command not found“ — dann einmal `chmod a+x /opt/zeiterfassung/deploy/update.sh`.
-
-`update.sh` kopiert die Datenbank nach `/var/lib/zeiterfassung/backups/pre-update/`, installiert die Python- und npm-Abhängigkeiten, baut die Oberfläche neu und startet den Dienst. nginx und das Zertifikat bleiben, wie sie sind.
+Unter `/opt/zeiterfassung` liegt kein Git-Repository, `git pull` dort geht nicht. `deploy/install.sh` nicht noch einmal ausführen: das schreibt die nginx-Vorlage neu und startet Certbot erneut. Fehlt das Ausführungsrecht, meldet `sudo` sonst „command not found“ — dann einmal `chmod a+x /opt/zeiterfassung/deploy/update.sh`.
 
 Prüfung: `curl -fsS https://zeit.firma.de/api/health`. Zeigt der Browser noch die alte Oberfläche, die Seite neu laden.
 
@@ -129,6 +129,7 @@ cd frontend && npx tsc --noEmit
 | `datafox_secret` | Shared Secret für Terminal-HTTP; leer = API aus |
 | `esp_terminal_secret` | Fallback-Secret für das ESP32-Terminal; leer = nur das Secret aus den Einstellungen gilt. Leer in beiden = API aus |
 | `dfcom_lib` | Optionaler Pfad zu `libDFCom.so` (sonst `/opt/zeiterfassung/lib/libDFCom.so`) |
+| `github_token` | Optionaler Token für den Update-Check (mehr GitHub-Abfragen pro Stunde); leer geht auch |
 
 `config.toml`, `*.db` und `.env` sind per `.gitignore` ausgeschlossen. ESP32-Gerät: [docs/esp32-terminal.md](docs/esp32-terminal.md).
 

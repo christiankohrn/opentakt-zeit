@@ -1,0 +1,9 @@
+[Unit]
+Description=Opentakt Zeit Update anstoßen
+
+[Path]
+PathModified=/var/lib/zeiterfassung/update.request
+Unit=zeiterfassung-update.service
+
+[Install]
+WantedBy=multi-user.target

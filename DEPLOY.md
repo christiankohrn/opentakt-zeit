@@ -82,9 +82,11 @@ curl -fsS https://zeit.firma.de/api/health
 
 ## Bestehende Instanz aktualisieren
 
-Die Installation kopiert den Code ohne `.git` nach `/opt/zeiterfassung`. `git pull` in diesem Verzeichnis geht nicht. `config.toml` und `app.db` liegen außerhalb und werden nicht überschrieben. `install.sh` nicht für ein normales Update starten: es schreibt die nginx-Vorlage neu und ruft Certbot erneut auf.
+Quelle ist immer GitHub (`main`-Branch). Als Admin in der Oberfläche unter **Einstellungen → Update** auf **Jetzt prüfen** und dann **Update installieren** klicken. Das legt `/var/lib/zeiterfassung/update.request` an; die Path-Unit `zeiterfassung-update.path` startet darauf den Dienst `zeiterfassung-update.service`, der `deploy/update.sh --from-web` als root ausführt. Stand und Protokoll stehen in `/var/lib/zeiterfassung/update-status.json` und `/var/lib/zeiterfassung/update.log`.
 
-Als `deploy` auf dem Server:
+Auf Installationen von vor dieser Funktion fehlt die Path-Unit noch: einmal manuell wie unten aktualisieren — `update.sh` installiert sie dann, und danach geht es per Knopf.
+
+Manuell als `deploy` auf dem Server (Ersatzweg, auch bei kaputter Oberfläche):
 
 ```bash
 rm -rf /tmp/opentakt-zeit
@@ -100,10 +102,12 @@ rsync -a --delete \
   --exclude 'venv' \
   --exclude 'lib' \
   /tmp/opentakt-zeit/ /opt/zeiterfassung/
-bash /opt/zeiterfassung/deploy/update.sh
+sudo /opt/zeiterfassung/deploy/update.sh
 ```
 
-Als `deploy` die letzte Zeile mit `sudo`. Ohne Ausführungsrecht sagt `sudo` „command not found“; dann `chmod a+x /opt/zeiterfassung/deploy/update.sh`. Das Skript setzt den Baum danach auf `deploy:zeiterfassung`, damit `npm` schreiben kann.
+Die Installation kopiert den Code ohne `.git` nach `/opt/zeiterfassung`. `git pull` in diesem Verzeichnis geht nicht. `config.toml` und `app.db` liegen außerhalb und werden nicht überschrieben. `install.sh` nicht für ein normales Update starten: es schreibt die nginx-Vorlage neu und ruft Certbot erneut auf.
+
+Ohne Ausführungsrecht sagt `sudo` „command not found“; dann `chmod a+x /opt/zeiterfassung/deploy/update.sh`. Das Skript setzt den Baum danach auf `deploy:zeiterfassung`, damit `npm` schreiben kann.
 
 `update.sh` sichert die SQLite-Datei nach `/var/lib/zeiterfassung/backups/pre-update/`, spielt pip/npm neu ein, baut das Frontend und startet den Dienst. nginx und das Zertifikat bleiben unverändert.
 
@@ -115,6 +119,7 @@ Vom Entwicklungsrechner auf die Dev-VM, ohne diesen Weg: `powershell -File deplo
 - **nginx** — TLS und Reverse-Proxy
 - **zeiterfassung-jobs.timer** — Feierabend-Erinnerung (Mo–Fr 18:15)
 - **zeiterfassung-backup.timer** — tägliches SQLite-Backup 02:15
+- **zeiterfassung-update.path** — startet bei Update-Wunsch aus der Oberfläche den One-Shot-Dienst `zeiterfassung-update.service`
 
 nginx-Vorlage: `deploy/nginx.conf` (`__DOMAIN__` wird beim Install ersetzt). Certbot hängt SSL an dieselbe Site.
 
@@ -143,6 +148,6 @@ sudo systemctl start zeiterfassung
 | `deploy/new-host.sh` | Erstinstallation auf leerem Debian |
 | `deploy/provision-new.ps1` | dasselbe, ferngesteuert von Windows |
 | `deploy/install.sh` | App installieren/reparieren (wird von new-host und sync-dev genutzt) |
-| `deploy/update.sh` | laufende Instanz aktualisieren |
+| `deploy/update.sh` | laufende Instanz aktualisieren (ohne Argumente nach manuellem rsync, `--from-web` klont selbst von GitHub) |
 | `deploy/sync-dev.ps1` | Arbeitsbaum auf die bestehende Dev-VM schieben |
 | `deploy/smoke.sh` | grober HTTP/Login-Check (`BASE=https://…`) |

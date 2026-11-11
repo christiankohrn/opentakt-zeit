@@ -27,6 +27,10 @@ import_token = ""
 # Optional: Pfad zu libDFCom.so für Polling. Leer = Standardpfade.
 # dfcom_lib = "/opt/zeiterfassung/lib/libDFCom.so"
 
+# Optional: Token für den Update-Check (mehr GitHub-Abfragen pro Stunde).
+# Leer = anonym, reicht für gelegentliches Prüfen.
+# github_token = ""
+
 [seed]
 admin_username = "admin"
 admin_password = "change-me"

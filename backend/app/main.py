@@ -16,7 +16,7 @@ from app.database import SessionLocal, ensure_schema
 from app.dfcom_poll import start_background, stop_background
 from app.models import User
 from app.names import compose_display_name, split_person_name
-from app.routers import auth, booking_import, dfcom_api, esp_terminal, health, hr, me, reports, terminals
+from app.routers import auth, booking_import, dfcom_api, esp_terminal, health, hr, me, reports, terminals, update
 from app.routers.health import APP_VERSION
 from app.seed import seed_if_empty
 
@@ -91,6 +91,7 @@ def create_app() -> FastAPI:
     app.include_router(terminals.router, prefix="/api")
     app.include_router(booking_import.router, prefix="/api")
     app.include_router(booking_import.hr_router, prefix="/api")
+    app.include_router(update.router, prefix="/api")
 
     dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
     if dist.is_dir():
