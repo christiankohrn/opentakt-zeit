@@ -32,6 +32,29 @@ def test_update_status_reports_installed_version(client):
     assert "github.com" in body["source"]["url"]
 
 
+def test_update_supported_with_server_layout(tmp_path, monkeypatch):
+    import app.update_service as svc
+    from app.config import get_config
+
+    cfg = get_config()
+    root = tmp_path / "app"
+    (root / "deploy").mkdir(parents=True)
+    (root / "deploy" / "update.sh").touch()
+    unit = tmp_path / "zeiterfassung-update.path"
+    unit.touch()
+    monkeypatch.setattr(svc, "app_root", lambda: root)
+    monkeypatch.setattr(svc, "UPDATE_UNIT_PATH", unit)
+    monkeypatch.setattr(svc, "UPDATE_REQUEST_DIR", svc.data_dir(cfg))
+    assert svc.update_supported(cfg) == (True, None)
+
+    other = tmp_path / "elsewhere"
+    other.mkdir()
+    monkeypatch.setattr(svc, "UPDATE_REQUEST_DIR", other)
+    supported, reason = svc.update_supported(cfg)
+    assert supported is False
+    assert "Server" in (reason or "")
+
+
 def test_update_check_stores_remote_state(client, monkeypatch):
     import app.update_service as svc
 

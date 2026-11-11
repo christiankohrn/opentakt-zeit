@@ -4,7 +4,7 @@ Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Ve
 
 ## [Unreleased]
 
-- Update-Check und One-Button-Update in den Einstellungen (nur Admin, Quelle ist GitHub): Stand prüfen, per Knopf installieren — der Server sichert die Datenbank, holt den Code, baut neu und startet den Dienst. Manueller SSH-Weg bleibt als Ersatz.
+- Update-Check und One-Button-Update in den Einstellungen (nur Admin, Quelle ist GitHub): Stand prüfen, per Knopf installieren — der Server sichert die Datenbank, holt den Code, baut neu und startet den Dienst. Manueller SSH-Weg bleibt als Ersatz. Funktioniert auf jedem Server mit Update-Unit, auch auf Dev-Servern ohne Produktions-Config.
 - Deutlich schnellere Personalübersicht, Prüfung und Monatssalden: Stempel werden pro Zeitraum nur einmal sortiert, Urlaub/Krankheit direkt gezählt statt über Jahressummen, und die Personalübersicht lädt alle Personen mit gebündelten Abfragen (Messung bei 40 Personen: Monatssalden von 26 s auf 0,5 s, Personal von 0,8 s auf 0,3 s bei 59 statt 624 Abfragen, Monatsabschluss von 37 s auf 10 s). Die berechneten Werte sind unverändert.
 - Die Überstundenkappung bucht nur noch die Korrektur auf die Grenze. Ein automatischer Vortrag in den Folgemonat entfällt; zurückholen geht über eine manuelle Buchung.
 - Zeitausgleich und Schule lassen sich wie Urlaub und Krankheit eintragen. Zeitausgleich zieht die Sollzeit vom Zeitkonto ab, auch an einem zukünftigen Tag, und der Tag bleibt ohne Fehlerfarbe.

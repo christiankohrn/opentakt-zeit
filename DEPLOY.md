@@ -138,6 +138,8 @@ sudo systemctl start zeiterfassung
 | Certbot / HTTPS fehlt | `dig +short A $DOMAIN`, Port 80 von außen, dann `sudo certbot --nginx -d $DOMAIN` |
 | 502 Bad Gateway | `sudo systemctl status zeiterfassung`; kurz warten, uvicorn startet nach dem Deploy ein paar Sekunden später |
 | Frontend alt | Hard-Reload / PWA-Cache; `sudo /opt/zeiterfassung/deploy/update.sh` baut `frontend/dist` neu |
+| Update-Knopf fehlt | Nur auf Servern mit Update-Unit aktiv (prod wie dev). Einmal manuell updaten, dann `systemctl status zeiterfassung-update.path` prüfen |
+| Update startet nicht | `systemctl status zeiterfassung-update.path`, Anfrage liegt in `/var/lib/zeiterfassung/update.request`, Protokoll in `update.log` |
 | Node zu alt | `new-host.sh` holt Node 22 von NodeSource, wenn Debian < 20 liefert |
 | Kein Login nach Neuinstall | Nur bei **leerer** Datenbank wird der Seed-Admin angelegt. Login steht in `seed-once.txt` |
 

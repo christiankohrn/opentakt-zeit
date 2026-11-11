@@ -20,6 +20,10 @@ VERSION_FILE = "version.json"
 LOG_FILE = "update.log"
 LOG_TAIL_LINES = 30
 GITHUB_TIMEOUT = 10.0
+# Die systemd-Path-Unit beobachtet genau diese Anfrage-Datei. Nur wenn das
+# Backend dorthin schreibt, löst der Knopf wirklich ein Update aus.
+UPDATE_UNIT_PATH = Path("/etc/systemd/system/zeiterfassung-update.path")
+UPDATE_REQUEST_DIR = Path("/var/lib/zeiterfassung")
 
 
 class UpdateCheckError(Exception):
@@ -45,10 +49,21 @@ def _api_repo() -> str:
 
 
 def update_supported(cfg: AppConfig | None = None) -> tuple[bool, str | None]:
-    """One-Button-Update gibt es nur auf dem Server (systemd-Layout + Produktion)."""
+    """One-Button-Update gibt es auf jedem Server mit Update-Unit (prod wie dev).
+
+    Entscheidend ist das Layout, nicht `environment`: Updater-Skript und
+    systemd-Path-Unit müssen da sein, und das Datenverzeichnis muss genau das
+    beobachtete sein — sonst liefe die Anfrage ins Leere.
+    """
     cfg = cfg or get_config()
     script = app_root() / "deploy" / "update.sh"
-    if cfg.environment != "production" or not script.is_file():
+    if not script.is_file() or not UPDATE_UNIT_PATH.is_file():
+        return False, "Das One-Button-Update gibt es nur auf dem Server."
+    try:
+        watched = data_dir(cfg).resolve() == UPDATE_REQUEST_DIR.resolve()
+    except OSError:
+        watched = False
+    if not watched:
         return False, "Das One-Button-Update gibt es nur auf dem Server."
     return True, None
 

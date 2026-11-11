@@ -86,7 +86,8 @@ ensure_terminal_http
 
 if [ -f "$DATA/app.db" ]; then
   mkdir -p "$DATA/backups/pre-update"
-  sqlite3 "$DATA/app.db" ".backup '$DATA/backups/pre-update/app-$STAMP.db'"
+  sqlite3 "$DATA/app.db" ".backup '$DATA/backups/pre-update/app-$STAMP.db'" \
+    || fail "Datenbank-Backup ist fehlgeschlagen."
   chown zeiterfassung:zeiterfassung "$DATA/backups/pre-update/app-$STAMP.db" || true
   chmod 600 "$DATA/backups/pre-update/app-$STAMP.db"
 fi
