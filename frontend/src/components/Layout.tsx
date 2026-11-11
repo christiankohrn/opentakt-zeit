@@ -3,11 +3,19 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import ConfirmDialog from "./ConfirmDialog";
-import { IconAlert, IconCalendar, IconChart, IconClock, IconGear, IconMoon, IconSun, IconUsers } from "./Icons";
+import { IconAlert, IconCalendar, IconChart, IconClock, IconGear, IconLock, IconLogout, IconMoon, IconSun, IconUsers } from "./Icons";
 import { useTheme } from "../theme";
 
+function initials(name: string | undefined, fallback: string | undefined) {
+  const parts = (name ?? "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  const fb = (fallback ?? "").trim();
+  return fb ? fb.slice(0, 2).toUpperCase() : "?";
+}
+
 function bottomClass(active: boolean) {
-  return `flex flex-1 flex-col items-center gap-0.5 rounded-xl px-1 py-2.5 text-[11px] font-semibold tracking-wide ${
+  return `flex min-w-[76px] flex-1 flex-col items-center gap-0.5 rounded-xl px-1 py-2.5 text-center text-[11px] font-semibold leading-tight tracking-wide ${
     active ? "bg-present text-white shadow-sm" : "text-white/75"
   }`;
 }
@@ -42,50 +50,51 @@ export default function Layout() {
 
   const links = (variant: "bottom" | "side") => {
     const cls = variant === "bottom" ? bottomClass : sideClass;
-    const icon = variant === "side" ? "h-5 w-5 shrink-0" : "h-6 w-6";
+    const icon = variant === "side" ? "h-5 w-5 shrink-0" : "h-6 w-6 shrink-0";
+    const label = variant === "bottom" ? "max-w-full truncate" : "";
     return (
       <>
         <NavLink to="/" end className={({ isActive }) => cls(isActive)}>
           <IconClock className={icon} />
-          Stempeln
+          <span className={label}>Stempeln</span>
         </NavLink>
         <NavLink to="/zeiten" className={({ isActive }) => cls(isActive)}>
           <IconCalendar className={icon} />
-          Zeiten
+          <span className={label}>Zeiten</span>
         </NavLink>
         {hr ? (
           <>
             <NavLink to="/pruefung" className={({ isActive }) => cls(isActive)}>
               <IconAlert className={icon} />
-              Prüfung
+              <span className={label}>Prüfung</span>
             </NavLink>
             <NavLink to="/personal" className={({ isActive }) => cls(isActive)}>
               <IconUsers className={icon} />
-              Personal
+              <span className={label}>Personal</span>
             </NavLink>
             {hrFull ? (
               <>
                 <NavLink to="/urlaub" className={({ isActive }) => cls(isActive)}>
                   <IconSun className={icon} />
-                  Urlaub
+                  <span className={label}>Urlaub</span>
                 </NavLink>
                 <NavLink to="/auswertungen" className={({ isActive }) => cls(isActive)}>
                   <IconChart className={icon} />
-                  Auswertungen
+                  <span className={label}>Auswertungen</span>
                 </NavLink>
               </>
             ) : null}
           </>
         ) : null}
-        {admin && variant === "side" ? (
+        {admin ? (
           <>
             <NavLink to="/abschluesse" className={({ isActive }) => cls(isActive)}>
-              <IconChart className={icon} />
-              Abschlüsse
+              <IconLock className={icon} />
+              <span className={label}>Abschlüsse</span>
             </NavLink>
             <NavLink to="/einstellungen" className={({ isActive }) => cls(isActive)}>
               <IconGear className={icon} />
-              Einstellungen
+              <span className={label}>Einstellungen</span>
             </NavLink>
           </>
         ) : null}
@@ -122,42 +131,48 @@ export default function Layout() {
       </aside>
       <div className="mx-auto flex min-h-dvh w-full min-w-0 max-w-lg flex-col pb-[env(safe-area-inset-bottom)] sm:max-w-none lg:mx-0 lg:min-h-0 lg:flex-1">
         <header className="flex items-center justify-between gap-3 px-5 pt-[max(1.25rem,env(safe-area-inset-top))] pb-2 print:hidden lg:hidden">
-          <div className="min-w-0">
-            <p className="text-[11px] font-medium text-muted">{orgName}</p>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[11px] font-medium text-muted">{orgName}</p>
             <p className="truncate text-sm text-ink">{user?.display_name}</p>
           </div>
-          <div className="flex shrink-0 items-center gap-3">
+          <div className="flex shrink-0 items-center gap-2">
             <button
               type="button"
               onClick={cycle}
-              className="rounded-full border border-line p-2 text-present"
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-line text-present"
               title={theme === "system" ? "System" : theme === "light" ? "Hell" : "Dunkel"}
+              aria-label="Farbmodus wechseln"
             >
               {dark ? <IconSun className="h-5 w-5" /> : <IconMoon className="h-5 w-5" />}
             </button>
-            <button type="button" onClick={() => setLogoutConfirm(true)} className="text-sm text-muted">
-              Abmelden
-            </button>
-            <NavLink to="/konto" className="text-sm text-muted">
-              Konto
+            <NavLink
+              to="/konto"
+              title="Konto"
+              aria-label={`Konto von ${user?.display_name ?? "mir"}`}
+              className={({ isActive }) =>
+                `flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold ${
+                  isActive ? "bg-present text-white outline outline-2 outline-offset-2 outline-present" : "bg-present text-white"
+                }`
+              }
+            >
+              {initials(user?.display_name, user?.username)}
             </NavLink>
-            {admin ? (
-              <>
-                <NavLink to="/abschluesse" className="text-sm text-muted">
-                  Abschlüsse
-                </NavLink>
-                <NavLink to="/einstellungen" className="text-sm text-muted">
-                  Einstellungen
-                </NavLink>
-              </>
-            ) : null}
+            <button
+              type="button"
+              onClick={() => setLogoutConfirm(true)}
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-line text-present"
+              title="Abmelden"
+              aria-label="Abmelden"
+            >
+              <IconLogout className="h-5 w-5" />
+            </button>
           </div>
         </header>
         <main className="min-w-0 flex-1 px-5 pb-28 lg:px-8 lg:py-6 lg:pb-8 xl:px-10 print:px-0 print:pb-0">
           <Outlet />
         </main>
         <nav className="fixed inset-x-0 bottom-0 bg-nav text-white shadow-[0_-12px_28px_rgba(0,34,70,0.35)] print:hidden lg:hidden">
-          <div className="mx-auto flex w-full max-w-3xl gap-1 px-2 pb-[max(0.6rem,env(safe-area-inset-bottom))] pt-2">
+          <div className="mx-auto flex w-full max-w-3xl gap-1 overflow-x-auto px-2 pb-[max(0.6rem,env(safe-area-inset-bottom))] pt-2">
             {links("bottom")}
           </div>
         </nav>
