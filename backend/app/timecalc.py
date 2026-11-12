@@ -73,7 +73,11 @@ def default_break_steps() -> list[tuple[int, int]]:
 
 def break_mode_of(model: object | None) -> str:
     mode = getattr(model, "break_mode", None) if model is not None else None
-    return "fixed" if mode == "fixed" else "threshold"
+    if mode == "fixed":
+        return "fixed"
+    if mode == "full":
+        return "full"
+    return "threshold"
 
 
 def fixed_break_window(model: object | None, day: date) -> tuple[str, str] | None:
@@ -280,6 +284,7 @@ def window_break_minutes(
     last_out: datetime | None,
     steps: list[tuple[int, int]] | None = None,
     credited_pause: int = 0,
+    full: bool = False,
 ) -> int:
     """Mindestpause als Uhrzeitfenster: Beginn plus Schwelle, Dauer der hinterlegten Pause.
 
@@ -290,14 +295,21 @@ def window_break_minutes(
     bleibt die Ist-Zeit auf der Schwelle. Wer im Fenster Feierabend macht, verliert
     nur die Zeit bis zum Gehen. Die höhere Schwelle ersetzt die niedrigere erst,
     wenn ihr Fenster mehr Minuten trifft.
+
+    Bei voller Pause gilt die Stufe schon bei genau dieser Arbeitszeit, und es
+    werden die ganzen Minuten abgezogen, auch bei früherem Feierabend.
     """
-    if anchor is None:
+    if anchor is None and not full:
         return 0
     rules = default_break_steps() if steps is None else steps
     blocks = [*spans, *breaks]
     owed = 0
     for after, need in rules:
-        if work_minutes <= after:
+        reached = work_minutes >= after if full else work_minutes > after
+        if not reached:
+            continue
+        if full:
+            owed = max(owed, need)
             continue
         window_start = anchor + timedelta(minutes=after)
         window_end = window_start + timedelta(minutes=need)
@@ -316,10 +328,16 @@ def window_break_minutes(
     return owed
 
 
-def break_warning_codes(work_minutes: int, pause_minutes: int, steps: list[tuple[int, int]]) -> list[str]:
+def break_warning_codes(
+    work_minutes: int,
+    pause_minutes: int,
+    steps: list[tuple[int, int]],
+    full: bool = False,
+) -> list[str]:
     codes: list[str] = []
     for after, need in steps:
-        if work_minutes <= after or pause_minutes >= need:
+        reached = work_minutes >= after if full else work_minutes > after
+        if not reached or pause_minutes >= need:
             continue
         if after == 6 * 60 and need == 30:
             codes.append("break_short")
@@ -857,7 +875,9 @@ def summarize_day(
         found = pause_shift_name(model, day, first_in, last_out)
         if found:
             shift_names.append(found)
-    use_fixed = break_mode_of(model) == "fixed"
+    mode = break_mode_of(model)
+    use_fixed = mode == "fixed"
+    full_pause = mode == "full"
     steps = [] if use_fixed else break_steps(model)
     auto_minutes = 0
     if auto_break and not still_open and use_fixed:
@@ -883,6 +903,7 @@ def summarize_day(
             last_out,
             steps,
             pause_minutes,
+            full=full_pause,
         )
         if pause_minutes < required:
             auto_minutes = required - pause_minutes
@@ -899,7 +920,7 @@ def summarize_day(
             warnings.append("overnight")
         else:
             warnings.append("checkout_missing")
-    warnings.extend(break_warning_codes(work_minutes, pause_minutes, steps))
+    warnings.extend(break_warning_codes(work_minutes, pause_minutes, steps, full=full_pause))
     if work_h > 10:
         warnings.append("over_10h")
     if pause_h >= 1.5:

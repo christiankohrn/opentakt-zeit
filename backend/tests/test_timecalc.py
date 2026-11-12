@@ -1160,6 +1160,39 @@ def test_stamped_pause_still_tops_up_when_work_is_only_just_over_six_hours():
     assert "break_short" not in result["warnings"]
 
 
+def test_full_pause_takes_forty_five_minutes_at_exact_nine_hours():
+    """14.10.: erste Buchung 06:07 wird 06:15, Ist liegt genau bei 9:00, 30 Minuten sind gestempelt.
+
+    Die Schwellenregel zieht nichts nach. Volle Pause ab Schwelle zieht die ganzen 45 ab.
+    """
+    from app.balance import format_hm
+
+    day = date(2026, 10, 14)
+    punches = [
+        _p_on(day, "in", 6, 7),
+        _p_on(day, "out", 11, 30),
+        _p_on(day, "break_start", 11, 30),
+        _p_on(day, "break_end", 12, 0),
+        _p_on(day, "in", 12, 0),
+        _p_on(day, "out", 15, 45),
+    ]
+    now = datetime(2026, 10, 15, tzinfo=ZoneInfo("UTC"))
+    kept = summarize_day(punches, day, _rounded_model(), now=now, auto_break=True)
+    assert kept["first_in"] == "06:15"
+    assert kept["auto_break_minutes"] == 0
+    assert format_hm(kept["break_hours"]) == "0:30"
+    assert format_hm(kept["work_hours"]) == "9:00"
+    assert format_hm(kept["delta_hours"], signed=True) == "+1:24"
+
+    full = summarize_day(punches, day, _rounded_model(break_mode="full"), now=now, auto_break=True)
+    assert full["first_in"] == "06:15"
+    assert full["auto_break_minutes"] == 15
+    assert format_hm(full["break_hours"]) == "0:45"
+    assert format_hm(full["work_hours"]) == "8:45"
+    assert format_hm(full["delta_hours"], signed=True) == "+1:09"
+    assert "break_short_9h" not in full["warnings"]
+
+
 def _break_model(rules: list[dict]):
     model = _full_week()
     model.break_rules = json.dumps(rules)

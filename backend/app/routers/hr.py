@@ -78,7 +78,7 @@ from app.security_policy import POLICY_ROLES, POLICY_VALUES, get_policies, passk
 from app.holidays import STATES, bundesland_of, calendar_map
 from app.mail import MailError, apply_smtp, has_open_invite, normalize_email, send_access_mail, send_test_mail, smtp_ready, smtp_status, valid_email
 from app.reports import safe_csv_cell
-from app.timecalc import PunchIndex, punches_window_for_month
+from app.timecalc import PunchIndex, break_mode_of, punches_window_for_month
 from app.workmodels import (
     CLOSED_NOTICE,
     closed_month_count,
@@ -735,7 +735,7 @@ def _model_out(db: Session, model: WorkModel, notice: str | None = None) -> Work
         booking_corridor=corridor,
         shifts=shifts,
         break_rules=rules,
-        break_mode="fixed" if model.break_mode == "fixed" else "threshold",
+        break_mode=break_mode_of(model),
         fixed_breaks=fixed,
         closed_months=closed,
         notice=notice,
@@ -750,7 +750,7 @@ def _apply_model(model: WorkModel, payload: WorkModelIn) -> None:
         fixed = normalize_fixed_breaks(payload.fixed_breaks)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    if payload.break_mode not in {"threshold", "fixed"}:
+    if payload.break_mode not in {"threshold", "fixed", "full"}:
         raise HTTPException(400, "Unbekannte Pausenregel")
     data = payload.model_dump(exclude={"booking_corridor", "shifts", "break_rules", "fixed_breaks"})
     for key, value in data.items():

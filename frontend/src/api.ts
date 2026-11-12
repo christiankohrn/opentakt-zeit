@@ -151,7 +151,7 @@ export type WorkModel = {
   booking_corridor: Record<string, CorridorDay>;
   shifts: ShiftCorridor[];
   break_rules: BreakRule[];
-  break_mode?: "threshold" | "fixed";
+  break_mode?: "threshold" | "fixed" | "full";
   fixed_breaks?: Record<string, CorridorDay>;
   closed_months: number;
   notice?: string | null;

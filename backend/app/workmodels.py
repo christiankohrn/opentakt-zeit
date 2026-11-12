@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.auth import as_local, now_utc
 from app.models import DayModel, MonthClosing, User, WorkModel, WorkModelAssignment
-from app.timecalc import DEFAULT_BREAK_RULES, model_on_day
+from app.timecalc import DEFAULT_BREAK_RULES, break_mode_of, model_on_day
 
 WEEKDAY_KEYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 _CLOCK = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
@@ -339,7 +339,7 @@ def rules_payload(model: WorkModel) -> dict:
     payload["booking_corridor"] = corridor_dict(model.booking_corridor)
     payload["shifts"] = shifts_list(getattr(model, "shifts", ""))
     payload["break_rules"] = stored_break_rules(getattr(model, "break_rules", ""))
-    payload["break_mode"] = "fixed" if getattr(model, "break_mode", None) == "fixed" else "threshold"
+    payload["break_mode"] = break_mode_of(model)
     payload["fixed_breaks"] = fixed_breaks_dict(getattr(model, "fixed_breaks", ""))
     return payload
 

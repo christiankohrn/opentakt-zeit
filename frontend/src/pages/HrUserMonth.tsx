@@ -617,7 +617,7 @@ export default function HrUserMonth() {
             <span>
               Pausenautomatik
               <span className="mt-0.5 block text-xs text-muted">
-                Gestempelte Pause zählt mit. Liegt sie darunter, wird die Differenz abgezogen: über 6 Stunden bis 30 Minuten, über 9 Stunden bis 45 Minuten. Kurz über der Schwelle nur der Überhang.
+                Gestempelte Pause zählt mit. Liegt sie unter der Pause aus dem Arbeitszeitmodell, wird die Differenz abgezogen.
               </span>
             </span>
           </label>

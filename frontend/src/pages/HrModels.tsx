@@ -49,7 +49,7 @@ type Draft = {
   corridor: Corridor;
   shifts: ShiftDraft[];
   breaks: BreakDraft[];
-  breakMode: "threshold" | "fixed";
+  breakMode: "threshold" | "fixed" | "full";
   fixedBreaks: Corridor;
 };
 
@@ -155,7 +155,7 @@ function draftFrom(model: WorkModel): Draft {
       after: formatAfter(rule.after_hours),
       minutes: String(rule.minutes),
     })),
-    breakMode: model.break_mode === "fixed" ? "fixed" : "threshold",
+    breakMode: model.break_mode === "fixed" ? "fixed" : model.break_mode === "full" ? "full" : "threshold",
     fixedBreaks: Object.fromEntries(
       WEEKDAYS.map(([key]) => {
         const slot = model.fixed_breaks?.[key];
@@ -181,8 +181,9 @@ function pauseSummary(model: WorkModel) {
     return slots.length ? `fest ${slots.join(", ")}` : "feste Pausenzeiten";
   }
   const rules = model.break_rules;
-  if (!rules?.length) return "keine Mindestpause";
-  return rules.map((rule) => `${rule.minutes} Min. ab ${formatAfter(rule.after_hours)}`).join(", ");
+  if (!rules?.length) return model.break_mode === "full" ? "volle Pause ab Schwelle" : "keine Mindestpause";
+  const text = rules.map((rule) => `${rule.minutes} Min. ab ${formatAfter(rule.after_hours)}`).join(", ");
+  return model.break_mode === "full" ? `voll ${text}` : text;
 }
 
 function minutes(value: string) {
@@ -314,7 +315,7 @@ export default function HrModels() {
       return;
     }
     if (
-      draft.breakMode === "threshold" &&
+      (draft.breakMode === "threshold" || draft.breakMode === "full") &&
       draft.breaks.some((row) => {
         const after = parseAfter(row.after);
         return !row.after.trim() || !row.minutes.trim() || minutes(row.minutes) < 1 || !Number.isFinite(after) || after < 0 || after > 24;
@@ -480,13 +481,22 @@ export default function HrModels() {
               <select
                 className={`${compact} mt-1`}
                 value={draft.breakMode}
-                onChange={(e) => setDraft({ ...draft, breakMode: e.target.value === "fixed" ? "fixed" : "threshold" })}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  const breakMode = value === "fixed" || value === "full" ? value : "threshold";
+                  setDraft({ ...draft, breakMode });
+                }}
               >
                 <option value="threshold">Automatisch ab Schwelle</option>
+                <option value="full">Volle Pause ab Schwelle</option>
                 <option value="fixed">Feste Pausenzeiten</option>
               </select>
             </label>
-            {draft.breakMode === "threshold" ? (
+            {draft.breakMode === "full" ? (
+              <p className="text-xs text-muted">
+                Ab der angegebenen Arbeitszeit gilt die ganze Pause, schon bei genau dieser Zeit. Wer früher geht, verliert sie trotzdem. Gestempelte Minuten zählen darauf an.
+              </p>
+            ) : draft.breakMode === "threshold" ? (
               <p className="text-xs text-muted">
                 Mindestpause ab einer Arbeitszeit. Die Zeit steht als Stunden:Minuten, zum Beispiel 9:45. Gestempelte Minuten zählen darauf an. Voreinstellung: 30 Minuten ab 6:00 und 45 Minuten ab 9:00.
               </p>
@@ -495,7 +505,7 @@ export default function HrModels() {
                 Die Pause steht neben der Arbeitszeit. Bei Schichten hat jede Schicht ihre eigene Pause. Wer in diesem Fenster arbeitet, verliert diese Minuten. Eine gestempelte Pause daneben bleibt zusätzlich stehen.
               </p>
             )}
-            {draft.breakMode === "threshold" ? draft.breaks.map((row, index) => (
+            {draft.breakMode !== "fixed" ? draft.breaks.map((row, index) => (
               <div key={index} className="flex flex-wrap items-center gap-2 text-sm">
                 <span>ab</span>
                 <input
@@ -537,7 +547,7 @@ export default function HrModels() {
                 </button>
               </div>
             )) : null}
-            {draft.breakMode === "threshold" && draft.breaks.length < 4 ? (
+            {draft.breakMode !== "fixed" && draft.breaks.length < 4 ? (
               <button
                 type="button"
                 className="rounded-lg border border-line px-3 py-1.5 text-sm"
