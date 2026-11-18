@@ -11,7 +11,7 @@ from app.balance import hired_on, is_employed, load_day_model_map, load_day_mode
 from app.holidays import calendar_map
 from app.models import Absence, AccountEntry, Punch, User
 from app.names import name_sort_key
-from app.timecalc import PunchIndex, punches_window_for_month, soll_hours, work_intervals
+from app.timecalc import PunchIndex, day_work_intervals, punches_window_for_month, soll_hours
 from app.workmodels import load_frozen_map, load_timeline, load_timelines, model_for, overlay_model
 
 JUBILEE_YEARS = (10, 25, 40)
@@ -518,10 +518,26 @@ def _overlap_hours(intervals: list[tuple[datetime, datetime]], start: datetime, 
     return total
 
 
+def sum_night_windows(segments: list[tuple[datetime, datetime]], start: date, last: date) -> dict[str, float]:
+    """Nachtfenster eines Zeitraums über bereits angerechnete Arbeitsintervalle."""
+    hours = {"hours_20_24": 0.0, "hours_0_4": 0.0, "hours_4_6": 0.0}
+    cur = start
+    while cur <= last:
+        for key, start_t, end_t in NIGHT_WINDOWS:
+            w0, w1 = _window_bounds(cur, start_t, end_t)
+            hours[key] += _overlap_hours(segments, w0, w1)
+        cur += timedelta(days=1)
+    return hours
+
+
 def night_hours_report(db: Session, month: str, now: datetime | None = None, user_ids: set[int] | None = None) -> list[dict]:
     start, last = month_bounds(month)
     people = people_in_range(db, start, last, user_ids)
-    q_start, q_end = punches_window_for_month(start, last)
+    lead = start - timedelta(days=1)
+    q_start, q_end = punches_window_for_month(lead, last)
+    user_ids_present = [user.id for user in people]
+    frozen_map = load_frozen_map(db, user_ids_present)
+    day_models = load_day_model_map(db, user_ids_present, lead, last)
     rows = []
     for user in people:
         punches = PunchIndex(
@@ -531,14 +547,26 @@ def night_hours_report(db: Session, month: str, now: datetime | None = None, use
                 .order_by(Punch.server_time)
             )
         )
-        hours = {"hours_20_24": 0.0, "hours_0_4": 0.0, "hours_4_6": 0.0}
-        cur = start
+        timeline = load_timeline(db, user.id)
+        absences = {
+            row.day: row
+            for row in db.scalars(
+                select(Absence).where(Absence.user_id == user.id, Absence.day >= lead, Absence.day <= last)
+            )
+        }
+        segments: list[tuple[datetime, datetime]] = []
+        cur = lead
         while cur <= last:
-            intervals = work_intervals(punches, cur, now=now)
-            for key, start_t, end_t in NIGHT_WINDOWS:
-                w0, w1 = _window_bounds(cur, start_t, end_t)
-                hours[key] += _overlap_hours(intervals, w0, w1)
+            model = resolve_model(
+                user,
+                cur,
+                timeline,
+                frozen_map.get((user.id, cur.year, cur.month)),
+                day_models.get((user.id, cur)),
+            )
+            segments.extend(day_work_intervals(punches, cur, model, now=now, absence=absences.get(cur)))
             cur += timedelta(days=1)
+        hours = sum_night_windows(segments, start, last)
         band_1 = hours["hours_20_24"]
         band_2 = hours["hours_0_4"]
         band_3 = hours["hours_4_6"]

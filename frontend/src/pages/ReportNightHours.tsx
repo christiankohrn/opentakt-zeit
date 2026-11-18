@@ -96,8 +96,8 @@ export default function ReportNightHours() {
         <InactiveToggle checked={showInactive} onChange={(next) => setFilter(month, showCombined, selectedIds, next)} />
       </ReportToolbar>
       <p className="mt-2 text-sm text-muted">
-        {monthLabel(month)}. Lohnarten aus Nachtfenstern: 1 = 20–24, 2 = 0–4, 3 = 4–6 Uhr. Auto-Pause wird nicht
-        abgezogen.
+        {monthLabel(month)}. Lohnarten aus Nachtfenstern: 1 = 20–24, 2 = 0–4, 3 = 4–6 Uhr. Raster und
+        Schichtkorridor wie in der Tagesrechnung. Auto-Pause wird nicht abgezogen.
       </p>
       {error ? <p className="mt-3 text-sm text-danger">{error}</p> : null}
       {loading ? (

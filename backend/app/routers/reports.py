@@ -554,7 +554,7 @@ def night_hours(
                     for row in people
                 ],
                 totals=totals,
-                note="Nachtfenster als Lohnarten 1–3 aus Stempelintervallen. Auto-Pause wird nicht abgezogen.",
+                note="Nachtfenster als Lohnarten 1-3. Raster und Schichtkorridor wie in der Tagesrechnung. Auto-Pause wird nicht abgezogen.",
             ),
         )
     if _want_csv(request, format):

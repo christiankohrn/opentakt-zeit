@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime
+from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 from app.database import SessionLocal
@@ -543,6 +544,83 @@ def test_work_intervals_split_overnight():
     morning_hours = sum((b - a).total_seconds() for a, b in morning) / 3600
     assert abs(night_hours - 2.0) < 0.05
     assert abs(morning_hours - 6.0) < 0.05
+
+
+def test_night_hours_use_the_same_shift_credit_as_the_day():
+    """21:37 und 06:13 werden wie am Tag auf 21:45 und 06:00 gezogen. Sonntag ohne Schicht bleibt roh."""
+    from app.reports import sum_night_windows
+    from app.timecalc import day_work_intervals
+
+    shifts = [
+        {
+            "name": "Nacht",
+            "days": {key: {"start": "21:45", "end": "06:00"} for key in ("mon", "tue", "wed", "thu", "fri")},
+        }
+    ]
+    model = SimpleNamespace(
+        shifts=shifts,
+        round_first_step=15,
+        round_first_threshold=2,
+        round_last_step=0,
+        round_last_threshold=0,
+        round_start_before=0,
+        round_start_after=0,
+        round_end_before=0,
+        round_end_after=0,
+        booking_corridor="",
+        hours_mon=7.6,
+        hours_tue=7.6,
+        hours_wed=7.6,
+        hours_thu=7.6,
+        hours_fri=7.6,
+        hours_sat=0,
+        hours_sun=0,
+    )
+    sunday = date(2026, 8, 9)
+    monday = date(2026, 8, 10)
+    thursday = date(2026, 8, 13)
+    friday = date(2026, 8, 14)
+    punches = [
+        Punch(user_id=1, kind="in", server_time=datetime(2026, 8, 9, 21, 39, tzinfo=ZoneInfo("Europe/Berlin")).astimezone(ZoneInfo("UTC")), source="test"),
+        Punch(user_id=1, kind="out", server_time=datetime(2026, 8, 10, 6, 9, tzinfo=ZoneInfo("Europe/Berlin")).astimezone(ZoneInfo("UTC")), source="test"),
+        Punch(user_id=1, kind="in", server_time=datetime(2026, 8, 10, 21, 46, tzinfo=ZoneInfo("Europe/Berlin")).astimezone(ZoneInfo("UTC")), source="test"),
+        Punch(user_id=1, kind="out", server_time=datetime(2026, 8, 11, 6, 9, tzinfo=ZoneInfo("Europe/Berlin")).astimezone(ZoneInfo("UTC")), source="test"),
+        Punch(user_id=1, kind="in", server_time=datetime(2026, 8, 13, 21, 37, tzinfo=ZoneInfo("Europe/Berlin")).astimezone(ZoneInfo("UTC")), source="test"),
+        Punch(user_id=1, kind="out", server_time=datetime(2026, 8, 14, 6, 13, tzinfo=ZoneInfo("Europe/Berlin")).astimezone(ZoneInfo("UTC")), source="test"),
+    ]
+    now = datetime(2026, 8, 15, tzinfo=ZoneInfo("UTC"))
+    segments: list[tuple[datetime, datetime]] = []
+    for day in (sunday, monday, date(2026, 8, 11), thursday, friday):
+        segments.extend(day_work_intervals(punches, day, model, now=now))
+    hours = sum_night_windows(segments, date(2026, 8, 9), date(2026, 8, 14))
+    # 06:09 liegt hinter dem Fenster 4–6. Sichtbar ist der spätere Beginn 21:45 statt 21:37.
+    assert abs(hours["hours_20_24"] - (2 + 21 / 60 + 2.25 + 2.25)) < 0.02
+    assert abs(hours["hours_0_4"] - 12.0) < 0.02
+    assert abs(hours["hours_4_6"] - 6.0) < 0.02
+
+    early = [
+        Punch(
+            user_id=1,
+            kind="in",
+            server_time=datetime(2026, 8, 13, 21, 37, tzinfo=ZoneInfo("Europe/Berlin")).astimezone(ZoneInfo("UTC")),
+            source="test",
+        ),
+        Punch(
+            user_id=1,
+            kind="out",
+            server_time=datetime(2026, 8, 14, 5, 50, tzinfo=ZoneInfo("Europe/Berlin")).astimezone(ZoneInfo("UTC")),
+            source="test",
+        ),
+    ]
+    early_model = SimpleNamespace(**{**model.__dict__, "shifts": [
+        {"name": "Nacht", "days": {key: {"start": "21:45", "end": "05:30"} for key in ("mon", "tue", "wed", "thu", "fri")}}
+    ]})
+    early_segments = []
+    for day in (thursday, friday):
+        early_segments.extend(day_work_intervals(early, day, early_model, now=now))
+    early_hours = sum_night_windows(early_segments, thursday, friday)
+    assert abs(early_hours["hours_20_24"] - 2.25) < 0.02
+    assert abs(early_hours["hours_4_6"] - 1.5) < 0.02
 
 
 def test_school_and_future_comp_time_can_be_booked(client):

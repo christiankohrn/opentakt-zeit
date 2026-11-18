@@ -724,6 +724,7 @@ def summarize_day(
     absence=None,
     auto_break: bool = False,
     calendar=None,
+    keep_intervals: bool = False,
 ) -> dict:
     prepared = punches if isinstance(punches, PunchIndex) else PunchIndex(punches)
     start_utc, end_utc = local_day_bounds(day)
@@ -760,6 +761,7 @@ def summarize_day(
 
     work = timedelta(0)
     pause = timedelta(0)
+    segments: list[tuple[datetime, datetime]] = []
     open_in: datetime | None = None
     open_break: datetime | None = None
     first_in: datetime | None = None
@@ -830,7 +832,9 @@ def summarize_day(
                 if span_open is None:
                     span_open = t
         elif p.kind == "break_start" and open_in:
-            work += t - open_in
+            if t > open_in:
+                work += t - open_in
+                segments.append((open_in, t))
             open_in = None
             open_break = t
         elif p.kind == "break_end" and open_break:
@@ -844,6 +848,7 @@ def summarize_day(
             if open_in:
                 if t > open_in:
                     work += t - open_in
+                    segments.append((open_in, t))
                 open_in = None
             if span_open is not None:
                 if t > span_open:
@@ -867,6 +872,7 @@ def summarize_day(
                 pause += day_end - open_break
             if open_in and day_end > open_in:
                 work += day_end - open_in
+                segments.append((open_in, day_end))
 
     work_minutes = int(work.total_seconds() // 60)
     pause_minutes = max(int(pause.total_seconds() // 60), stamped_break_minutes(events))
@@ -1015,4 +1021,18 @@ def summarize_day(
         and not (absence is not None and absence.kind == "comp_time")
     ):
         result["warnings"] = [*result["warnings"], "missing_day"]
+    if keep_intervals:
+        result["_work_intervals"] = segments
     return result
+
+
+def day_work_intervals(
+    punches: list[Punch] | PunchIndex,
+    day: date,
+    model: WorkModel | None,
+    now: datetime | None = None,
+    absence=None,
+) -> list[tuple[datetime, datetime]]:
+    """Arbeitsintervalle mit demselben Raster und Schichtkorridor wie die Tagesrechnung."""
+    result = summarize_day(punches, day, model, now=now, absence=absence, keep_intervals=True)
+    return list(result.get("_work_intervals") or [])
