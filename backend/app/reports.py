@@ -564,7 +564,16 @@ def night_hours_report(db: Session, month: str, now: datetime | None = None, use
                 frozen_map.get((user.id, cur.year, cur.month)),
                 day_models.get((user.id, cur)),
             )
-            segments.extend(day_work_intervals(punches, cur, model, now=now, absence=absences.get(cur)))
+            segments.extend(
+                day_work_intervals(
+                    punches,
+                    cur,
+                    model,
+                    now=now,
+                    absence=absences.get(cur),
+                    auto_break=bool(user.auto_break),
+                )
+            )
             cur += timedelta(days=1)
         hours = sum_night_windows(segments, start, last)
         band_1 = hours["hours_20_24"]

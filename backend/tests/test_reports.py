@@ -623,6 +623,78 @@ def test_night_hours_use_the_same_shift_credit_as_the_day():
     assert abs(early_hours["hours_4_6"] - 1.5) < 0.02
 
 
+def _berlin(day: date, hour: int, minute: int) -> datetime:
+    return datetime(day.year, day.month, day.day, hour, minute, tzinfo=ZoneInfo("Europe/Berlin")).astimezone(ZoneInfo("UTC"))
+
+
+def test_auto_pause_of_a_night_shift_starts_at_the_middle():
+    """22:00 bis 06:00, halbe Stunde automatisch: die Pause liegt 02:00 bis 02:30."""
+    from app.auth import as_local
+    from app.reports import sum_night_windows
+    from app.timecalc import day_work_intervals
+
+    friday = date(2026, 8, 7)
+    saturday = date(2026, 8, 8)
+    model = SimpleNamespace(
+        shifts=[{"name": "Nacht", "days": {"fri": {"start": "22:00", "end": "06:00"}}}],
+        round_first_step=0,
+        round_first_threshold=0,
+        round_last_step=0,
+        round_last_threshold=0,
+        round_start_before=0,
+        round_start_after=0,
+        round_end_before=0,
+        round_end_after=0,
+        booking_corridor="",
+        hours_mon=0,
+        hours_tue=0,
+        hours_wed=0,
+        hours_thu=0,
+        hours_fri=8,
+        hours_sat=0,
+        hours_sun=0,
+    )
+    punches = [
+        Punch(user_id=1, kind="in", server_time=_berlin(friday, 22, 0), source="test"),
+        Punch(user_id=1, kind="out", server_time=_berlin(saturday, 6, 0), source="test"),
+    ]
+    now = datetime(2026, 8, 9, tzinfo=ZoneInfo("UTC"))
+    segments = day_work_intervals(punches, friday, model, now=now, auto_break=True)
+    segments.extend(day_work_intervals(punches, saturday, model, now=now, auto_break=True))
+    clocks = [(as_local(start).strftime("%H:%M"), as_local(end).strftime("%H:%M")) for start, end in segments]
+    assert clocks == [("22:00", "02:00"), ("02:30", "06:00")]
+    hours = sum_night_windows(segments, friday, saturday)
+    assert abs(hours["hours_20_24"] - 2.0) < 0.02
+    assert abs(hours["hours_0_4"] - 3.5) < 0.02
+    assert abs(hours["hours_4_6"] - 2.0) < 0.02
+
+    longer = SimpleNamespace(**{**model.__dict__, "break_rules": '[{"after_hours": 6, "minutes": 45}]'})
+    longer_segments = day_work_intervals(punches, friday, longer, now=now, auto_break=True)
+    longer_clocks = [(as_local(a).strftime("%H:%M"), as_local(b).strftime("%H:%M")) for a, b in longer_segments]
+    assert longer_clocks == [("22:00", "02:00"), ("02:45", "06:00")]
+
+    stamped = [
+        Punch(user_id=1, kind="in", server_time=_berlin(friday, 22, 0), source="test"),
+        Punch(user_id=1, kind="break_start", server_time=_berlin(saturday, 2, 0), source="test"),
+        Punch(user_id=1, kind="break_end", server_time=_berlin(saturday, 2, 10), source="test"),
+        Punch(user_id=1, kind="out", server_time=_berlin(saturday, 6, 0), source="test"),
+    ]
+    topped = day_work_intervals(stamped, friday, model, now=now, auto_break=True)
+    topped_clocks = [(as_local(a).strftime("%H:%M"), as_local(b).strftime("%H:%M")) for a, b in topped]
+    assert topped_clocks == [("22:00", "02:00"), ("02:30", "06:00")]
+
+    fixed = SimpleNamespace(
+        **{
+            **model.__dict__,
+            "break_mode": "fixed",
+            "fixed_breaks": '{"fri": {"start": "23:00", "end": "23:30"}}',
+        }
+    )
+    fixed_segments = day_work_intervals(punches, friday, fixed, now=now, auto_break=True)
+    fixed_clocks = [(as_local(a).strftime("%H:%M"), as_local(b).strftime("%H:%M")) for a, b in fixed_segments]
+    assert fixed_clocks == [("22:00", "23:00"), ("23:30", "06:00")]
+
+
 def test_school_and_future_comp_time_can_be_booked(client):
     login(client)
     person = users_by_name(client)["mitarbeiter"]

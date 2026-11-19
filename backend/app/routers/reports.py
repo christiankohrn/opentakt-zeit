@@ -554,7 +554,7 @@ def night_hours(
                     for row in people
                 ],
                 totals=totals,
-                note="Nachtfenster als Lohnarten 1-3. Raster und Schichtkorridor wie in der Tagesrechnung. Auto-Pause wird nicht abgezogen.",
+                note="Nachtfenster als Lohnarten 1-3. Raster und Schichtkorridor wie in der Tagesrechnung. Die automatische Pause liegt in der Mitte der Schicht.",
             ),
         )
     if _want_csv(request, format):

@@ -886,6 +886,7 @@ def summarize_day(
     full_pause = mode == "full"
     steps = [] if use_fixed else break_steps(model)
     auto_minutes = 0
+    pause_cuts: list[tuple[datetime, datetime]] = []
     if auto_break and not still_open and use_fixed:
         # Hinterlegte Uhrzeit. Gearbeitet darin wird abgezogen, eine Stempelpause
         # außerhalb bleibt zusätzlich stehen.
@@ -898,6 +899,8 @@ def summarize_day(
             auto_minutes = owed
             work_minutes -= owed
             pause_minutes += owed
+            if window:
+                pause_cuts = [(_at_clock(day, window[0]), _at_clock(day, window[1]))]
     elif auto_break and not still_open:
         # Gestempelte Minuten zählen auf das Fenster an. Ist die Stempelpause
         # länger, bleibt sie stehen und es wird nichts zusätzlich abgezogen.
@@ -915,6 +918,8 @@ def summarize_day(
             auto_minutes = required - pause_minutes
             work_minutes -= auto_minutes
             pause_minutes = required
+            # Keine Uhrzeit hinterlegt: die Minuten beginnen in der Mitte der Schicht.
+            pause_cuts = _middle_pause_cuts(segments, auto_minutes)
     work_h = work_minutes / 60
     pause_h = pause_minutes / 60
     auto_applied = auto_minutes / 60
@@ -1022,7 +1027,71 @@ def summarize_day(
     ):
         result["warnings"] = [*result["warnings"], "missing_day"]
     if keep_intervals:
-        result["_work_intervals"] = segments
+        credited = segments
+        if result["auto_break_minutes"] and pause_cuts:
+            credited = _subtract_intervals(segments, pause_cuts)
+        result["_work_intervals"] = credited
+    return result
+
+
+def _middle_pause_cuts(
+    segments: list[tuple[datetime, datetime]],
+    minutes: int,
+) -> list[tuple[datetime, datetime]]:
+    """Automatische Pause beginnt in der Mitte zwischen Kommen und Gehen.
+
+    22:00 bis 06:00 und 30 Minuten ergeben 02:00 bis 02:30. Liegt dort schon eine
+    gestempelte Lücke, laufen die Minuten in die anschließende Arbeitszeit.
+    """
+    if minutes <= 0 or not segments:
+        return []
+    ordered = sorted(segments)
+    span_start = ordered[0][0]
+    span_end = ordered[-1][1]
+    if span_end <= span_start:
+        return []
+    mid = span_start + (span_end - span_start) / 2
+    remaining = timedelta(minutes=minutes)
+    cuts: list[tuple[datetime, datetime]] = []
+    for start, end in ordered:
+        if remaining <= timedelta(0):
+            break
+        if end <= mid:
+            continue
+        slot = max(start, mid)
+        length = min(end - slot, remaining)
+        if length > timedelta(0):
+            cuts.append((slot, slot + length))
+            remaining -= length
+    for start, end in reversed(ordered):
+        if remaining <= timedelta(0):
+            break
+        if start >= mid:
+            continue
+        edge = min(end, mid)
+        length = min(edge - start, remaining)
+        if length > timedelta(0):
+            cuts.append((edge - length, edge))
+            remaining -= length
+    return cuts
+
+
+def _subtract_intervals(
+    segments: list[tuple[datetime, datetime]],
+    cuts: list[tuple[datetime, datetime]],
+) -> list[tuple[datetime, datetime]]:
+    result = list(segments)
+    for cut_start, cut_end in cuts:
+        nxt: list[tuple[datetime, datetime]] = []
+        for start, end in result:
+            if cut_end <= start or cut_start >= end or cut_end <= cut_start:
+                nxt.append((start, end))
+                continue
+            if cut_start > start:
+                nxt.append((start, cut_start))
+            if cut_end < end:
+                nxt.append((cut_end, end))
+        result = nxt
     return result
 
 
@@ -1032,7 +1101,20 @@ def day_work_intervals(
     model: WorkModel | None,
     now: datetime | None = None,
     absence=None,
+    auto_break: bool = False,
 ) -> list[tuple[datetime, datetime]]:
-    """Arbeitsintervalle mit demselben Raster und Schichtkorridor wie die Tagesrechnung."""
-    result = summarize_day(punches, day, model, now=now, absence=absence, keep_intervals=True)
+    """Arbeitsintervalle wie die Tagesrechnung, inklusive Pause.
+
+    Raster und Schichtkorridor gelten mit. Eine feste Pause bleibt an ihrer
+    Uhrzeit. Die automatische Pause beginnt in der Mitte der Schicht.
+    """
+    result = summarize_day(
+        punches,
+        day,
+        model,
+        now=now,
+        absence=absence,
+        auto_break=auto_break,
+        keep_intervals=True,
+    )
     return list(result.get("_work_intervals") or [])
