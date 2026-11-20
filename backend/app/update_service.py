@@ -154,20 +154,22 @@ def check_remote(cfg: AppConfig, local_commit: str | None) -> dict:
     comparison = "unknown"
     behind_by: int | None = None
     if local_commit:
+        # base ist der installierte Commit, head der Stand auf GitHub.
+        # "ahead" heißt deshalb: GitHub hat Commits, die hier fehlen.
         cmp = fetch_json(f"{api}/compare/{local_commit}...{sha}", cfg)
         status = (cmp.get("status") or "").strip()
         if status == "identical":
             comparison = "current"
             behind_by = 0
-        elif status == "behind":
-            comparison = "behind"
-            behind_by = int(cmp.get("behind_by") or 0)
         elif status == "ahead":
+            comparison = "behind"
+            behind_by = int(cmp.get("ahead_by") or 0)
+        elif status == "behind":
             comparison = "ahead"
             behind_by = 0
         elif status == "diverged":
             comparison = "diverged"
-            behind_by = int(cmp.get("behind_by") or 0)
+            behind_by = int(cmp.get("ahead_by") or 0)
     return {"remote": remote, "comparison": comparison, "behind_by": behind_by}
 
 

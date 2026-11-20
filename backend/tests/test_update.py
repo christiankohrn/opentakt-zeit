@@ -74,7 +74,7 @@ def test_update_check_stores_remote_state(client, monkeypatch):
         "html_url": "https://github.com/x/y/commit/feedface",
         "commit": {"message": "Neu: Update-Knopf\n\nDetails", "committer": {"date": "2026-11-10T10:00:00Z"}},
     }
-    compare = {"status": "behind", "behind_by": 3, "ahead_by": 0}
+    compare = {"status": "ahead", "behind_by": 0, "ahead_by": 3}
 
     def fake_fetch(url, cfg):
         if url.endswith("/commits/main"):
@@ -97,6 +97,39 @@ def test_update_check_stores_remote_state(client, monkeypatch):
     cached = client.get("/api/hr/update/status").json()
     assert cached["remote"]["commit"] == head["sha"]
     assert cached["comparison"] == "behind"
+
+
+def test_update_check_reads_github_direction(client, monkeypatch):
+    import app.update_service as svc
+
+    login(client)
+    head = {
+        "sha": "c" * 40,
+        "html_url": "https://github.com/x/y/commit/c",
+        "commit": {"message": "Alt", "committer": {"date": "2026-11-01T10:00:00Z"}},
+    }
+    answers = {
+        "behind": {"status": "behind", "behind_by": 2, "ahead_by": 0},
+        "diverged": {"status": "diverged", "behind_by": 1, "ahead_by": 4},
+    }
+    seen = {"which": "behind"}
+
+    def fake_fetch(url, cfg):
+        if "/compare/" in url:
+            return answers[seen["which"]]
+        return head
+
+    monkeypatch.setattr(svc, "fetch_json", fake_fetch)
+    monkeypatch.setattr(svc, "local_install_info", lambda: {"version": "0.1.0", "commit": "d" * 40})
+
+    older = client.post("/api/hr/update/check").json()
+    assert older["comparison"] == "ahead"
+    assert older["behind_by"] == 0
+
+    seen["which"] = "diverged"
+    split = client.post("/api/hr/update/check").json()
+    assert split["comparison"] == "diverged"
+    assert split["behind_by"] == 4
 
 
 def test_update_check_without_local_commit_is_unknown(client, monkeypatch):
