@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { api, type JournalAccounts, type JournalReport, type User } from "../api";
+import { api, type JournalAccounts, type JournalReport, type JournalWages, type User } from "../api";
 import PersonFilter from "../components/PersonFilter";
 import InactiveToggle from "../components/InactiveToggle";
 import LoadingNote from "../components/LoadingNote";
@@ -12,6 +12,45 @@ function formatDays(value: number | null | undefined, signed = false) {
   if (value === null || value === undefined) return "—";
   const sign = signed && value > 0 ? "+" : "";
   return `${sign}${String(value).replace(".", ",")}`;
+}
+
+function hm(value: number | null | undefined) {
+  if (value === null || value === undefined) return "";
+  return formatHours(value);
+}
+
+function wageCell(value: number | null | undefined) {
+  if (!value) return "";
+  return formatHours(value);
+}
+
+function WageFooter({ wages }: { wages: JournalWages }) {
+  const lines = [
+    ["1  20–24 Uhr", wages.hours_20_24],
+    ["2  0–4 Uhr", wages.hours_0_4],
+    ["3  4–6 Uhr", wages.hours_4_6],
+    ["Summe 1 und 3", wages.hours_1_plus_3],
+  ] as const;
+  return (
+    <div className="mt-4 overflow-x-auto rounded-2xl border border-line print:border-0">
+      <table className="w-full text-left text-sm">
+        <thead className="bg-card text-xs uppercase tracking-wider text-muted">
+          <tr>
+            <th className="px-4 py-3 font-medium">Lohnart</th>
+            <th className="px-4 py-3 font-medium text-right">Stunden</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lines.map(([label, value]) => (
+            <tr key={label} className="border-t border-line bg-card">
+              <td className="px-4 py-2.5">{label}</td>
+              <td className="px-4 py-2.5 text-right tabular-nums">{formatHours(value)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 function AccountFooter({ accounts }: { accounts: JournalAccounts }) {
@@ -182,7 +221,8 @@ export default function ReportJournal() {
         </ReportToolbar>
       </div>
       <p className="mt-2 text-sm text-muted print:hidden">
-        {monthLabel(month)}. PDF für alle ausgewählten Personen auf einmal, je Person eine Seite zur Aushändigung.
+        {monthLabel(month)}. Jede Stempelung steht in einer eigenen Zeile. Die Lohnarten nutzen Raster, Schichtkorridor
+        und die automatische Pause wie die Auswertung.
       </p>
       {mailMsg ? <p className="mt-3 text-sm text-muted">{mailMsg}</p> : null}
       {error ? <p className="mt-3 text-sm text-danger">{error}</p> : null}
@@ -220,14 +260,22 @@ export default function ReportJournal() {
           <h2 className="text-lg font-medium">{journal.display_name}</h2>
           <p className="text-sm text-muted">{journal.month_label}</p>
           <div className="mt-3 overflow-x-auto rounded-2xl border border-line print:border-0">
-            <table className="w-full text-left text-sm">
+            <table className="w-full min-w-[64rem] text-left text-sm">
               <thead className="bg-card text-xs uppercase tracking-wider text-muted">
                 <tr>
-                  <th className="px-4 py-3 font-medium">Tag</th>
-                  <th className="px-4 py-3 font-medium">Buchung</th>
-                  <th className="px-4 py-3 font-medium text-right">Ist</th>
-                  <th className="px-4 py-3 font-medium text-right">Soll</th>
-                  <th className="px-4 py-3 font-medium text-right">Konto</th>
+                  <th className="px-2 py-3 font-medium">Datum</th>
+                  <th className="px-2 py-3 font-medium text-right">Beginn</th>
+                  <th className="px-2 py-3 font-medium text-right">Ende</th>
+                  <th className="px-2 py-3 font-medium text-right">Zeit</th>
+                  <th className="px-2 py-3 font-medium text-right">Pause</th>
+                  <th className="px-2 py-3 font-medium text-right">Ist</th>
+                  <th className="px-2 py-3 font-medium text-right">Soll</th>
+                  <th className="px-2 py-3 font-medium text-right">Saldo</th>
+                  <th className="px-2 py-3 font-medium">Schicht</th>
+                  <th className="px-2 py-3 font-medium text-right">20–24</th>
+                  <th className="px-2 py-3 font-medium text-right">0–4</th>
+                  <th className="px-2 py-3 font-medium text-right">4–6</th>
+                  <th className="px-2 py-3 font-medium">Bemerkung</th>
                 </tr>
               </thead>
               <tbody>
@@ -238,19 +286,28 @@ export default function ReportJournal() {
                       key={`${journal.user_id}-${row.type}-${row.label}-${index}`}
                       className={`border-t border-line ${strong ? "bg-bg font-medium" : "bg-card"}`}
                     >
-                      <td className="px-4 py-2.5 whitespace-nowrap">{row.label}</td>
-                      <td className="px-4 py-2.5">{row.booking}</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">
-                        {row.type === "day" && !row.work_hours ? "—" : formatHours(row.work_hours, 2)}
+                      <td className="px-2 py-2 whitespace-nowrap">{row.label}</td>
+                      <td className="px-2 py-2 text-right tabular-nums">{row.start}</td>
+                      <td className="px-2 py-2 text-right tabular-nums">{row.end}</td>
+                      <td className="px-2 py-2 text-right tabular-nums">{hm(row.segment_hours)}</td>
+                      <td className="px-2 py-2 text-right tabular-nums">{wageCell(row.pause_hours)}</td>
+                      <td className="px-2 py-2 text-right tabular-nums">{hm(row.work_hours)}</td>
+                      <td className="px-2 py-2 text-right tabular-nums">{hm(row.soll_hours)}</td>
+                      <td className="px-2 py-2 text-right tabular-nums">
+                        {row.delta_hours === null ? "" : signedHours(row.delta_hours)}
                       </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">{formatHours(row.soll_hours, 2)}</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">{signedHours(row.delta_hours, 2)}</td>
+                      <td className="px-2 py-2">{row.shift}</td>
+                      <td className="px-2 py-2 text-right tabular-nums">{wageCell(row.hours_20_24)}</td>
+                      <td className="px-2 py-2 text-right tabular-nums">{wageCell(row.hours_0_4)}</td>
+                      <td className="px-2 py-2 text-right tabular-nums">{wageCell(row.hours_4_6)}</td>
+                      <td className="px-2 py-2">{row.remark}</td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
+          {journal.wages ? <WageFooter wages={journal.wages} /> : null}
           {journal.accounts ? <AccountFooter accounts={journal.accounts} /> : null}
         </section>
       ))

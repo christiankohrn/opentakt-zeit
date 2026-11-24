@@ -251,10 +251,25 @@ export type JubileeEvent = {
 export type JournalLine = {
   type: "day" | "week" | "month";
   label: string;
-  booking: string;
-  work_hours: number;
-  soll_hours: number;
-  delta_hours: number;
+  start: string;
+  end: string;
+  segment_hours: number | null;
+  pause_hours: number | null;
+  work_hours: number | null;
+  soll_hours: number | null;
+  delta_hours: number | null;
+  shift: string;
+  hours_20_24: number | null;
+  hours_0_4: number | null;
+  hours_4_6: number | null;
+  remark: string;
+};
+
+export type JournalWages = {
+  hours_20_24: number;
+  hours_0_4: number;
+  hours_4_6: number;
+  hours_1_plus_3: number;
 };
 
 export type JournalAccounts = {
@@ -274,6 +289,7 @@ export type JournalReport = {
   month: string;
   month_label: string;
   rows: JournalLine[];
+  wages: JournalWages;
   accounts: JournalAccounts;
 };
 

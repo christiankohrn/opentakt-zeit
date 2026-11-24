@@ -37,11 +37,19 @@ from app.reports import (
 router = APIRouter(prefix="/hr/reports", tags=["reports"])
 
 JOURNAL_COLUMNS = [
-    ("Tag", 0.16, "L"),
-    ("Buchung", 0.48, "L"),
-    ("Ist", 0.12, "R"),
-    ("Soll", 0.12, "R"),
-    ("Konto", 0.12, "R"),
+    ("Datum", 0.10, "L"),
+    ("Beginn", 0.07, "R"),
+    ("Ende", 0.07, "R"),
+    ("Zeit", 0.07, "R"),
+    ("Pause", 0.07, "R"),
+    ("Ist", 0.07, "R"),
+    ("Soll", 0.07, "R"),
+    ("Saldo", 0.07, "R"),
+    ("Schicht", 0.09, "L"),
+    ("20-24", 0.07, "R"),
+    ("0-4", 0.06, "R"),
+    ("4-6", 0.06, "R"),
+    ("Bemerkung", 0.13, "L"),
 ]
 BALANCE_GROUPS = [("Name", 1), ("Zeitkonto", 3), ("Urlaub", 4), ("Krankheit", 3)]
 BALANCE_COLUMNS = [
@@ -159,10 +167,12 @@ def journal_pdf_bytes(reports: list[dict]) -> bytes:
         title=f"Journal {first['display_name']}",
         subtitle=first["month_label"],
         org=_org(),
+        landscape=True,
     )
     pdf.journal_person(
         JOURNAL_COLUMNS,
         _journal_table_rows(first),
+        _journal_wage_rows(first),
         _journal_account_rows(first),
         note=JOURNAL_ACCOUNT_NOTE,
     )
@@ -173,6 +183,7 @@ def journal_pdf_bytes(reports: list[dict]) -> bytes:
         pdf.journal_person(
             JOURNAL_COLUMNS,
             _journal_table_rows(report),
+            _journal_wage_rows(report),
             _journal_account_rows(report),
             note=JOURNAL_ACCOUNT_NOTE,
         )
@@ -199,20 +210,46 @@ def _journal_account_rows(report: dict) -> list[list[str]]:
     ]
 
 
+def _hm(value, signed: bool = False) -> str:
+    if value is None:
+        return ""
+    return de_hm(value, signed=signed)
+
+
+def _hm_if(value) -> str:
+    if not value:
+        return ""
+    return de_hm(value)
+
+
+def _journal_wage_rows(report: dict) -> list[list[str]]:
+    wages = report.get("wages") or {}
+    return [
+        ["1  20 bis 24 Uhr", de_hm(wages.get("hours_20_24") or 0)],
+        ["2  0 bis 4 Uhr", de_hm(wages.get("hours_0_4") or 0)],
+        ["3  4 bis 6 Uhr", de_hm(wages.get("hours_4_6") or 0)],
+        ["Summe 1 und 3", de_hm(wages.get("hours_1_plus_3") or 0)],
+    ]
+
+
 def _journal_table_rows(report: dict) -> list[list[str]]:
     rows: list[list[str]] = []
     for row in report["rows"]:
-        if row["type"] == "day":
-            work = de_hm(row["work_hours"], 2) if row["work_hours"] else "-"
-        else:
-            work = de_hm(row["work_hours"], 2)
         rows.append(
             [
                 row["label"],
-                row["booking"],
-                work,
-                de_hm(row["soll_hours"], 2),
-                de_hm(row["delta_hours"], 2, signed=True),
+                row.get("start") or "",
+                row.get("end") or "",
+                _hm(row.get("segment_hours")),
+                _hm_if(row.get("pause_hours")),
+                _hm(row.get("work_hours")),
+                _hm(row.get("soll_hours")),
+                _hm(row.get("delta_hours"), signed=True) if row.get("delta_hours") is not None else "",
+                row.get("shift") or "",
+                _hm_if(row.get("hours_20_24")),
+                _hm_if(row.get("hours_0_4")),
+                _hm_if(row.get("hours_4_6")),
+                row.get("remark") or "",
             ]
         )
     return rows

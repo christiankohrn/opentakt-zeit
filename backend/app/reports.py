@@ -31,6 +31,9 @@ PUNCH_LABELS = {
 ABSENCE_LABELS = {
     "vacation": "Urlaub",
     "sick": "Krankheit",
+    "school": "Schule",
+    "special_leave": "Sonderurlaub",
+    "comp_time": "Zeitausgleich",
     "holiday": "Feiertag",
     "company_off": "Betriebsfrei",
     "other": "Abwesend",
@@ -114,6 +117,60 @@ def format_de_date(value: date | str) -> str:
     if isinstance(value, str):
         value = date.fromisoformat(value)
     return value.strftime("%d.%m.%Y")
+
+
+def _clock_minutes(value: str) -> int:
+    hour, minute = value.split(":", 1)
+    return int(hour) * 60 + int(minute)
+
+
+def stamp_pairs(punches: list[dict]) -> list[tuple[str, str]]:
+    """Kommen bis Pause oder Gehen, Pause Ende bis zur nächsten Buchung. Ohne Ort."""
+    pairs: list[tuple[str, str]] = []
+    start: str | None = None
+    for punch in punches:
+        if punch.get("voided"):
+            continue
+        kind = punch.get("kind") or ""
+        clock = punch.get("time") or ""
+        if kind in {"in", "break_end"}:
+            if start is not None:
+                pairs.append((start, "offen"))
+            start = clock
+        elif kind in {"out", "break_start"}:
+            pairs.append((start or "", clock))
+            start = None
+        elif clock:
+            pairs.append((start or clock, "" if start else ""))
+            start = None
+    if start is not None:
+        pairs.append((start, "offen"))
+    return pairs
+
+
+def pair_hours(start: str, end: str) -> float | None:
+    if not start or not end or end == "offen" or ":" not in start or ":" not in end:
+        return None
+    delta = _clock_minutes(end) - _clock_minutes(start)
+    if delta < 0:
+        delta += 24 * 60
+    return delta / 60
+
+
+def day_remark(day: dict) -> str:
+    """Feiertag oder Abwesenheit. Terminal und Import gehören nicht ins Journal."""
+    calendar = day.get("calendar") or {}
+    absence = day.get("absence") or {}
+    name = str(calendar.get("name") or "").strip()
+    if name:
+        return name
+    note = str(absence.get("note") or "").strip()
+    if note:
+        return note
+    kind = absence.get("kind") or calendar.get("kind") or ""
+    if kind:
+        return ABSENCE_LABELS.get(kind, str(kind))
+    return ""
 
 
 def booking_text(day: dict) -> str:
@@ -592,12 +649,73 @@ def night_hours_report(db: Session, month: str, now: datetime | None = None, use
     return rows
 
 
+def _journal_row(kind: str, label: str, **fields) -> dict:
+    row = {
+        "type": kind,
+        "label": label,
+        "start": "",
+        "end": "",
+        "segment_hours": None,
+        "pause_hours": None,
+        "work_hours": None,
+        "soll_hours": None,
+        "delta_hours": None,
+        "shift": "",
+        "hours_20_24": None,
+        "hours_0_4": None,
+        "hours_4_6": None,
+        "remark": "",
+    }
+    row.update(fields)
+    return row
+
+
+def journal_wage_by_day(db: Session, user: User, start: date, last: date) -> dict[str, dict[str, float]]:
+    """Lohnarten je Tag. Die Fenster des Folgetags zählen mit, wenn die Schicht hinüberreicht."""
+    q_start, q_end = punches_window_for_month(start, last)
+    punches = PunchIndex(
+        db.scalars(
+            select(Punch)
+            .where(Punch.user_id == user.id, Punch.server_time >= q_start, Punch.server_time < q_end)
+            .order_by(Punch.server_time)
+        )
+    )
+    timeline = load_timeline(db, user.id)
+    frozen_map = load_frozen_map(db, [user.id])
+    day_models = load_day_models(db, user.id, start, last)
+    absences = {
+        row.day: row
+        for row in db.scalars(select(Absence).where(Absence.user_id == user.id, Absence.day >= start, Absence.day <= last))
+    }
+    found: dict[str, dict[str, float]] = {}
+    cur = start
+    while cur <= last:
+        model = resolve_model(
+            user,
+            cur,
+            timeline,
+            frozen_map.get((user.id, cur.year, cur.month)),
+            day_models.get(cur),
+        )
+        segments = day_work_intervals(
+            punches,
+            cur,
+            model,
+            absence=absences.get(cur),
+            auto_break=bool(user.auto_break),
+        )
+        found[cur.isoformat()] = sum_night_windows(segments, cur, cur + timedelta(days=1))
+        cur += timedelta(days=1)
+    return found
+
+
 def journal_report(db: Session, user: User, month: str) -> dict:
     from app.closings import calc_start
 
     year, mon = (int(part) for part in month.split("-"))
     _start, last = month_bounds(month)
     days = month_days(db, user, year, mon)
+    wages_by_day = journal_wage_by_day(db, user, _start, last)
     entry_from = max(_start, calc_start(db, user))
     entry_by_day: dict[str, float] = {}
     if last >= entry_from:
@@ -614,18 +732,35 @@ def journal_report(db: Session, user: User, month: str) -> dict:
     rows: list[dict] = []
     week_work = week_soll = week_delta = 0.0
     month_work = month_soll = month_delta = 0.0
+    month_wages = {"hours_20_24": 0.0, "hours_0_4": 0.0, "hours_4_6": 0.0}
     for index, day in enumerate(days):
-        rows.append(
-            {
-                "type": "day",
-                "label": format_day_label(str(day["date"])),
-                "booking": booking_text(day),
-                "work_hours": float(day["work_hours"] or 0),
-                "soll_hours": float(day["soll_hours"] or 0),
-                "delta_hours": float(day["delta_hours"] or 0),
-            }
-        )
-        booked = entry_by_day.get(str(day["date"]), 0.0)
+        iso = str(day["date"])
+        wages = wages_by_day.get(iso) or {"hours_20_24": 0.0, "hours_0_4": 0.0, "hours_4_6": 0.0}
+        for key in month_wages:
+            month_wages[key] += wages[key]
+        label = format_day_label(iso)
+        lead = {
+            "pause_hours": float(day.get("break_hours") or 0),
+            "work_hours": float(day["work_hours"] or 0),
+            "soll_hours": float(day["soll_hours"] or 0),
+            "delta_hours": float(day["delta_hours"] or 0),
+            "shift": day.get("shift") or "",
+            "hours_20_24": wages["hours_20_24"],
+            "hours_0_4": wages["hours_0_4"],
+            "hours_4_6": wages["hours_4_6"],
+            "remark": day_remark(day),
+        }
+        source = day["span_punches"] if "span_punches" in day else day.get("punches") or []
+        pairs = stamp_pairs(source)
+        if not pairs:
+            rows.append(_journal_row("day", label, **lead))
+        else:
+            for offset, (start, end) in enumerate(pairs):
+                fields = {"start": start, "end": end, "segment_hours": pair_hours(start, end)}
+                if offset == 0:
+                    fields.update(lead)
+                rows.append(_journal_row("day", label, **fields))
+        booked = entry_by_day.get(iso, 0.0)
         week_work += float(day["work_hours"] or 0)
         week_soll += float(day["soll_hours"] or 0)
         week_delta += float(day["delta_hours"] or 0) + booked
@@ -635,25 +770,23 @@ def journal_report(db: Session, user: User, month: str) -> dict:
         nxt = days[index + 1] if index + 1 < len(days) else None
         if day.get("weekday") == 6 or nxt is None:
             rows.append(
-                {
-                    "type": "week",
-                    "label": "Woche",
-                    "booking": "",
-                    "work_hours": week_work,
-                    "soll_hours": week_soll,
-                    "delta_hours": week_delta,
-                }
+                _journal_row(
+                    "week",
+                    "Woche",
+                    work_hours=week_work,
+                    soll_hours=week_soll,
+                    delta_hours=week_delta,
+                )
             )
             week_work = week_soll = week_delta = 0.0
     rows.append(
-        {
-            "type": "month",
-            "label": "Monat",
-            "booking": "",
-            "work_hours": month_work,
-            "soll_hours": month_soll,
-            "delta_hours": month_delta,
-        }
+        _journal_row(
+            "month",
+            "Monat",
+            work_hours=month_work,
+            soll_hours=month_soll,
+            delta_hours=month_delta,
+        )
     )
     snapshot = person_month_snapshot(db, user, month, as_of=min(last, as_local(now_utc()).date())) or {
         "flex_prev": 0.0,
@@ -671,6 +804,12 @@ def journal_report(db: Session, user: User, month: str) -> dict:
         "month": month,
         "month_label": format_month_label(month),
         "rows": rows,
+        "wages": {
+            "hours_20_24": month_wages["hours_20_24"],
+            "hours_0_4": month_wages["hours_0_4"],
+            "hours_4_6": month_wages["hours_4_6"],
+            "hours_1_plus_3": month_wages["hours_20_24"] + month_wages["hours_4_6"],
+        },
         "accounts": {
             "flex_prev": snapshot["flex_prev"],
             "flex_month": snapshot["flex_month"],

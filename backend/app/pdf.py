@@ -209,20 +209,23 @@ class ReportPDF(FPDF):
         self,
         day_columns: list[tuple[str, float, str]],
         day_rows: list[list[str]],
+        wage_rows: list[list[str]],
         account_rows: list[list[str]],
         note: str = "",
     ):
-        """Pack the day table and Konten footer onto the current page."""
-        n_day = max(len(day_rows), 1)
-        n_acc = max(len(account_rows), 1)
-        acc_row_h = 5.0
-        day_head = 5.4
-        acc_head = 5.4
-        reserve = day_head + 2.0 + 5.0 + acc_head + n_acc * acc_row_h + (9.0 if note else 0.0) + 1.5
-        avail = self.page_break_trigger - self.get_y() - reserve
-        row_h = min(6.0, max(3.6, avail / n_day))
-        self.table(day_columns, day_rows, note="", row_height=row_h, allow_break=False)
-        self.accounts_table(account_rows, note=note, compact=True)
+        """Tageszeilen mit Stempelpaaren, darunter Lohnarten und Konten. Darf umbrechen."""
+        self.table(day_columns, day_rows, note="", allow_break=True)
+        self.ln(3)
+        self.set_font(self.font_name, "B", 10)
+        self.set_text_color(*NAVY)
+        self.cell(self.epw, 6, "Lohnarten", new_x="LMARGIN", new_y="NEXT")
+        self.table(
+            [("Lohnart", 0.72, "L"), ("Stunden", 0.28, "R")],
+            wage_rows,
+            note="",
+            allow_break=True,
+        )
+        self.accounts_table(account_rows, note=note, compact=False)
 
     def bytes(self) -> bytes:
         return bytes(self.output())
