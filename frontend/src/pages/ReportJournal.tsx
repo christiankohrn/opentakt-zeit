@@ -32,19 +32,19 @@ function WageFooter({ wages }: { wages: JournalWages }) {
     ["Summe 1 und 3", wages.hours_1_plus_3],
   ] as const;
   return (
-    <div className="mt-4 overflow-x-auto rounded-2xl border border-line print:border-0">
-      <table className="w-full text-left text-sm">
-        <thead className="bg-card text-xs uppercase tracking-wider text-muted">
+    <div className="overflow-x-auto rounded-xl border border-line print:border-0">
+      <table className="w-max text-left text-xs">
+        <thead className="bg-card text-muted">
           <tr>
-            <th className="px-4 py-3 font-medium">Lohnart</th>
-            <th className="px-4 py-3 font-medium text-right">Stunden</th>
+            <th className="px-2 py-1.5 font-medium">Lohnart</th>
+            <th className="px-2 py-1.5 text-right font-medium">Stunden</th>
           </tr>
         </thead>
         <tbody>
-          {lines.map(([label, value]) => (
-            <tr key={label} className="border-t border-line bg-card">
-              <td className="px-4 py-2.5">{label}</td>
-              <td className="px-4 py-2.5 text-right tabular-nums">{formatHours(value)}</td>
+          {lines.map(([label, value], index) => (
+            <tr key={label} className={`border-t border-line bg-card ${index === lines.length - 1 ? "font-semibold" : ""}`}>
+              <td className="px-2 py-1">{label}</td>
+              <td className="px-2 py-1 text-right tabular-nums">{formatHours(value)}</td>
             </tr>
           ))}
         </tbody>
@@ -55,36 +55,36 @@ function WageFooter({ wages }: { wages: JournalWages }) {
 
 function AccountFooter({ accounts }: { accounts: JournalAccounts }) {
   return (
-    <div className="mt-4 overflow-x-auto rounded-2xl border border-line print:border-0">
-      <table className="w-full text-left text-sm">
-        <thead className="bg-card text-xs uppercase tracking-wider text-muted">
+    <div className="overflow-x-auto rounded-xl border border-line print:border-0">
+      <table className="w-max text-left text-xs">
+        <thead className="bg-card text-muted">
           <tr>
-            <th className="px-4 py-3 font-medium">Salden</th>
-            <th className="px-4 py-3 font-medium text-right">Vormonat</th>
-            <th className="px-4 py-3 font-medium text-right">Aktuell</th>
-            <th className="px-4 py-3 font-medium text-right">Verplant</th>
-            <th className="px-4 py-3 font-medium text-right">Rest / Neu</th>
+            <th className="px-2 py-1.5 font-medium">Salden</th>
+            <th className="px-2 py-1.5 text-right font-medium">Vormonat</th>
+            <th className="px-2 py-1.5 text-right font-medium">Aktuell</th>
+            <th className="px-2 py-1.5 text-right font-medium">Geplant</th>
+            <th className="px-2 py-1.5 text-right font-medium">Rest / Neu</th>
           </tr>
         </thead>
         <tbody>
           <tr className="border-t border-line bg-card">
-            <td className="px-4 py-2.5 font-medium">Zeitkonto</td>
-            <td className="px-4 py-2.5 text-right tabular-nums">{signedHours(accounts.flex_prev)}</td>
-            <td className="px-4 py-2.5 text-right tabular-nums">{signedHours(accounts.flex_month)}</td>
-            <td className="px-4 py-2.5 text-right tabular-nums">—</td>
-            <td className="px-4 py-2.5 text-right tabular-nums">{signedHours(accounts.flex_total)}</td>
+            <td className="px-2 py-1 font-medium">Zeitkonto</td>
+            <td className="px-2 py-1 text-right tabular-nums">{signedHours(accounts.flex_prev)}</td>
+            <td className="px-2 py-1 text-right tabular-nums">{signedHours(accounts.flex_month)}</td>
+            <td className="px-2 py-1 text-right tabular-nums">—</td>
+            <td className="px-2 py-1 text-right tabular-nums">{signedHours(accounts.flex_total)}</td>
           </tr>
           <tr className="border-t border-line bg-card">
-            <td className="px-4 py-2.5 font-medium">Urlaubskonto</td>
-            <td className="px-4 py-2.5 text-right tabular-nums">{formatDays(accounts.vacation_remaining_prev)}</td>
-            <td className="px-4 py-2.5 text-right tabular-nums">{formatDays(-accounts.vacation_month, true)}</td>
-            <td className="px-4 py-2.5 text-right tabular-nums">{formatDays(accounts.vacation_planned)}</td>
-            <td className="px-4 py-2.5 text-right tabular-nums">{formatDays(accounts.vacation_remaining)}</td>
+            <td className="px-2 py-1 font-medium">Urlaubskonto</td>
+            <td className="px-2 py-1 text-right tabular-nums">{formatDays(accounts.vacation_remaining_prev)}</td>
+            <td className="px-2 py-1 text-right tabular-nums">{formatDays(-accounts.vacation_month, true)}</td>
+            <td className="px-2 py-1 text-right tabular-nums">{formatDays(accounts.vacation_planned)}</td>
+            <td className="px-2 py-1 text-right tabular-nums">{formatDays(accounts.vacation_remaining)}</td>
           </tr>
         </tbody>
       </table>
-      <p className="px-4 py-2 text-xs text-muted">
-        Resturlaub = Jahresanspruch - genommen - verplant + manuelle Buchungen. Ohne Anspruch am Stammsatz bleibt Resturlaub leer.
+      <p className="max-w-xs px-2 py-1 text-[11px] text-muted">
+        Resturlaub = Jahresanspruch - genommen - geplant + manuelle Buchungen. Ohne Anspruch am Stammsatz bleibt Resturlaub leer.
       </p>
     </div>
   );
@@ -259,56 +259,70 @@ export default function ReportJournal() {
         <section key={journal.user_id} className="mt-6 break-after-page">
           <h2 className="text-lg font-medium">{journal.display_name}</h2>
           <p className="text-sm text-muted">{journal.month_label}</p>
-          <div className="mt-3 overflow-x-auto rounded-2xl border border-line print:border-0">
-            <table className="w-full min-w-[64rem] text-left text-sm">
-              <thead className="bg-card text-xs uppercase tracking-wider text-muted">
+          <div className="mt-2 inline-block max-w-full">
+          <div className="overflow-x-auto rounded-xl border border-line print:border-0">
+            <table className="w-max text-left text-xs">
+              <thead className="bg-nav text-[10px] text-white">
                 <tr>
-                  <th className="px-2 py-3 font-medium">Datum</th>
-                  <th className="px-2 py-3 font-medium text-right">Beginn</th>
-                  <th className="px-2 py-3 font-medium text-right">Ende</th>
-                  <th className="px-2 py-3 font-medium text-right">Zeit</th>
-                  <th className="px-2 py-3 font-medium text-right">Pause</th>
-                  <th className="px-2 py-3 font-medium text-right">Ist</th>
-                  <th className="px-2 py-3 font-medium text-right">Soll</th>
-                  <th className="px-2 py-3 font-medium text-right">Saldo</th>
-                  <th className="px-2 py-3 font-medium">Schicht</th>
-                  <th className="px-2 py-3 font-medium text-right">20–24</th>
-                  <th className="px-2 py-3 font-medium text-right">0–4</th>
-                  <th className="px-2 py-3 font-medium text-right">4–6</th>
-                  <th className="px-2 py-3 font-medium">Bemerkung</th>
+                  <th className="px-1.5 py-1" rowSpan={2}>Datum</th>
+                  <th className="px-1.5 py-1 text-center" colSpan={3}>Arbeitszeit</th>
+                  <th className="px-1.5 py-1 text-right" rowSpan={2}>Pause</th>
+                  <th className="px-1.5 py-1 text-center" colSpan={3}>Tag</th>
+                  <th className="px-1.5 py-1" rowSpan={2}>Schicht</th>
+                  <th className="px-1.5 py-1 text-center" colSpan={3}>Lohnarten</th>
+                  <th className="px-1.5 py-1" rowSpan={2}>Bemerkung</th>
+                </tr>
+                <tr>
+                  <th className="px-1.5 py-1 text-right font-medium">Beginn</th>
+                  <th className="px-1.5 py-1 text-right font-medium">Ende</th>
+                  <th className="px-1.5 py-1 text-right font-medium">Zeit</th>
+                  <th className="px-1.5 py-1 text-right font-medium">Ist</th>
+                  <th className="px-1.5 py-1 text-right font-medium">Soll</th>
+                  <th className="px-1.5 py-1 text-right font-medium">Saldo</th>
+                  <th className="px-1.5 py-1 text-right font-medium">20–24</th>
+                  <th className="px-1.5 py-1 text-right font-medium">0–4</th>
+                  <th className="px-1.5 py-1 text-right font-medium">4–6</th>
                 </tr>
               </thead>
               <tbody>
                 {journal.rows.map((row, index) => {
-                  const strong = row.type !== "day";
+                  const summary =
+                    row.type === "month"
+                      ? "bg-navy font-semibold text-white"
+                      : row.type === "week"
+                        ? "bg-line font-semibold"
+                        : "bg-card";
                   return (
                     <tr
                       key={`${journal.user_id}-${row.type}-${row.label}-${index}`}
-                      className={`border-t border-line ${strong ? "bg-bg font-medium" : "bg-card"}`}
+                      className={`border-t border-line ${summary}`}
                     >
-                      <td className="px-2 py-2 whitespace-nowrap">{row.label}</td>
-                      <td className="px-2 py-2 text-right tabular-nums">{row.start}</td>
-                      <td className="px-2 py-2 text-right tabular-nums">{row.end}</td>
-                      <td className="px-2 py-2 text-right tabular-nums">{hm(row.segment_hours)}</td>
-                      <td className="px-2 py-2 text-right tabular-nums">{wageCell(row.pause_hours)}</td>
-                      <td className="px-2 py-2 text-right tabular-nums">{hm(row.work_hours)}</td>
-                      <td className="px-2 py-2 text-right tabular-nums">{hm(row.soll_hours)}</td>
-                      <td className="px-2 py-2 text-right tabular-nums">
+                      <td className="whitespace-nowrap px-1.5 py-0.5">{row.label}</td>
+                      <td className="px-1.5 py-0.5 text-right tabular-nums">{row.start}</td>
+                      <td className="px-1.5 py-0.5 text-right tabular-nums">{row.end}</td>
+                      <td className="px-1.5 py-0.5 text-right tabular-nums">{hm(row.segment_hours)}</td>
+                      <td className="px-1.5 py-0.5 text-right tabular-nums">{wageCell(row.pause_hours)}</td>
+                      <td className="px-1.5 py-0.5 text-right tabular-nums">{hm(row.work_hours)}</td>
+                      <td className="px-1.5 py-0.5 text-right tabular-nums">{hm(row.soll_hours)}</td>
+                      <td className="px-1.5 py-0.5 text-right tabular-nums">
                         {row.delta_hours === null ? "" : signedHours(row.delta_hours)}
                       </td>
-                      <td className="px-2 py-2">{row.shift}</td>
-                      <td className="px-2 py-2 text-right tabular-nums">{wageCell(row.hours_20_24)}</td>
-                      <td className="px-2 py-2 text-right tabular-nums">{wageCell(row.hours_0_4)}</td>
-                      <td className="px-2 py-2 text-right tabular-nums">{wageCell(row.hours_4_6)}</td>
-                      <td className="px-2 py-2">{row.remark}</td>
+                      <td className="px-1.5 py-0.5">{row.shift}</td>
+                      <td className="px-1.5 py-0.5 text-right tabular-nums">{wageCell(row.hours_20_24)}</td>
+                      <td className="px-1.5 py-0.5 text-right tabular-nums">{wageCell(row.hours_0_4)}</td>
+                      <td className="px-1.5 py-0.5 text-right tabular-nums">{wageCell(row.hours_4_6)}</td>
+                      <td className="px-1.5 py-0.5">{row.remark}</td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
-          {journal.wages ? <WageFooter wages={journal.wages} /> : null}
-          {journal.accounts ? <AccountFooter accounts={journal.accounts} /> : null}
+          <div className="mt-2 grid w-max max-w-full items-start gap-2 md:grid-cols-2">
+            {journal.wages ? <WageFooter wages={journal.wages} /> : null}
+            {journal.accounts ? <AccountFooter accounts={journal.accounts} /> : null}
+          </div>
+          </div>
         </section>
       ))
         : null}

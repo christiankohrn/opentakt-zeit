@@ -37,19 +37,19 @@ from app.reports import (
 router = APIRouter(prefix="/hr/reports", tags=["reports"])
 
 JOURNAL_COLUMNS = [
-    ("Datum", 0.10, "L"),
-    ("Beginn", 0.07, "R"),
-    ("Ende", 0.07, "R"),
-    ("Zeit", 0.07, "R"),
-    ("Pause", 0.07, "R"),
-    ("Ist", 0.07, "R"),
-    ("Soll", 0.07, "R"),
+    ("Datum", 0.12, "L"),
+    ("Beginn", 0.065, "R"),
+    ("Ende", 0.065, "R"),
+    ("Zeit", 0.06, "R"),
+    ("Pause", 0.06, "R"),
+    ("Ist", 0.065, "R"),
+    ("Soll", 0.065, "R"),
     ("Saldo", 0.07, "R"),
     ("Schicht", 0.09, "L"),
-    ("20-24", 0.07, "R"),
-    ("0-4", 0.06, "R"),
-    ("4-6", 0.06, "R"),
-    ("Bemerkung", 0.13, "L"),
+    ("20-24", 0.06, "R"),
+    ("0-4", 0.05, "R"),
+    ("4-6", 0.05, "R"),
+    ("Bemerkung", 0.18, "L"),
 ]
 BALANCE_GROUPS = [("Name", 1), ("Zeitkonto", 3), ("Urlaub", 4), ("Krankheit", 3)]
 BALANCE_COLUMNS = [
@@ -167,25 +167,29 @@ def journal_pdf_bytes(reports: list[dict]) -> bytes:
         title=f"Journal {first['display_name']}",
         subtitle=first["month_label"],
         org=_org(),
-        landscape=True,
+        compact=True,
     )
+    rows, emphasis = _journal_table_rows(first)
     pdf.journal_person(
         JOURNAL_COLUMNS,
-        _journal_table_rows(first),
+        rows,
         _journal_wage_rows(first),
         _journal_account_rows(first),
         note=JOURNAL_ACCOUNT_NOTE,
+        emphasis=emphasis,
     )
     for report in reports[1:]:
         pdf.report_title = f"Journal {report['display_name']}"
         pdf.report_subtitle = report["month_label"]
         pdf.add_page()
+        rows, emphasis = _journal_table_rows(report)
         pdf.journal_person(
             JOURNAL_COLUMNS,
-            _journal_table_rows(report),
+            rows,
             _journal_wage_rows(report),
             _journal_account_rows(report),
             note=JOURNAL_ACCOUNT_NOTE,
+            emphasis=emphasis,
         )
     return pdf.bytes()
 
@@ -232,8 +236,9 @@ def _journal_wage_rows(report: dict) -> list[list[str]]:
     ]
 
 
-def _journal_table_rows(report: dict) -> list[list[str]]:
+def _journal_table_rows(report: dict) -> tuple[list[list[str]], list[bool]]:
     rows: list[list[str]] = []
+    emphasis: list[bool] = []
     for row in report["rows"]:
         rows.append(
             [
@@ -252,7 +257,8 @@ def _journal_table_rows(report: dict) -> list[list[str]]:
                 row.get("remark") or "",
             ]
         )
-    return rows
+        emphasis.append(row["type"] != "day")
+    return rows, emphasis
 
 
 @router.get("/sick-days")

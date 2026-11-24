@@ -63,15 +63,21 @@ class ReportPDF(FPDF):
         org: str,
         landscape: bool = False,
         note: str = "",
+        compact: bool = False,
     ):
         super().__init__(orientation="L" if landscape else "P", format="A4")
         self.report_title = title
         self.report_subtitle = subtitle
         self.org = org
         self.note = note
+        self.compact = compact
         self.created = as_local(now_utc())
-        self.set_margins(12, 18, 12)
-        self.set_auto_page_break(auto=True, margin=16)
+        if compact:
+            self.set_margins(8, 10, 8)
+            self.set_auto_page_break(auto=True, margin=10)
+        else:
+            self.set_margins(12, 18, 12)
+            self.set_auto_page_break(auto=True, margin=16)
         fonts = _font_pair()
         if fonts:
             self.add_font("Report", "", str(fonts[0]))
@@ -83,20 +89,27 @@ class ReportPDF(FPDF):
         self.add_page()
 
     def header(self):
-        self.set_font(self.font_name, "", 9)
+        small = self.compact
+        self.set_font(self.font_name, "", 7 if small else 9)
         self.set_text_color(*MUTED)
         generated = self.created.strftime("%d.%m.%Y %H:%M")
-        self.cell(self.epw / 2, 5, self.org, align="L")
-        self.cell(self.epw / 2, 5, generated, align="R", new_x="LMARGIN", new_y="NEXT")
+        self.cell(self.epw / 2, 4 if small else 5, self.org, align="L")
+        self.cell(self.epw / 2, 4 if small else 5, generated, align="R", new_x="LMARGIN", new_y="NEXT")
         self.set_text_color(*NAVY)
-        self.set_font(self.font_name, "B", 14)
-        self.cell(self.epw, 8, self.report_title, new_x="LMARGIN", new_y="NEXT")
-        self.set_font(self.font_name, "", 10)
+        self.set_font(self.font_name, "B", 11 if small else 14)
+        self.cell(self.epw, 5 if small else 8, self.report_title, new_x="LMARGIN", new_y="NEXT")
+        self.set_font(self.font_name, "", 8 if small else 10)
         self.set_text_color(*MUTED)
-        self.cell(self.epw, 5, self.report_subtitle, new_x="LMARGIN", new_y="NEXT")
-        self.ln(2)
+        self.cell(self.epw, 4 if small else 5, self.report_subtitle, new_x="LMARGIN", new_y="NEXT")
+        self.ln(1 if small else 2)
 
     def footer(self):
+        if self.compact:
+            self.set_y(-8)
+            self.set_font(self.font_name, "", 6.5)
+            self.set_text_color(*MUTED)
+            self.cell(self.epw, 4, f"{PRODUCT_NAME}  ·  Seite {self.page_no()}/{{nb}}", align="C")
+            return
         self.set_y(-12)
         self.set_font(self.font_name, "", 8)
         self.set_text_color(*MUTED)
@@ -105,10 +118,11 @@ class ReportPDF(FPDF):
     def _fit(self, text: str, width: float) -> str:
         if self.font_name != "Report":
             text = text.replace("\u2014", "-").replace("\u2013", "-")
+        pad = 0.6 if self.compact else 1.4
         ellipsis = "..."
-        if self.get_string_width(text) <= width - 1.4:
+        if self.get_string_width(text) <= width - pad:
             return text
-        while text and self.get_string_width(text + ellipsis) > width - 1.4:
+        while text and self.get_string_width(text + ellipsis) > width - pad:
             text = text[:-1]
         return text + ellipsis
 
@@ -119,8 +133,11 @@ class ReportPDF(FPDF):
         aligns: list[str],
         groups: list[tuple[str, int]] | None = None,
         height: float = 6.5,
+        origin_x: float | None = None,
     ):
-        self.set_font(self.font_name, "B", 7)
+        start = self.l_margin if origin_x is None else origin_x
+        self.set_x(start)
+        self.set_font(self.font_name, "B", 6 if height <= 4.2 else 7)
         self.set_fill_color(*NAVY)
         self.set_text_color(255, 255, 255)
         self.set_draw_color(*NAVY)
@@ -128,12 +145,14 @@ class ReportPDF(FPDF):
             index = 0
             for title, span in groups:
                 width = sum(widths[index : index + span])
-                self.cell(width, 6, self._fit(title, width), border=0, fill=True, align="C")
+                self.cell(width, height, self._fit(title, width), border=0, fill=True, align="C")
                 index += span
             self.ln()
+            self.set_x(start)
         for title, width, align in zip(headers, widths, aligns):
             self.cell(width, height, self._fit(title, width), border=0, fill=True, align=align)
         self.ln()
+        self.set_x(start)
 
     def table(
         self,
@@ -144,28 +163,42 @@ class ReportPDF(FPDF):
         note: str | None = None,
         row_height: float | None = None,
         allow_break: bool = True,
+        compact: bool = False,
+        emphasis: list[bool] | None = None,
+        width: float | None = None,
+        origin_x: float | None = None,
     ):
-        row_h = 6.2 if row_height is None else row_height
-        head_h = 6.5 if row_h >= 5.8 else max(5.0, row_h + 0.5)
-        body_font = 8 if row_h >= 5.2 else 7
-        usable = self.epw
-        widths = [max(10.0, usable * share) for _, share, _ in columns]
-        widths[0] += usable - sum(widths)
+        row_h = 3.6 if compact else (6.2 if row_height is None else row_height)
+        if row_height is not None and not compact:
+            row_h = row_height
+        head_h = 4.0 if compact else (6.5 if row_h >= 5.8 else max(5.0, row_h + 0.5))
+        body_font = 6.5 if compact else (8 if row_h >= 5.2 else 7)
+        usable = self.epw if width is None else width
+        shares = [share for _, share, _ in columns]
+        total = sum(shares) or 1.0
+        widths = [usable * share / total for share in shares]
         aligns = [align for _, _, align in columns]
         headers = [title for title, _, _ in columns]
-        self._column_header(headers, widths, aligns, groups, height=head_h)
+        start_x = self.l_margin if origin_x is None else origin_x
+        self.set_x(start_x)
+        self._column_header(headers, widths, aligns, groups, height=head_h, origin_x=start_x)
         self.set_draw_color(*LINE)
+        strong_fill = (186, 208, 230)
         for index, row in enumerate(rows):
             if allow_break and self.will_page_break(row_h):
                 self.add_page()
-                self._column_header(headers, widths, aligns, groups, height=head_h)
-            fill = index % 2 == 1
-            self.set_font(self.font_name, "", body_font)
+                self.set_x(start_x)
+                self._column_header(headers, widths, aligns, groups, height=head_h, origin_x=start_x)
+            strong = bool(emphasis and index < len(emphasis) and emphasis[index])
+            fill = strong or index % 2 == 1
+            self.set_x(start_x)
+            self.set_font(self.font_name, "B" if strong else "", body_font)
             self.set_text_color(*NAVY)
-            self.set_fill_color(*(ROW_ALT if fill else (255, 255, 255)))
-            for value, width, align in zip(row, widths, aligns):
-                self.cell(width, row_h, self._fit(str(value), width), border="B", fill=True, align=align)
+            self.set_fill_color(*(strong_fill if strong else ROW_ALT if fill else (255, 255, 255)))
+            for value, col_width, align in zip(row, widths, aligns):
+                self.cell(col_width, row_h, self._fit(str(value), col_width), border="B", fill=True, align=align)
             self.ln()
+            self.set_x(start_x)
         if totals:
             if allow_break and self.will_page_break(7):
                 self.add_page()
@@ -188,7 +221,7 @@ class ReportPDF(FPDF):
             ("Salden", 0.28, "L"),
             ("Vormonat", 0.18, "R"),
             ("Aktuell", 0.18, "R"),
-            ("Verplant", 0.18, "R"),
+            ("Geplant", 0.18, "R"),
             ("Rest / Neu", 0.18, "R"),
         ]
         if not compact and self.will_page_break(6.5 * (2 + len(rows)) + 10):
@@ -212,20 +245,75 @@ class ReportPDF(FPDF):
         wage_rows: list[list[str]],
         account_rows: list[list[str]],
         note: str = "",
+        emphasis: list[bool] | None = None,
     ):
-        """Tageszeilen mit Stempelpaaren, darunter Lohnarten und Konten. Darf umbrechen."""
-        self.table(day_columns, day_rows, note="", allow_break=True)
-        self.ln(3)
-        self.set_font(self.font_name, "B", 10)
-        self.set_text_color(*NAVY)
-        self.cell(self.epw, 6, "Lohnarten", new_x="LMARGIN", new_y="NEXT")
+        """Enges Hochformat: Stempelzeilen, Wochen- und Monatssumme hervorgehoben, Summen nebeneinander."""
         self.table(
-            [("Lohnart", 0.72, "L"), ("Stunden", 0.28, "R")],
-            wage_rows,
+            day_columns,
+            day_rows,
             note="",
             allow_break=True,
+            compact=True,
+            emphasis=emphasis,
+            groups=[
+                ("", 1),
+                ("Arbeitszeit", 3),
+                ("", 1),
+                ("Tag", 3),
+                ("", 1),
+                ("Lohnarten", 3),
+                ("", 1),
+            ],
         )
-        self.accounts_table(account_rows, note=note, compact=False)
+        self.ln(1.5)
+        block_h = 28
+        if self.will_page_break(block_h):
+            self.add_page()
+        gap = 3
+        left_w = self.epw * 0.40
+        right_w = self.epw - left_w - gap
+        y = self.get_y()
+        self.set_font(self.font_name, "B", 8)
+        self.set_text_color(*NAVY)
+        self.set_xy(self.l_margin, y)
+        self.cell(left_w, 4, "Lohnarten")
+        self.set_xy(self.l_margin + left_w + gap, y)
+        self.cell(right_w, 4, "Konten")
+        self.ln(4)
+        top = self.get_y()
+        self.table(
+            [("Lohnart", 0.68, "L"), ("Stunden", 0.32, "R")],
+            wage_rows,
+            note="",
+            compact=True,
+            allow_break=False,
+            width=left_w,
+            origin_x=self.l_margin,
+        )
+        after_left = self.get_y()
+        self.set_y(top)
+        self.table(
+            [
+                ("Salden", 0.28, "L"),
+                ("Vormonat", 0.18, "R"),
+                ("Aktuell", 0.18, "R"),
+                ("Geplant", 0.18, "R"),
+                ("Rest / Neu", 0.18, "R"),
+            ],
+            account_rows,
+            note="",
+            compact=True,
+            allow_break=False,
+            width=right_w,
+            origin_x=self.l_margin + left_w + gap,
+        )
+        self.set_y(max(self.get_y(), after_left))
+        if note:
+            self.ln(1)
+            self.set_x(self.l_margin)
+            self.set_font(self.font_name, "", 6.5)
+            self.set_text_color(*MUTED)
+            self.multi_cell(self.epw, 3.2, note)
 
     def bytes(self) -> bytes:
         return bytes(self.output())

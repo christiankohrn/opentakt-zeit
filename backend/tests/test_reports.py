@@ -404,7 +404,7 @@ def test_journal_account_matches_the_month_row_to_the_minute(client):
     assert format_hm(accounts["flex_total"], signed=True) == "-4:14"
     from app.pdf import ReportPDF
 
-    pdf = ReportPDF(title="Journal Probe", subtitle="August 2026", org="Org", landscape=True)
+    pdf = ReportPDF(title="Journal Probe", subtitle="August 2026", org="Org", compact=True)
     columns = [
         ("Datum", 0.10, "L"),
         ("Beginn", 0.07, "R"),
@@ -436,7 +436,7 @@ def test_journal_account_matches_the_month_row_to_the_minute(client):
         ["Zeitkonto", "+1:00", "+2:00", "-", "+3:00"],
         ["Urlaubskonto", "27", "0", "3", "24"],
     ]
-    pdf.journal_person(columns, rows, wages, accounts, note="Resturlaub = Jahresanspruch - genommen - verplant.")
+    pdf.journal_person(columns, rows, wages, accounts, note="Resturlaub = Jahresanspruch - genommen - geplant.")
     assert pdf_page_count(pdf.bytes()) >= 1
 
 

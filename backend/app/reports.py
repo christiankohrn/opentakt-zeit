@@ -21,7 +21,7 @@ NIGHT_WINDOWS = (
     ("hours_4_6", time(4, 0), time(6, 0)),
 )
 VACATION_NOTE = "Urlaub „inkl. Zukunft“ enthält gebuchte Tage nach dem Stichtag im Kalenderjahr."
-JOURNAL_ACCOUNT_NOTE = "Resturlaub = Jahresanspruch - genommen - verplant + manuelle Buchungen. Anspruch am Stammsatz unter Urlaubstage/Jahr."
+JOURNAL_ACCOUNT_NOTE = "Resturlaub = Jahresanspruch - genommen - geplant + manuelle Buchungen. Anspruch am Stammsatz unter Urlaubstage/Jahr."
 PUNCH_LABELS = {
     "in": "Kommen",
     "out": "Gehen",
@@ -772,7 +772,7 @@ def journal_report(db: Session, user: User, month: str) -> dict:
             rows.append(
                 _journal_row(
                     "week",
-                    "Woche",
+                    "Wochensumme",
                     work_hours=week_work,
                     soll_hours=week_soll,
                     delta_hours=week_delta,
@@ -782,7 +782,7 @@ def journal_report(db: Session, user: User, month: str) -> dict:
     rows.append(
         _journal_row(
             "month",
-            "Monat",
+            "Monatssumme",
             work_hours=month_work,
             soll_hours=month_soll,
             delta_hours=month_delta,
